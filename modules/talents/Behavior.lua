@@ -635,6 +635,9 @@ function T.Populate()
 
   -- Refresh the dual-spec side tabs (no-op if <2 specs or the module isn't loaded).
   if T.RefreshSpecTabs then T.RefreshSpecTabs() end
+  if T.GlyphsEnsureUI then pcall(T.GlyphsEnsureUI) end
+  if T.GlyphsRefresh then pcall(T.GlyphsRefresh) end
+  if T.GlyphsApplyPaneVisibility then pcall(T.GlyphsApplyPaneVisibility) end
 end
 
 function T.Refresh()

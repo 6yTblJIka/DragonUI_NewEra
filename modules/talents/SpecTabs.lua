@@ -95,6 +95,7 @@ local function setTabArt(tab, selected)
 end
 
 local TAB_NAMES = { "NE_TalentSpecTab1", "NE_TalentSpecTab2" }
+local GLYPH_TAB_NAME = "NE_TalentSpecTabGlyphs"
 
 local function buildTab(g)
   local f = T.frame
@@ -109,8 +110,32 @@ local function buildTab(g)
   tab:SetScript("OnClick", function(self)
     if PlaySound then pcall(PlaySound, "igCharacterInfoTab") end
     T._viewGroup = self:GetID()
+    if T.GlyphsSetActive then T.GlyphsSetActive(false) end
+    if T.GlyphsApplyPaneVisibility then T.GlyphsApplyPaneVisibility() end
     if T.RefreshSpecTabs then T.RefreshSpecTabs() end
     if T.Refresh then T.Refresh() end
+  end)
+  if not tab._nePlain and NE.tabs and NE.tabs.ReskinClassicTab then
+    pcall(NE.tabs.ReskinClassicTab, name, {})
+  end
+  return tab
+end
+
+local function buildGlyphTab()
+  local f = T.frame
+  local name = GLYPH_TAB_NAME
+  local tab = _G[name]
+  if tab then return tab end
+  local ok, t = pcall(CreateFrame, "Button", name, f, "CharacterFrameTabButtonTemplate")
+  if ok and t then tab = t else
+    tab = CreateFrame("Button", name, f, "UIPanelButtonTemplate"); tab._nePlain = true
+  end
+  tab:SetScript("OnClick", function()
+    if PlaySound then pcall(PlaySound, "igCharacterInfoTab") end
+    if T.GlyphsSetActive then T.GlyphsSetActive(true) end
+    if T.GlyphsRefresh then T.GlyphsRefresh() end
+    if T.GlyphsApplyPaneVisibility then T.GlyphsApplyPaneVisibility() end
+    if T.RefreshSpecTabs then T.RefreshSpecTabs() end
   end)
   if not tab._nePlain and NE.tabs and NE.tabs.ReskinClassicTab then
     pcall(NE.tabs.ReskinClassicTab, name, {})
@@ -157,22 +182,60 @@ function T.RefreshSpecTabs()
   local f = T.frame
   if not f then return end
   local num = (GetNumTalentGroups and (GetNumTalentGroups() or 1)) or 1   -- VERIFY: GetNumTalentGroups on 3.3.5a
-  if num < 2 then
-    for g = 1, 2 do local t = _G[TAB_NAMES[g]]; if t then t:Hide() end end
+  local hasGlyph = (type(T.GlyphsSetActive) == "function")
+  local viewG = T._viewGroup or T._activeGroup or 1
+  local glyphActive = T.GlyphsIsActive and T.GlyphsIsActive() or false
+  local tabsToSize = {}
+
+  if num >= 2 then
+    for g = 1, 2 do
+      local tab = buildTab(g)
+      local txt = _G[TAB_NAMES[g] .. "Text"]
+      if txt then txt:SetText(specName(g)) elseif tab.SetText then tab:SetText(specName(g)) end
+      tab:Show()
+      tabsToSize[#tabsToSize + 1] = TAB_NAMES[g]
+    end
+  else
+    for g = 1, 2 do
+      local t = _G[TAB_NAMES[g]]
+      if t then t:Hide() end
+    end
+  end
+
+  if hasGlyph then
+    local gtab = buildGlyphTab()
+    local gtxt = _G[GLYPH_TAB_NAME .. "Text"]
+    if gtxt then gtxt:SetText("Glyphs") elseif gtab.SetText then gtab:SetText("Glyphs") end
+    gtab:Show()
+    tabsToSize[#tabsToSize + 1] = GLYPH_TAB_NAME
+  else
+    local gtab = _G[GLYPH_TAB_NAME]
+    if gtab then gtab:Hide() end
+  end
+
+  if #tabsToSize == 0 then
     if T._specCog then T._specCog:Hide() end
     return
   end
-  local viewG = T._viewGroup or T._activeGroup or 1
-  for g = 1, 2 do
-    local tab = buildTab(g)
-    local txt = _G[TAB_NAMES[g] .. "Text"]
-    if txt then txt:SetText(specName(g)) elseif tab.SetText then tab:SetText(specName(g)) end
-    tab:Show()
-  end
+
   -- size each tab to its (possibly renamed) text + chain them along the bottom edge
   if NE.tabs and NE.tabs.SizeAndAnchorTabs then
-    NE.tabs.SizeAndAnchorTabs(f, TAB_NAMES, { startX = 14, startY = 0, parentPoint = "BOTTOMLEFT" })
+    NE.tabs.SizeAndAnchorTabs(f, tabsToSize, { startX = 14, startY = 0, parentPoint = "BOTTOMLEFT" })
   end
-  for g = 1, 2 do setTabArt(_G[TAB_NAMES[g]], g == viewG) end
-  buildCog():Show()   -- anchored top-right inside the window (set in buildCog)
+
+  if num >= 2 then
+    for g = 1, 2 do setTabArt(_G[TAB_NAMES[g]], (not glyphActive) and (g == viewG)) end
+    if glyphActive then
+      if T._specCog then T._specCog:Hide() end
+    else
+      buildCog():Show()   -- anchored top-right inside the window (set in buildCog)
+    end
+  else
+    if T._specCog then T._specCog:Hide() end
+  end
+
+  if hasGlyph then
+    local gtab = _G[GLYPH_TAB_NAME]
+    setTabArt(gtab, glyphActive)
+  end
 end

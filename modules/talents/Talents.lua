@@ -605,6 +605,8 @@ local function buildWindow()
   -- Render-on-show. Behavior.lua defines T.Populate; guard since it loads around/after this file.
   f:HookScript("OnShow", function()
     if T.Populate then guard("populate", T.Populate) end
+    if T.GlyphsEnsureUI then guard("glyphs.ensure", T.GlyphsEnsureUI) end
+    if T.GlyphsRefresh then guard("glyphs.refresh", T.GlyphsRefresh) end
   end)
 
   return f
