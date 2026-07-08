@@ -403,6 +403,22 @@ local function applyBorderTint(button, hovered)
   button.Border:SetVertexColor(tint[1], tint[2], tint[3], tint[4] or 1)
 end
 
+local function applyIconHover(button, hovered)
+  if not (button and button.Icon) then return end
+  if not button._hasGlyph then
+    button.Icon:SetAlpha(button._iconAlpha or 1)
+    if button.IconTint then button.IconTint:SetAlpha(button._iconTintAlpha or 0) end
+    return
+  end
+
+  local iconAlpha = button._iconAlpha or 1
+  button.Icon:SetAlpha(hovered and math.min(1, iconAlpha + 0.32) or iconAlpha)
+  if button.IconTint and button._iconTintShown then
+    local tintAlpha = button._iconTintAlpha or 0
+    button.IconTint:SetAlpha(hovered and math.min(1, tintAlpha + 0.28) or tintAlpha)
+  end
+end
+
 local function setSocketHitRect(button, frameSize, hitSize)
   if not (button and button.SetHitRectInsets) then return end
   local inset = math.max(0, math.floor(((frameSize or 0) - (hitSize or 0)) / 2))
@@ -447,11 +463,13 @@ local function buildSocket(parent, index)
   b:SetScript("OnEnter", function(self)
     self._hovered = true
     if self._hoverBorder then applyBorderTint(self, true) end
+    applyIconHover(self, true)
     tooltipForSocket(self)
   end)
   b:SetScript("OnLeave", function(self)
     self._hovered = nil
     applyBorderTint(self, false)
+    applyIconHover(self, false)
     if self.Glow then self.Glow:Hide() end
     GameTooltip:Hide()
   end)
@@ -569,6 +587,10 @@ local function updateSocket(button, info, activePane, wantMajor)
     applyBorderTint(button, false)
     button.Icon:SetSize(34, 34)
     button.Icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+    button._hasGlyph = nil
+    button._iconAlpha = 1
+    button._iconTintAlpha = 0
+    button._iconTintShown = nil
     if button.Icon.SetDesaturated then button.Icon:SetDesaturated(true) end
     if button.IconTint then button.IconTint:Hide() end
     button.Glow:Hide()
@@ -598,6 +620,10 @@ local function updateSocket(button, info, activePane, wantMajor)
     applyBorderTint(button, false)
     button.Icon:SetSize(34, 34)
     button.Icon:SetTexture(emptyGlyphIcon(info.glyphType))
+    button._hasGlyph = nil
+    button._iconAlpha = 1
+    button._iconTintAlpha = 0
+    button._iconTintShown = nil
     if button.Icon.SetDesaturated then button.Icon:SetDesaturated(true) end
     if button.IconTint then button.IconTint:Hide() end
     button.Glow:Hide()
@@ -636,7 +662,9 @@ local function updateSocket(button, info, activePane, wantMajor)
   local iconTex = hasGlyph and (info.icon or spellIcon) or emptyGlyphIcon(info.glyphType)
   button.Icon:SetTexture(iconTex)
   if button.Icon.SetVertexColor then button.Icon:SetVertexColor(1, 1, 1, 1) end
-  button.Icon:SetAlpha((hasGlyph and activePane) and 1 or (activePane and 1 or 0.75))
+  button._hasGlyph = hasGlyph and true or nil
+  button._iconAlpha = ((hasGlyph and activePane) and 1 or (activePane and 1 or 0.75))
+  button.Icon:SetAlpha(button._iconAlpha)
   if button.Icon.SetDesaturated then
     if hasGlyph and activePane then
       button.Icon:SetDesaturated(false)
@@ -649,14 +677,19 @@ local function updateSocket(button, info, activePane, wantMajor)
     if hasGlyph and activePane then
       button.IconTint:SetSize(iconSize, iconSize)
       button.IconTint:SetTexture(iconTex)
-      button.IconTint:SetAlpha(isMajor and 0.7 or 0.5)
+      button._iconTintAlpha = isMajor and 0.7 or 0.5
+      button._iconTintShown = true
+      button.IconTint:SetAlpha(button._iconTintAlpha)
       button.IconTint:Show()
     else
+      button._iconTintAlpha = 0
+      button._iconTintShown = nil
       button.IconTint:Hide()
     end
   end
 
   button.Glow:Hide()
+  applyIconHover(button, button._hovered)
 
   button.Plus:SetText("")
   button._fallbackName = spellName or "Glyph"
