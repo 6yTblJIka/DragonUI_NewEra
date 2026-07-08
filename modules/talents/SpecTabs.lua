@@ -196,10 +196,24 @@ function T.RefreshSpecTabs()
       tabsToSize[#tabsToSize + 1] = TAB_NAMES[g]
     end
   else
-    for g = 1, 2 do
-      local t = _G[TAB_NAMES[g]]
-      if t then t:Hide() end
+    local tab = buildTab(1)
+    local txt = _G[TAB_NAMES[1] .. "Text"]
+    if hasGlyph then
+      if txt then txt:SetText("Talents") elseif tab.SetText then tab:SetText("Talents") end
+      tab:Show()
+      tabsToSize[#tabsToSize + 1] = TAB_NAMES[1]
+    else
+      if txt then txt:SetText(specName(1)) elseif tab.SetText then tab:SetText(specName(1)) end
+      tab:Hide()
     end
+
+    local t2 = _G[TAB_NAMES[2]]
+    if t2 then t2:Hide() end
+  end
+
+  if not hasGlyph and num < 2 then
+    local t1 = _G[TAB_NAMES[1]]
+    if t1 then t1:Hide() end
   end
 
   if hasGlyph then
@@ -223,14 +237,6 @@ function T.RefreshSpecTabs()
     NE.tabs.SizeAndAnchorTabs(f, tabsToSize, { startX = 14, startY = 0, parentPoint = "BOTTOMLEFT" })
   end
 
-  if num < 2 and hasGlyph then
-    local gtab = _G[GLYPH_TAB_NAME]
-    if gtab then
-      gtab:ClearAllPoints()
-      gtab:SetPoint("TOPRIGHT", f, "BOTTOMRIGHT", -14, 0)
-    end
-  end
-
   if num >= 2 then
     for g = 1, 2 do setTabArt(_G[TAB_NAMES[g]], (not glyphActive) and (g == viewG)) end
     if glyphActive then
@@ -240,6 +246,8 @@ function T.RefreshSpecTabs()
     end
   else
     if T._specCog then T._specCog:Hide() end
+    local t1 = _G[TAB_NAMES[1]]
+    if t1 then setTabArt(t1, not glyphActive) end
   end
 
   if hasGlyph then

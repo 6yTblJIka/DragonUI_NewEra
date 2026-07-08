@@ -8,10 +8,14 @@ local T  = NE.talents or {}
 NE.talents = T
 
 local SOCKET_COUNT = 6
+local GLYPH_DOT_SIZE = 4
+local GLYPH_DOT_GAP = 9
+local GLYPH_FLOW_SPEED = 16
 
 local root
 local panes = {}
 local refreshDriver
+local glyphEdgePhase = 0
 
 T._glyphActive = (T._glyphActive ~= nil) and T._glyphActive or false
 
@@ -67,6 +71,113 @@ local function setAtlas(tex, atlas, fallbackTexture)
     tex:SetTexture(fallbackTexture)
   end
   return false
+end
+
+local function positionGlyphEdge(edge, phase)
+  local dots, span, gap = edge.dots, edge.span, edge.gap
+  for i = 1, #dots do
+    local dist = ((i - 1) * gap + phase) % span
+    local d = dots[i]
+    d:ClearAllPoints()
+    d:SetPoint("CENTER", edge.parent, "CENTER", edge.x0 + edge.ux * dist, edge.y0 + edge.uy * dist)
+  end
+end
+
+local function ensureGlyphFlowDriver(host)
+  if not (host and host.HookScript) or host._glyphEdgeFlow then return end
+  host._glyphEdgeFlow = true
+  host:HookScript("OnUpdate", function(self, dt)
+    if not T._glyphActive then return end
+    dt = dt or 0
+    glyphEdgePhase = glyphEdgePhase + dt * GLYPH_FLOW_SPEED
+    if glyphEdgePhase > 1e6 then glyphEdgePhase = 0 end
+    for _, pane in pairs(panes) do
+      if pane and pane:IsShown() and pane._glyphEdges then
+        for i = 1, #pane._glyphEdges do
+          positionGlyphEdge(pane._glyphEdges[i], glyphEdgePhase)
+        end
+      end
+    end
+  end)
+end
+
+local function resetPaneEdges(pane)
+  if not pane then return end
+  pane._edgeN = 0
+  pane._glyphEdges = pane._glyphEdges or {}
+  for i = 1, #pane._glyphEdges do pane._glyphEdges[i] = nil end
+end
+
+local function acquirePaneDot(pane)
+  pane._edgeN = (pane._edgeN or 0) + 1
+  pane.edgePool = pane.edgePool or {}
+  local d = pane.edgePool[pane._edgeN]
+  if not d then
+    d = pane:CreateTexture(nil, "ARTWORK", nil, -2)
+    d:SetTexture("Interface\\Buttons\\WHITE8X8")
+    pane.edgePool[pane._edgeN] = d
+  end
+  d:Show()
+  return d
+end
+
+local function hideUnusedPaneDots(pane)
+  if not (pane and pane.edgePool) then return end
+  for i = (pane._edgeN or 0) + 1, #pane.edgePool do
+    pane.edgePool[i]:Hide()
+  end
+end
+
+local function drawPaneEdge(pane, startButton, endButton, color)
+  if not (pane and startButton and endButton) then return end
+  local sx, sy = startButton:GetCenter()
+  local ex, ey = endButton:GetCenter()
+  local px, py = pane:GetCenter()
+  if not (sx and sy and ex and ey and px and py) then return end
+  sx, sy = sx - px, sy - py
+  ex, ey = ex - px, ey - py
+  local dx, dy = ex - sx, ey - sy
+  local dist = math.sqrt(dx * dx + dy * dy)
+  if dist < 1 then return end
+  local ux, uy = dx / dist, dy / dist
+  local startRadius = (startButton.Border and startButton.Border:GetWidth() or startButton:GetWidth() or 0) * 0.5
+  local endRadius = (endButton.Border and endButton.Border:GetWidth() or endButton:GetWidth() or 0) * 0.5
+  local x0, y0 = sx + ux * startRadius, sy + uy * startRadius
+  local span = dist - startRadius - endRadius
+  if span <= 0 then return end
+  local count = math.floor(span / GLYPH_DOT_GAP + 0.5)
+  if count < 1 then count = 1 end
+  local gap = span / count
+  local dots = {}
+  for _ = 1, count do
+    local d = acquirePaneDot(pane)
+    d:SetSize(GLYPH_DOT_SIZE, GLYPH_DOT_SIZE)
+    d:SetVertexColor(color[1], color[2], color[3], color[4])
+    dots[#dots + 1] = d
+  end
+  local edge = { parent = pane, x0 = x0, y0 = y0, ux = ux, uy = uy, span = span, gap = gap, dots = dots }
+  pane._glyphEdges[#pane._glyphEdges + 1] = edge
+  positionGlyphEdge(edge, glyphEdgePhase)
+end
+
+local function updatePaneEdges(pane, activePane)
+  if not pane then return end
+  resetPaneEdges(pane)
+  if not T._glyphActive then
+    hideUnusedPaneDots(pane)
+    return
+  end
+
+  local majorColor = activePane and { 1.0, 0.84, 0.18, 0.95 } or { 0.62, 0.49, 0.24, 0.45 }
+  local minorColor = activePane and { 1.0, 0.84, 0.18, 0.72 } or { 0.62, 0.49, 0.24, 0.32 }
+  local sockets = pane.sockets
+  drawPaneEdge(pane, sockets[1], sockets[3], majorColor)
+  drawPaneEdge(pane, sockets[3], sockets[5], majorColor)
+  drawPaneEdge(pane, sockets[5], sockets[1], majorColor)
+  drawPaneEdge(pane, sockets[2], sockets[4], minorColor)
+  drawPaneEdge(pane, sockets[4], sockets[6], minorColor)
+  drawPaneEdge(pane, sockets[6], sockets[2], minorColor)
+  hideUnusedPaneDots(pane)
 end
 
 local function applyPaneBackground(pane)
@@ -183,9 +294,62 @@ local function emptyGlyphIcon(glyphType)
   return "Interface\\Icons\\INV_Glyph_MajorGlyph"
 end
 
+local function getStockGlyphSocket(button)
+  local info = button and button._glyphInfo
+  if not (info and info.socket) then return nil end
+
+  if not ((NE.IsAddOnLoaded and NE.IsAddOnLoaded("Blizzard_GlyphUI")) or _G.GlyphFrame) then
+    if type(_G.LoadAddOn) == "function" then
+      pcall(_G.LoadAddOn, "Blizzard_GlyphUI")
+    end
+  end
+
+  return _G["GlyphFrameGlyph" .. tostring(info.socket)]
+end
+
+local function copyTooltipToButton(button)
+  if not (button and GameTooltip and GameTooltip:IsShown()) then return false end
+
+  local lines = {}
+  local numLines = GameTooltip:NumLines() or 0
+  for i = 1, numLines do
+    local left = _G["GameTooltipTextLeft" .. i]
+    if left and left.GetText then
+      local text = left:GetText()
+      if text and text ~= "" then
+        local r, g, b = left:GetTextColor()
+        lines[#lines + 1] = { text = text, r = r or 1, g = g or 1, b = b or 1 }
+      end
+    end
+  end
+  if #lines == 0 then return false end
+
+  GameTooltip:Hide()
+  GameTooltip:SetOwner(button, "ANCHOR_NONE")
+  GameTooltip:SetPoint("BOTTOMLEFT", button, "TOPRIGHT", 3, 2)
+  GameTooltip:SetText(lines[1].text, lines[1].r, lines[1].g, lines[1].b)
+  for i = 2, #lines do
+    local line = lines[i]
+    GameTooltip:AddLine(line.text, line.r, line.g, line.b, true)
+  end
+  GameTooltip:Show()
+  return true
+end
+
 local function tooltipForSocket(button)
   local info = button._glyphInfo
   if not info then return end
+
+  local stock = getStockGlyphSocket(button)
+  if stock and stock.GetScript then
+    local onEnter = stock:GetScript("OnEnter")
+    if type(onEnter) == "function" then
+      local ok = pcall(onEnter, stock)
+      if ok and GameTooltip and GameTooltip:IsShown() then
+        if copyTooltipToButton(button) then return end
+      end
+    end
+  end
 
   GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
   local shown = false
@@ -217,13 +381,7 @@ local function clickStockGlyphSocket(button, mouseButton)
     end
   end
 
-  if not ((NE.IsAddOnLoaded and NE.IsAddOnLoaded("Blizzard_GlyphUI")) or _G.GlyphFrame) then
-    if type(_G.LoadAddOn) == "function" then
-      pcall(_G.LoadAddOn, "Blizzard_GlyphUI")
-    end
-  end
-
-  local stock = _G["GlyphFrameGlyph" .. tostring(info.socket)]
+  local stock = getStockGlyphSocket(button)
   if not stock then return end
 
   if stock.Click then
@@ -243,6 +401,12 @@ local function applyBorderTint(button, hovered)
   local tint = (hovered and button._hoverTint) or button._borderTint
   if not tint then return end
   button.Border:SetVertexColor(tint[1], tint[2], tint[3], tint[4] or 1)
+end
+
+local function setSocketHitRect(button, frameSize, hitSize)
+  if not (button and button.SetHitRectInsets) then return end
+  local inset = math.max(0, math.floor(((frameSize or 0) - (hitSize or 0)) / 2))
+  button:SetHitRectInsets(inset, inset, inset, inset)
 end
 
 local function buildSocket(parent, index)
@@ -302,6 +466,7 @@ end
 local function layoutRoot()
   local h = T.Host and T.Host() or T.frame
   if not h then return nil end
+  ensureGlyphFlowDriver(h)
 
   if root and root:GetParent() ~= h then
     root:SetParent(h)
@@ -395,7 +560,9 @@ local function updateSocket(button, info, activePane, wantMajor)
   if not info then
     button:SetSize(slotButtonSize, slotButtonSize)
     setAtlas(button.Border, "talents-node-circle-locked", nil)
-    button.Border:SetSize(slotIsMajor and lockedMajorBorderSize or lockedMinorBorderSize, slotIsMajor and lockedMajorBorderSize or lockedMinorBorderSize)
+    local lockedBorderSize = slotIsMajor and lockedMajorBorderSize or lockedMinorBorderSize
+    button.Border:SetSize(lockedBorderSize, lockedBorderSize)
+    setSocketHitRect(button, slotButtonSize, lockedBorderSize)
     button._borderTint = { 0.78, 0.80, 0.84, 1 }
     button._hoverTint = nil
     button._hoverBorder = nil
@@ -422,7 +589,9 @@ local function updateSocket(button, info, activePane, wantMajor)
   if not info.enabled then
     button:SetSize(slotButtonSize, slotButtonSize)
     setAtlas(button.Border, activePane and "talents-node-circle-locked" or "talents-node-circle-gray", nil)
-    button.Border:SetSize(slotIsMajor and lockedMajorBorderSize or lockedMinorBorderSize, slotIsMajor and lockedMajorBorderSize or lockedMinorBorderSize)
+    local lockedBorderSize = slotIsMajor and lockedMajorBorderSize or lockedMinorBorderSize
+    button.Border:SetSize(lockedBorderSize, lockedBorderSize)
+    setSocketHitRect(button, slotButtonSize, lockedBorderSize)
     button._borderTint = { 0.78, 0.80, 0.84, 1 }
     button._hoverTint = nil
     button._hoverBorder = nil
@@ -450,6 +619,7 @@ local function updateSocket(button, info, activePane, wantMajor)
   local stateAtlas = "talents-node-circle-gray"
   setAtlas(button.Border, stateAtlas, nil)
   button.Border:SetSize(borderSize, borderSize)
+  setSocketHitRect(button, slotButtonSize, borderSize)
   button._borderTint = activePane and { 0.63, 0.49, 0.28, 1 } or { 0.74, 0.76, 0.80, 1 }
   button._hoverTint = { 1.0, 0.86, 0.24, 1 }
   button._hoverBorder = true
@@ -561,6 +731,8 @@ local function updatePane(pane, group, activeGroup)
     end
     updateSocket(button, info, activePane, wantMajor)
   end
+
+  updatePaneEdges(pane, activePane)
 
   if T._glyphActive then pane:Show() else pane:Hide() end
 end
