@@ -204,7 +204,8 @@ local function buildControlBar(model, opts)
       local dy = my - (self._dragLY or my)
       self._dragLX, self._dragLY = mx, my
       if self._dragBtn == "LeftButton" then
-        local rot = (self.rotation or 0) - dx * 0.012
+        -- Horizontal drag should match the rotate button direction rather than invert it.
+        local rot = (self.rotation or 0) + dx * 0.012
         if self.SetRotation then pcall(self.SetRotation, self, rot); self.rotation = rot end
       elseif self._dragBtn == "RightButton" then
         local ok, px, py, pz = pcall(self.GetPosition, self)
