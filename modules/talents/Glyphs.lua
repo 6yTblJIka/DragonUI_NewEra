@@ -11,13 +11,51 @@ local SOCKET_COUNT = 6
 local GLYPH_DOT_SIZE = 4
 local GLYPH_DOT_GAP = 9
 local GLYPH_FLOW_SPEED = 16
+local GLYPH_NAME_PREFIX = "Glyph of "
 
 local root
 local panes = {}
 local refreshDriver
 local glyphEdgePhase = 0
+local glyphOptionsMenu
 
 T._glyphActive = (T._glyphActive ~= nil) and T._glyphActive or false
+
+local function glyphLabelNamesEnabled()
+  return (NE.db and NE.db.talentGlyphSlotNames) and true or false
+end
+
+local function setGlyphLabelNamesEnabled(enabled)
+  if not NE.db then return end
+  NE.db.talentGlyphSlotNames = enabled and true or false
+end
+
+local function trimGlyphPrefix(name)
+  if type(name) ~= "string" then return nil end
+  local trimmed = name:gsub("^Glyph%s+[Oo]f%s+", "")
+  if trimmed == "" then
+    return name
+  end
+  if trimmed ~= name then
+    return trimmed
+  end
+  if name:sub(1, #GLYPH_NAME_PREFIX) == GLYPH_NAME_PREFIX then
+    return name:sub(#GLYPH_NAME_PREFIX + 1)
+  end
+  return name
+end
+
+local function glyphDisplayName(info, fallbackSpellName)
+  if not info then return nil end
+  local itemName
+  if info.link and GetItemInfo then
+    itemName = GetItemInfo(info.link)
+  end
+  if (not itemName) and type(info.link) == "string" then
+    itemName = info.link:match("%[(.-)%]")
+  end
+  return trimGlyphPrefix(itemName or fallbackSpellName)
+end
 
 local function queueGlyphRefresh(passes)
   passes = tonumber(passes) or 1
@@ -412,10 +450,10 @@ local function applyIconHover(button, hovered)
   end
 
   local iconAlpha = button._iconAlpha or 1
-  button.Icon:SetAlpha(hovered and math.min(1, iconAlpha + 0.32) or iconAlpha)
+  button.Icon:SetAlpha(hovered and math.min(1, iconAlpha + 0.45) or iconAlpha)
   if button.IconTint and button._iconTintShown then
     local tintAlpha = button._iconTintAlpha or 0
-    button.IconTint:SetAlpha(hovered and math.min(1, tintAlpha + 0.28) or tintAlpha)
+    button.IconTint:SetAlpha(hovered and math.min(1, tintAlpha + 0.40) or tintAlpha)
   end
 end
 
@@ -460,6 +498,27 @@ local function buildSocket(parent, index)
   b.Plus:SetText("+")
   b.Plus:SetTextColor(0.95, 0.88, 0.55)
 
+  b.Name = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  if _G.SystemFont_Shadow_Med1 then b.Name:SetFontObject(_G.SystemFont_Shadow_Med1) end
+  b.Name:SetTextColor(0.95, 0.90, 0.75)
+  b.Name:SetWidth(160)
+  b.Name:SetWordWrap(true)
+  b.Name:Hide()
+
+  if index == 1 then
+    b.Name:SetPoint("BOTTOM", b, "TOP", 0, 8)
+    b.Name:SetJustifyH("CENTER")
+  elseif index == 4 then
+    b.Name:SetPoint("TOP", b, "BOTTOM", 0, -10)
+    b.Name:SetJustifyH("CENTER")
+  elseif index == 2 or index == 3 then
+    b.Name:SetPoint("LEFT", b, "RIGHT", 10, 0)
+    b.Name:SetJustifyH("LEFT")
+  else
+    b.Name:SetPoint("RIGHT", b, "LEFT", -10, 0)
+    b.Name:SetJustifyH("RIGHT")
+  end
+
   b:SetScript("OnEnter", function(self)
     self._hovered = true
     if self._hoverBorder then applyBorderTint(self, true) end
@@ -481,6 +540,74 @@ local function buildSocket(parent, index)
   return b
 end
 
+local function ensureGlyphOptionsMenu(anchor)
+  if glyphOptionsMenu or not anchor then return glyphOptionsMenu end
+  if not UIDropDownMenu_Initialize then return nil end
+  local ok, menu = pcall(CreateFrame, "Frame", "NE_TalentGlyphOptionsMenu", anchor, "UIDropDownMenuTemplate")
+  if not ok then return nil end
+  menu.displayMode = "MENU"
+  UIDropDownMenu_Initialize(menu, function(self, level)
+    if level ~= 1 then return end
+
+    local info = UIDropDownMenu_CreateInfo()
+    info.text = "Show glyph names"
+    info.checked = glyphLabelNamesEnabled()
+    info.keepShownOnClick = true
+    info.isNotRadio = true
+    info.func = function()
+      setGlyphLabelNamesEnabled(not glyphLabelNamesEnabled())
+      if T.GlyphsRefresh then T.GlyphsRefresh() end
+    end
+    UIDropDownMenu_AddButton(info, level)
+  end)
+  glyphOptionsMenu = menu
+  return glyphOptionsMenu
+end
+
+local function buildGlyphCog(parent)
+  if parent and parent.cog then return parent.cog end
+
+  local cog = CreateFrame("Button", "NE_TalentGlyphCog", parent)
+  cog:SetSize(18, 18)
+  cog.Icon = cog:CreateTexture(nil, "ARTWORK")
+  if not (NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(cog.Icon, "questlog-icon-setting", true)) then
+    cog.Icon:SetTexture("Interface\\Buttons\\UI-OptionsButton")
+    cog.Icon:SetSize(16, 16)
+  end
+  cog.Icon:SetPoint("CENTER")
+  cog.Hi = cog:CreateTexture(nil, "HIGHLIGHT")
+  if not (NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(cog.Hi, "questlog-icon-setting", true)) then
+    cog.Hi:SetTexture("Interface\\Buttons\\UI-OptionsButton")
+    cog.Hi:SetSize(16, 16)
+  end
+  cog.Hi:SetPoint("CENTER")
+  cog.Hi:SetBlendMode("ADD")
+  cog.Hi:SetAlpha(0.4)
+  cog:SetFrameLevel((parent:GetFrameLevel() or 1) + 10)
+  cog:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -10, -10)
+  cog:SetScript("OnClick", function(self)
+    local menu = ensureGlyphOptionsMenu(parent)
+    if menu and ToggleDropDownMenu then
+      ToggleDropDownMenu(1, nil, menu, self, 6, 2)
+      return
+    end
+    setGlyphLabelNamesEnabled(not glyphLabelNamesEnabled())
+    if T.GlyphsRefresh then T.GlyphsRefresh() end
+  end)
+  cog:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    GameTooltip:SetText("Glyph options", 1, 1, 1)
+    GameTooltip:AddLine("Toggle slot name labels.", 0.85, 0.85, 0.85, true)
+    GameTooltip:Show()
+  end)
+  cog:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+  end)
+
+  parent.cog = cog
+  return cog
+end
+
 local function layoutRoot()
   local h = T.Host and T.Host() or T.frame
   if not h then return nil end
@@ -496,6 +623,7 @@ local function layoutRoot()
     root.title = root:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     root.title:SetPoint("TOP", 0, -8)
     root.title:SetText("Glyphs")
+    buildGlyphCog(root)
   end
 
   root:ClearAllPoints()
@@ -597,6 +725,10 @@ local function updateSocket(button, info, activePane, wantMajor)
     button.Plus:SetText("")
     button._fallbackName = "Glyph Socket"
     button._fallbackState = "Unavailable"
+    if button.Name then
+      button.Name:SetText("")
+      button.Name:Hide()
+    end
     button:EnableMouse(false)
     button._activePane = nil
     button:SetAlpha(0.45)
@@ -630,6 +762,10 @@ local function updateSocket(button, info, activePane, wantMajor)
     button.Plus:SetText("")
     button._fallbackName = "Locked socket"
     button._fallbackState = "Requires higher level"
+    if button.Name then
+      button.Name:SetText("")
+      button.Name:Hide()
+    end
     return
   end
 
@@ -692,8 +828,19 @@ local function updateSocket(button, info, activePane, wantMajor)
   applyIconHover(button, button._hovered)
 
   button.Plus:SetText("")
-  button._fallbackName = spellName or "Glyph"
+  local displayName = hasGlyph and glyphDisplayName(info, spellName) or nil
+  button._fallbackName = displayName or spellName or "Glyph"
   button._fallbackState = hasGlyph and "Equipped" or "Empty socket"
+  if button.Name then
+    if glyphLabelNamesEnabled() and hasGlyph and displayName then
+      button.Name:SetText(displayName)
+      button.Name:SetAlpha(activePane and 1 or 0.8)
+      button.Name:Show()
+    else
+      button.Name:SetText("")
+      button.Name:Hide()
+    end
+  end
 end
 
 local function layoutPane(pane, index, total, rootWidth, rootHeight)
