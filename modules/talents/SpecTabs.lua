@@ -223,6 +223,14 @@ function T.RefreshSpecTabs()
     NE.tabs.SizeAndAnchorTabs(f, tabsToSize, { startX = 14, startY = 0, parentPoint = "BOTTOMLEFT" })
   end
 
+  if num < 2 and hasGlyph then
+    local gtab = _G[GLYPH_TAB_NAME]
+    if gtab then
+      gtab:ClearAllPoints()
+      gtab:SetPoint("TOPRIGHT", f, "BOTTOMRIGHT", -14, 0)
+    end
+  end
+
   if num >= 2 then
     for g = 1, 2 do setTabArt(_G[TAB_NAMES[g]], (not glyphActive) and (g == viewG)) end
     if glyphActive then

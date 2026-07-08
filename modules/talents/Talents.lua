@@ -607,6 +607,7 @@ local function buildWindow()
     if T.Populate then guard("populate", T.Populate) end
     if T.GlyphsEnsureUI then guard("glyphs.ensure", T.GlyphsEnsureUI) end
     if T.GlyphsRefresh then guard("glyphs.refresh", T.GlyphsRefresh) end
+    if T.GlyphsApplyPaneVisibility then guard("glyphs.visibility", T.GlyphsApplyPaneVisibility) end
   end)
 
   return f
@@ -644,13 +645,23 @@ function T.Toggle()
   if f:IsShown() then f:Hide() else f:Show() end
 end
 
+function T.OpenGlyphTab()
+  local f = T.frame or buildWindow()
+  if not f then return end
+  if PlayerTalentFrame and PlayerTalentFrame.Hide then PlayerTalentFrame:Hide() end
+  if GlyphFrame and GlyphFrame.Hide then GlyphFrame:Hide() end
+  if not f:IsShown() then f:Show() end
+  if T.GlyphsSetActive then T.GlyphsSetActive(true) end
+  if T.GlyphsRefresh then guard("glyphs.refresh", T.GlyphsRefresh) end
+  if T.GlyphsApplyPaneVisibility then guard("glyphs.visibility", T.GlyphsApplyPaneVisibility) end
+  if T.RefreshSpecTabs then guard("tabs.refresh", T.RefreshSpecTabs) end
+end
+
 -- ----------------------------------------------------------------------------
 -- SLASH + Blizzard reroute. /netalents toggles the window; ToggleTalentFrame is rerouted so the
 -- default talent key opens ours (original saved first).
 -- ----------------------------------------------------------------------------
 local function interceptBlizzard()
-  if T._intercepted then return end
-  T._intercepted = true
   if type(ToggleTalentFrame) == "function" and not T._origToggle then
     T._origToggle = ToggleTalentFrame
     -- TAINT: ToggleTalentFrame is an INSECURE FrameXML toggle (PlayerTalentFrame is LoadOnDemand
@@ -664,6 +675,35 @@ local function interceptBlizzard()
   if TalentMicroButton and TalentMicroButton.SetScript then
     TalentMicroButton:SetScript("OnClick", function() T.Toggle() end)
   end
+
+  local function suppressStockFrame(frameName)
+    local frame = _G[frameName]
+    if frame and frame.HookScript and not frame._neSuppressed then
+      frame._neSuppressed = true
+      frame:HookScript("OnShow", function(self)
+        if T.OpenGlyphTab then T.OpenGlyphTab() end
+        if self and self.Hide then self:Hide() end
+      end)
+    end
+  end
+
+  suppressStockFrame("PlayerTalentFrame")
+  suppressStockFrame("GlyphFrame")
+
+  if type(ToggleGlyphFrame) == "function" and not T._origToggleGlyphFrame then
+    T._origToggleGlyphFrame = ToggleGlyphFrame
+    ToggleGlyphFrame = function(...)
+      T.OpenGlyphTab()
+    end
+  end
+
+  if GlyphFrame and GlyphFrame.HookScript and not T._glyphFrameHooked then
+    T._glyphFrameHooked = true
+    GlyphFrame:HookScript("OnShow", function(self)
+      if T.OpenGlyphTab then T.OpenGlyphTab() end
+      if self and self.Hide then self:Hide() end
+    end)
+  end
 end
 
 _G.SLASH_NETALENTS1 = "/netalents"
@@ -673,10 +713,18 @@ SlashCmdList["NETALENTS"] = function() T.Toggle() end
 -- ----------------------------------------------------------------------------
 -- Boot. PLAYER_LOGIN builds the window + Host + Blizzard reroute. Scale/display events re-pin.
 -- ----------------------------------------------------------------------------
-local function boot(event)
+local function boot(event, arg1)
   if event == "PLAYER_LOGIN" then
     buildWindow()
     T.Host()                       -- create the content root the renderer parents to
+    guard("intercept", interceptBlizzard)
+    return
+  end
+  if event == "ADDON_LOADED" and arg1 == "Blizzard_GlyphUI" then
+    guard("intercept", interceptBlizzard)
+    return
+  end
+  if event == "ADDON_LOADED" and (arg1 == "Blizzard_TalentUI" or arg1 == "Blizzard_GlyphUI") then
     guard("intercept", interceptBlizzard)
     return
   end
@@ -696,14 +744,15 @@ if NE.modules and NE.modules.Register then
     label    = "Talents Panel",
     category = "Windows",
     desc     = "The modern talents window. Turn off to use the standard Blizzard talent window.",
-    events   = { "PLAYER_LOGIN", "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED" },
-    onBoot   = function(event) boot(event) end,
+    events   = { "PLAYER_LOGIN", "ADDON_LOADED", "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED" },
+    onBoot   = function(event, arg1) boot(event, arg1) end,
   })
 else
   -- Standalone fallback boot if the module registry isn't available.
   local bf = CreateFrame("Frame")
   bf:RegisterEvent("PLAYER_LOGIN")
+  bf:RegisterEvent("ADDON_LOADED")
   bf:RegisterEvent("UI_SCALE_CHANGED")
   bf:RegisterEvent("DISPLAY_SIZE_CHANGED")
-  bf:SetScript("OnEvent", function(_, event) boot(event) end)
+  bf:SetScript("OnEvent", function(_, event, arg1) if event == "ADDON_LOADED" then boot(event, arg1) else boot(event) end end)
 end
