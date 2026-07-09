@@ -377,11 +377,23 @@ local function createCard(i)
   b:HookScript("OnMouseUp", function()
     if not card.unlearned then card.Button.IconHighlight:SetAlpha(0.35) end
   end)
+  -- Pick the card up onto the cursor for placing on an action bar. Spellbook spells go by slot; mounts
+  -- and vanity pets are companions (no slot) so they use PickupCompanion; a spellID pickup is the last
+  -- resort. This is why dragging a mount to a bar did nothing before — the slot-only path skipped them.
+  local function cardPickup()
+    if card.passive or InCombatLockdown() then return end
+    if card.slot and PickupSpellBookItem then
+      PickupSpellBookItem(card.slot, card.bookType)
+    elseif card.companionType and card.companionIndex and PickupCompanion then
+      PickupCompanion(card.companionType, card.companionIndex)   -- mounts / vanity pets → action bar
+    elseif card.spellID and PickupSpell then
+      PickupSpell(card.spellID)
+    end
+  end
+
   b:SetScript("OnDragStart", function()
     if card.passive then return end   -- passives are click/drag-inert (still hover for tooltip)
-    if card.slot and not InCombatLockdown() and PickupSpellBookItem then
-      PickupSpellBookItem(card.slot, card.bookType)
-    end
+    cardPickup()
   end)
 
   -- Modified clicks: shift=link, ctrl=pickup. Blank the secure action under those modifiers so the
@@ -401,9 +413,7 @@ local function createCard(i)
         if link then ChatEdit_InsertLink(link) end
       end
     elseif IsModifiedClick and IsModifiedClick("PICKUPACTION") then
-      if card.slot and not InCombatLockdown() and PickupSpellBookItem then
-        PickupSpellBookItem(card.slot, card.bookType)
-      end
+      cardPickup()
     end
   end)
 
