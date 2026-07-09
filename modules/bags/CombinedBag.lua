@@ -635,68 +635,6 @@ local function refresh()
 end
 CB.Refresh = refresh
 
--- Diagnostic (/nebags qual): dump the quality-ring state of the first few item buttons so we can see
--- WHY a rarity glow isn't visible — whether the IconBorder exists, is shown, its layer/alpha/colour.
-function CB.QualityDump()
-  local out = DEFAULT_CHAT_FRAME
-  local function p(s) if out then out:AddMessage("|cff88ccffNEBags|r " .. s) end end
-  if not (frame and frame:IsShown() and grid and grid.ForEachButton) then p("open the bag first"); return end
-  local found = 0
-  grid:ForEachButton(function(b)
-    if found >= 3 then return end
-    local bag, slot = b._bagID, b._slotID
-    local info = bag and slot and C_Container and C_Container.GetContainerItemInfo
-             and C_Container.GetContainerItemInfo(bag, slot)
-    if not info then return end
-    found = found + 1
-    local ib = b.IconBorder
-    local q = info.quality
-    if (not q or q < 0) and (info.hyperlink or info.itemID) and GetItemInfo then
-      q = select(3, GetItemInfo(info.hyperlink or info.itemID))
-    end
-    local shown, layer, sub, a, r, g, bl, tex
-    if ib then
-      shown = ib:IsShown(); layer, sub = ib:GetDrawLayer(); a = ib:GetAlpha()
-      r, g, bl = ib:GetVertexColor(); tex = ib:GetTexture()
-    end
-    p(string.format("[%s,%s] q=%s border=%s shown=%s layer=%s/%s a=%.2f col=%.2f,%.2f,%.2f tex=%s",
-      tostring(bag), tostring(slot), tostring(q), ib and "yes" or "NIL", tostring(shown),
-      tostring(layer), tostring(sub), a or -1, r or -1, g or -1, bl or -1, tostring(tex)))
-  end)
-  if found == 0 then p("no items found in the open bags") end
-end
-
--- Diagnostic (/nebags fam): dump each bag's detected family + a few specialty-family items, so we can
--- see whether specialty-bag routing has the data it needs (bag family from GetContainerNumFreeSlots,
--- item family from GetItemFamily). If a quiver shows family=0 or arrows show family=0, the API is the
--- problem; otherwise routing should place them.
-function CB.FamilyDump()
-  local out = DEFAULT_CHAT_FRAME
-  local function p(s) if out then out:AddMessage("|cff88ccffNEBags|r " .. s) end end
-  p("--- bags (family / slots) ---")
-  for _, bd in ipairs(orderedBags()) do
-    p(string.format("bag %d: family=%d slots=%d", bd.bag, bd.family or 0,
-      C_Container.GetContainerNumSlots(bd.bag) or 0))
-  end
-  p("--- specialty-family items ---")
-  local shown = 0
-  for bag = 0, NUM_BAG_SLOTS do
-    local n = C_Container.GetContainerNumSlots(bag) or 0
-    for s = 1, n do
-      local info = shown < 10 and C_Container.GetContainerItemInfo(bag, s)
-      if info and (info.itemID or info.hyperlink) then
-        local fam = (GetItemFamily and GetItemFamily(info.hyperlink or info.itemID)) or 0
-        if fam ~= 0 then
-          shown = shown + 1
-          p(string.format("  [%d,%d] %s family=%d", bag, s,
-            tostring(GetItemInfo(info.hyperlink or info.itemID)), fam))
-        end
-      end
-    end
-  end
-  if shown == 0 then p("  (no items with a specialty family found in your bags)") end
-end
-
 -- ----------------------------------------------------------------------------
 -- Show / hide / toggle. Showing suppresses the stock container frames.
 -- ----------------------------------------------------------------------------
@@ -1104,7 +1042,8 @@ end
 -- ============================================================================
 local CONTAINER_BAG_OFFSET = 19   -- inventory slot 20..23 ↔ container 1..4
 
--- Debug print (toggle with /nebags debug). Helps diagnose the bag-swap without a live test session.
+-- Dormant bag-swap trace helper. Inert unless CB._debug is set true (no user command sets it); kept
+-- inline so the swap logic stays annotated. Set CB._debug=true via /script to re-enable if debugging.
 local function dbg(...)
   if CB._debug and DEFAULT_CHAT_FRAME then
     local parts = {}
@@ -1461,22 +1400,6 @@ local function boot()
   installIntercept()
   installWatcher()
   installBagEquipHooks()
-  -- /nebags debug — toggle bag-swap diagnostics in chat.
-  _G.SLASH_NEBAGS1 = "/nebags"
-  _G.SlashCmdList = _G.SlashCmdList or {}
-  _G.SlashCmdList["NEBAGS"] = function(msg)
-    msg = (msg or ""):lower()
-    if msg:find("qual") then
-      CB.QualityDump()   -- dump the first shown item button's quality-ring state (glow diagnostics)
-    elseif msg:find("fam") then
-      CB.FamilyDump()    -- dump bag families + specialty item families (routing diagnostics)
-    elseif msg:find("debug") then
-      CB._debug = not CB._debug
-      if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cff88ccffNEBags|r debug " .. (CB._debug and "ON" or "OFF")) end
-    else
-      if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cff88ccffNEBags|r usage: /nebags debug | qual | fam") end
-    end
-  end
 end
 CB.Boot = boot
 
