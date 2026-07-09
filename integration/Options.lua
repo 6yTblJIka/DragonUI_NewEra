@@ -52,9 +52,10 @@ local function builder(scroll)
         C:AddDescription(scroll,
             "Use DragonUI's window in place of the Blizzard default. Changes take effect after a /reload.")
         local WINDOWS = {
-            { id = "character", label = "Character panel" },
-            { id = "Spellbook", label = "Spellbook" },
-            { id = "Talents",   label = "Talents" },
+            { id = "character",   label = "Character panel" },
+            { id = "Spellbook",   label = "Spellbook" },
+            { id = "Talents",     label = "Talents" },
+            { id = "Professions", label = "Professions" },
         }
         for _, w in ipairs(WINDOWS) do
             local id = w.id
@@ -91,9 +92,10 @@ local function builder(scroll)
         local AceGUI = LibStub and LibStub("AceGUI-3.0")
         local MODES = { ui = "Use UI scale", none = "No scaling", custom = "Custom" }
         local WINDOWS = {
-            { key = "character", label = "Character" },
-            { key = "spellbook", label = "Spellbook" },
-            { key = "talents",   label = "Talents" },
+            { key = "character",   label = "Character" },
+            { key = "spellbook",   label = "Spellbook" },
+            { key = "talents",     label = "Talents" },
+            { key = "professions", label = "Professions" },
         }
 
         -- One window's stacked controls: a centered column header, a mode dropdown, and a custom-scale

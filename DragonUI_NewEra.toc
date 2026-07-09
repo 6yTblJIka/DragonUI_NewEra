@@ -97,5 +97,13 @@ modules\talents\Loadouts.lua
 modules\talents\LoadoutsUI.lua
 modules\talents\Glyphs.lua
 
+# --- Professions (retail-style crafting window; downport of NewEra/Professions/Crafting) ---
+# Load order: Assets (atlas + texcoord registration) -> Window (chrome + event wiring) ->
+# RecipeList (left panel, FauxScrollFrame) -> Crafting (schematic form, rank bar, controls).
+modules\professions\Assets.lua
+modules\professions\Window.lua
+modules\professions\RecipeList.lua
+modules\professions\Crafting.lua
+
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---
 core\_HelloDemo.lua
