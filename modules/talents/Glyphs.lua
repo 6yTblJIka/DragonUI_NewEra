@@ -12,6 +12,72 @@ local GLYPH_DOT_SIZE = 4
 local GLYPH_DOT_GAP = 9
 local GLYPH_FLOW_SPEED = 16
 local GLYPH_NAME_PREFIX = "Glyph of "
+-- Socket ring: the gold circle from the talents sheet (talents-node-circle-yellow), isolated from a
+-- 2x upscale for a crisper edge and shipped as a 128 TGA. White tint on the active spec (true gold),
+-- dimmed when locked/inactive/off-spec.
+local GLYPH_RING_TEXTURE = "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\glyph-ring-gold.tga"
+-- Greyscale copy of the ring for LEVEL-LOCKED sockets (desaturated). A separate texture, not
+-- SetDesaturated(), because on 3.3.5a SetDesaturated OVERRIDES the vertex tint we use to dim it.
+local GLYPH_RING_DESAT_TEXTURE = "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\glyph-ring-desat.tga"
+-- The visible ring fills only this fraction of its (transparent-margined) texture box; the marching
+-- ants use it so their endpoints land on the ring edge instead of out in the empty margin.
+local RING_ART_FRAC = 0.66
+
+-- Diablo-style animated globes behind each socket (HoradricSpheres idle sprite, downsized to 512):
+-- health (red) on MAJOR sockets, mana (blue) on MINOR. Full-colour + animated for a live glyph,
+-- desaturated when the socket is unused. One shared 30fps ticker cycles the 67-frame flipbook across
+-- every socket globe (texcoords are normalised to the original 4096 sheet, so they hold at any size).
+local GLOBE_HEALTH = "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\glyph-globe-health.tga"
+local GLOBE_MANA   = "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\glyph-globe-mana.tga"
+local GLOBE_FRAMES, GLOBE_COLS, GLOBE_FW, GLOBE_STRIDE, GLOBE_SHEET = 67, 11, 350, 352, 4096
+local function globeCoord(i)
+  local col = (i - 1) % GLOBE_COLS
+  local row = math.floor((i - 1) / GLOBE_COLS)
+  local x, y = col * GLOBE_STRIDE, 1 + row * GLOBE_STRIDE
+  return x / GLOBE_SHEET, (x + GLOBE_FW) / GLOBE_SHEET, y / GLOBE_SHEET, (y + GLOBE_FW) / GLOBE_SHEET
+end
+local glyphGlobes = {}
+local globeFrameIndex = 1
+local globeTicker
+local function ensureGlobeTicker()
+  if globeTicker or not (C_Timer and C_Timer.NewTicker) then return end
+  globeTicker = C_Timer.NewTicker(1 / 30, function()
+    if not (T.GlyphsIsActive and T.GlyphsIsActive()) then return end   -- only animate while visible
+    globeFrameIndex = globeFrameIndex % GLOBE_FRAMES + 1
+    local l, r, t, b = globeCoord(globeFrameIndex)
+    for i = 1, #glyphGlobes do
+      local g = glyphGlobes[i]
+      if g:IsShown() then g:SetTexCoord(l, r, t, b) end
+    end
+  end)
+end
+-- Glass gloss/shine overlaid on TOP of everything (over the rune) so the socket reads as a glass orb.
+local GLYPH_GLOSS_TEXTURE = "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\glyph-orbgloss.tga"
+-- Soft round drop-shadow behind the globe (lifted from the reference sheet). Baked dark.
+local GLYPH_SHADOW_TEXTURE = "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\glyph-shadow.tga"
+-- Multipliers on the socket's base size. The animated sphere and the gloss over it are grown so the
+-- orb reads big; the gold ring is pushed out to sit at the sphere's rim; the shadow haloes just beyond.
+local GLOBE_SCALE = 1.00   -- animated sphere (and the gloss over it) — fills the orb
+local RING_SCALE  = 1.8   -- gold ring — sits at the sphere's outer rim
+-- Point a socket's globe at health/mana; full colour + lit when `lit`.
+local function configGlobe(button, isMajor, lit, size)
+  local g = button and button.Globe
+  if not g then return end
+  g:SetTexture(isMajor and GLOBE_HEALTH or GLOBE_MANA)
+  local d = size * GLOBE_SCALE
+  g:SetSize(d, d)
+  if g.SetDesaturated then g:SetDesaturated(not lit) end
+  g:SetAlpha(lit and 1 or 0.45)
+  g:Show()
+  -- Glass gloss on top (over the rune), sized to the orb, for the glass-sphere look.
+  local gs = button.Gloss
+  if gs then
+    gs:SetTexture(GLYPH_GLOSS_TEXTURE)
+    gs:SetSize(d * 1.2, d * 1.2)
+    gs:SetAlpha(lit and 0.8 or 0.5)
+    gs:Show()
+  end
+end
 
 local root
 local panes = {}
@@ -77,6 +143,20 @@ local function queueGlyphRefresh(passes)
   refreshDriver:Show()
 end
 
+-- Refresh the glyph view whenever the game reports a glyph change. The removal path alone polled a
+-- few frames, which read stale socket data — so a removed glyph's icon lingered. These events fire
+-- once the socket data has actually updated, so the graphic clears/updates reliably.
+do
+  local ev = CreateFrame("Frame")
+  for _, e in ipairs({ "GLYPH_ADDED", "GLYPH_REMOVED", "GLYPH_UPDATED", "USE_GLYPH",
+                       "ACTIVE_TALENT_GROUP_CHANGED" }) do
+    pcall(function() ev:RegisterEvent(e) end)
+  end
+  ev:SetScript("OnEvent", function()
+    if T.GlyphsIsActive and T.GlyphsIsActive() then queueGlyphRefresh(2) end
+  end)
+end
+
 StaticPopupDialogs = StaticPopupDialogs or {}
 if not StaticPopupDialogs["NE_GLYPH_REMOVE_CONFIRM"] then
   StaticPopupDialogs["NE_GLYPH_REMOVE_CONFIRM"] = {
@@ -90,7 +170,29 @@ if not StaticPopupDialogs["NE_GLYPH_REMOVE_CONFIRM"] then
       if type(_G.RemoveGlyphFromSocket) == "function" then
         local ok = pcall(_G.RemoveGlyphFromSocket, info.socket)
         if ok then
-          queueGlyphRefresh(3)
+          -- Drop the removed glyph's rune immediately (visual feedback); the repaint below fills the
+          -- empty placeholder once the socket actually reads empty.
+          button._hasGlyph = nil
+          if button.Icon then button.Icon:SetTexture(nil) end
+          if button.IconTint then button.IconTint:Hide() end
+          if button.Glow then button.Glow:Hide() end
+          -- RemoveGlyphFromSocket round-trips the server (~0.5s) before GetGlyphSocketInfo reports the
+          -- socket empty — its glyphSpell (3rd return on 3.3.5a) goes nil. Poll on a timer until it
+          -- clears, THEN repaint, so we never repaint from stale data (which redrew the old rune). The
+          -- GLYPH_REMOVED/GLYPH_UPDATED handler also repaints if the server fires those.
+          local socket, group = info.socket, info.group
+          local tries = 0
+          local function poll()
+            tries = tries + 1
+            local _, _, glyphSpell = GetGlyphSocketInfo(socket, group)
+            local cleared = not (type(glyphSpell) == "number" and glyphSpell > 0)
+            if cleared or tries >= 25 then
+              if T.GlyphsRefresh then pcall(T.GlyphsRefresh) end
+            elseif C_Timer and C_Timer.After then
+              C_Timer.After(0.15, poll)
+            end
+          end
+          if C_Timer and C_Timer.After then C_Timer.After(0.15, poll) else queueGlyphRefresh(60) end
         end
       end
     end,
@@ -178,8 +280,8 @@ local function drawPaneEdge(pane, startButton, endButton, color)
   local dist = math.sqrt(dx * dx + dy * dy)
   if dist < 1 then return end
   local ux, uy = dx / dist, dy / dist
-  local startRadius = (startButton.Border and startButton.Border:GetWidth() or startButton:GetWidth() or 0) * 0.5
-  local endRadius = (endButton.Border and endButton.Border:GetWidth() or endButton:GetWidth() or 0) * 0.5
+  local startRadius = (startButton.Border and startButton.Border:GetWidth() or startButton:GetWidth() or 0) * 0.5 * RING_ART_FRAC
+  local endRadius = (endButton.Border and endButton.Border:GetWidth() or endButton:GetWidth() or 0) * 0.5 * RING_ART_FRAC
   local x0, y0 = sx + ux * startRadius, sy + uy * startRadius
   local span = dist - startRadius - endRadius
   if span <= 0 then return end
@@ -413,10 +515,12 @@ local function clickStockGlyphSocket(button, mouseButton)
   if not (info and info.socket and button._activePane) then return end
 
   if mouseButton == "RightButton" and type(_G.IsShiftKeyDown) == "function" and _G.IsShiftKeyDown() then
-    if type(_G.StaticPopup_Show) == "function" then
+    -- Shift-right-click is the "remove glyph" gesture — only offer it on a socket that HAS a glyph.
+    -- Consume the click either way so an empty socket does nothing (no confirm popup, no fall-through).
+    if button._hasGlyph and type(_G.StaticPopup_Show) == "function" then
       _G.StaticPopup_Show("NE_GLYPH_REMOVE_CONFIRM", nil, nil, { button = button })
-      return
     end
+    return
   end
 
   local stock = getStockGlyphSocket(button)
@@ -468,7 +572,23 @@ local function buildSocket(parent, index)
   b:SetSize(64, 64)
   b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
-  b.Border = b:CreateTexture(nil, "ARTWORK")
+  -- Stack, bottom to top: shadow -> animated globe -> rune (Icon) -> orb gloss -> gold ring (Border).
+  -- 1) Soft shadow at the very bottom.
+  b.GlowUnder = b:CreateTexture(nil, "BACKGROUND", nil, -2)
+  b.GlowUnder:SetPoint("CENTER")
+  -- 2) Animated Diablo globe on top of the shadow, still behind the rune.
+  b.Globe = b:CreateTexture(nil, "BACKGROUND", nil, -1)
+  b.Globe:SetPoint("CENTER")
+  b.Globe:SetTexCoord(globeCoord(1))
+  glyphGlobes[#glyphGlobes + 1] = b.Globe
+  ensureGlobeTicker()
+
+  -- 4) Glass gloss over the rune (ARTWORK 3 → above the Icon/IconTint at 1/2, below the ring).
+  b.Gloss = b:CreateTexture(nil, "ARTWORK", nil, 3)
+  b.Gloss:SetPoint("CENTER")
+
+  -- 5) Gold ring on the very top (OVERLAY → above the gloss and everything else).
+  b.Border = b:CreateTexture(nil, "OVERLAY", nil, 1)
   b.Border:SetSize(64, 64)
   b.Border:SetPoint("CENTER")
 
@@ -620,9 +740,7 @@ local function layoutRoot()
   if not root then
     root = CreateFrame("Frame", "NE_TalentGlyphRoot", h)
     root:SetFrameLevel((h:GetFrameLevel() or 1))
-    root.title = root:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    root.title:SetPoint("TOP", 0, -8)
-    root.title:SetText("Glyphs")
+    -- No small "Glyphs" title here — the big "GLYPHS" header lives on each pane (see buildPane).
     buildGlyphCog(root)
   end
 
@@ -651,7 +769,7 @@ local function buildPane(group)
   if pane.spec.SetTextScale then pane.spec:SetTextScale(1.1) end
   pane.spec:SetJustifyH("CENTER")
   pane.spec:SetPoint("TOP", 0, -28)
-  pane.spec:SetText(groupStatus(group))
+  pane.spec:SetText("GLYPHS")   -- big caps header (styled like the talents-tab spec names)
 
   pane.core = pane:CreateTexture(nil, "ARTWORK")
   pane.core:SetSize(84, 84)
@@ -687,7 +805,7 @@ end
 
 local function applyPaneStyle(pane, active)
   if not pane then return end
-  pane.spec:SetText(groupStatus(pane._group or 1))
+  pane.spec:SetText("GLYPHS")
   pane.spec:SetTextColor(1, 1, 1)
 end
 
@@ -705,11 +823,14 @@ local function updateSocket(button, info, activePane, wantMajor)
 
   if not info then
     button:SetSize(slotButtonSize, slotButtonSize)
-    setAtlas(button.Border, "talents-node-circle-locked", nil)
+    if button.Globe then button.Globe:Hide() end   -- no socket → no globe
+    if button.GlowUnder then button.GlowUnder:Hide() end
+    if button.Gloss then button.Gloss:Hide() end
+    button.Border:SetTexture(GLYPH_RING_TEXTURE)
     local lockedBorderSize = slotIsMajor and lockedMajorBorderSize or lockedMinorBorderSize
-    button.Border:SetSize(lockedBorderSize, lockedBorderSize)
+    button.Border:SetSize(lockedBorderSize * RING_SCALE, lockedBorderSize * RING_SCALE)
     setSocketHitRect(button, slotButtonSize, lockedBorderSize)
-    button._borderTint = { 0.78, 0.80, 0.84, 1 }
+    button._borderTint = { 0.55, 0.55, 0.55, 1 }
     button._hoverTint = nil
     button._hoverBorder = nil
     applyBorderTint(button, false)
@@ -742,11 +863,13 @@ local function updateSocket(button, info, activePane, wantMajor)
 
   if not info.enabled then
     button:SetSize(slotButtonSize, slotButtonSize)
-    setAtlas(button.Border, activePane and "talents-node-circle-locked" or "talents-node-circle-gray", nil)
+    -- Level-locked socket: desaturated (greyscale) ring + globe until the player is high enough level.
+    button.Border:SetTexture(GLYPH_RING_DESAT_TEXTURE)
     local lockedBorderSize = slotIsMajor and lockedMajorBorderSize or lockedMinorBorderSize
-    button.Border:SetSize(lockedBorderSize, lockedBorderSize)
+    button.Border:SetSize(lockedBorderSize * RING_SCALE, lockedBorderSize * RING_SCALE)
+    configGlobe(button, slotIsMajor, false, lockedBorderSize)   -- locked socket → desaturated globe
     setSocketHitRect(button, slotButtonSize, lockedBorderSize)
-    button._borderTint = { 0.78, 0.80, 0.84, 1 }
+    button._borderTint = { 0.55, 0.55, 0.55, 1 }
     button._hoverTint = nil
     button._hoverBorder = nil
     applyBorderTint(button, false)
@@ -775,15 +898,21 @@ local function updateSocket(button, info, activePane, wantMajor)
   end
 
   local isMajor = slotIsMajor
-  local hasGlyph = (type(info.glyphSpellID) == "number" and info.glyphSpellID > 0) or (info.link ~= nil)
+  -- glyphSpell is the authoritative "is there a glyph" field (nil when the socket is empty). Do NOT
+  -- fall back to info.link: GetGlyphLink returns a STALE link for a just-emptied socket, which kept
+  -- hasGlyph true after a removal so the old glyph icon lingered.
+  local hasGlyph = (type(info.glyphSpellID) == "number" and info.glyphSpellID > 0)
   local borderSize = isMajor and ((hasGlyph and filledMajorBorderSize) or emptyMajorBorderSize)
                              or ((hasGlyph and filledMinorBorderSize) or emptyMinorBorderSize)
-  local stateAtlas = "talents-node-circle-gray"
-  setAtlas(button.Border, stateAtlas, nil)
-  button.Border:SetSize(borderSize, borderSize)
+  -- Gold portrait ring for the socket (the character portrait's metal ring). White tint on the active
+  -- spec shows its true gold; the off-spec is dimmed. Hover brightens to full.
+  button.Border:SetTexture(GLYPH_RING_TEXTURE)
+  button.Border:SetSize(borderSize * RING_SCALE, borderSize * RING_SCALE)
+  -- Globe: full colour + animated only for a live glyph on the active spec; desaturated when unused.
+  configGlobe(button, isMajor, hasGlyph and activePane, borderSize)
   setSocketHitRect(button, slotButtonSize, borderSize)
-  button._borderTint = activePane and { 0.63, 0.49, 0.28, 1 } or { 0.74, 0.76, 0.80, 1 }
-  button._hoverTint = { 1.0, 0.86, 0.24, 1 }
+  button._borderTint = activePane and { 1.0, 1.0, 1.0, 1 } or { 0.70, 0.70, 0.70, 1 }
+  button._hoverTint = { 1.0, 1.0, 1.0, 1 }
   button._hoverBorder = true
   applyBorderTint(button, button._hovered)
 
@@ -794,12 +923,15 @@ local function updateSocket(button, info, activePane, wantMajor)
     iconSize = hasGlyph and 34 or 30
   end
   if not activePane then iconSize = iconSize - 2 end
+  if hasGlyph then iconSize = iconSize * 0.9 end   -- printed rune sits at 90% scale
   button.Icon:SetSize(iconSize, iconSize)
   local iconTex = hasGlyph and (info.icon or spellIcon) or emptyGlyphIcon(info.glyphType)
+  if not hasGlyph then button.Icon:SetTexture(nil) end   -- drop any prior glyph rune before the placeholder
   button.Icon:SetTexture(iconTex)
   if button.Icon.SetVertexColor then button.Icon:SetVertexColor(1, 1, 1, 1) end
   button._hasGlyph = hasGlyph and true or nil
-  button._iconAlpha = ((hasGlyph and activePane) and 1 or (activePane and 1 or 0.75))
+  -- Printed rune at 75% opacity; empty/off-spec placeholder keeps its own faint alpha.
+  button._iconAlpha = hasGlyph and (activePane and 0.75 or 0.6) or (activePane and 1 or 0.75)
   button.Icon:SetAlpha(button._iconAlpha)
   if button.Icon.SetDesaturated then
     if hasGlyph and activePane then
@@ -999,7 +1131,6 @@ function T.GlyphsRefresh()
   local paneGroups = { 1 }
   if totalGroups >= 2 then paneGroups[#paneGroups + 1] = 2 end
 
-  if root.title then root.title:SetText("Glyphs") end
 
   for i, group in ipairs(paneGroups) do
     local pane = panes[group]
