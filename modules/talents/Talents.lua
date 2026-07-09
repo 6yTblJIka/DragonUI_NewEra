@@ -676,6 +676,17 @@ local function interceptBlizzard()
     TalentMicroButton:SetScript("OnClick", function() T.Toggle() end)
   end
 
+  -- The stock PlayerTalentFrame/GlyphFrame are UISpecialFrames (ESC-closable). We fully replace them
+  -- and keep them hidden, but Blizzard RE-SHOWS GlyphFrame while a glyph is being applied — leaving it
+  -- as an invisible ESC target that swallows the key, so the game menu never opens after you socket a
+  -- glyph. Drop them from UISpecialFrames so ESC ignores them entirely (we still redirect their OnShow).
+  local function dropSpecialFrame(name)
+    if type(name) ~= "string" or type(UISpecialFrames) ~= "table" then return end
+    for i = #UISpecialFrames, 1, -1 do
+      if UISpecialFrames[i] == name then tremove(UISpecialFrames, i) end
+    end
+  end
+
   local function suppressStockFrame(frameName)
     local frame = _G[frameName]
     if frame and frame.HookScript and not frame._neSuppressed then
@@ -683,12 +694,15 @@ local function interceptBlizzard()
       frame:HookScript("OnShow", function(self)
         if T.OpenGlyphTab then T.OpenGlyphTab() end
         if self and self.Hide then self:Hide() end
+        dropSpecialFrame(self and self.GetName and self:GetName())   -- keep ESC off the phantom
       end)
     end
   end
 
   suppressStockFrame("PlayerTalentFrame")
   suppressStockFrame("GlyphFrame")
+  dropSpecialFrame("PlayerTalentFrame")
+  dropSpecialFrame("GlyphFrame")
 
   if type(ToggleGlyphFrame) == "function" and not T._origToggleGlyphFrame then
     T._origToggleGlyphFrame = ToggleGlyphFrame
@@ -702,6 +716,7 @@ local function interceptBlizzard()
     GlyphFrame:HookScript("OnShow", function(self)
       if T.OpenGlyphTab then T.OpenGlyphTab() end
       if self and self.Hide then self:Hide() end
+      dropSpecialFrame("GlyphFrame")   -- glyph-apply re-shows it; keep ESC off the phantom
     end)
   end
 end
