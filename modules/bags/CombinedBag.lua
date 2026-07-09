@@ -49,6 +49,7 @@ local function log(msg) if NE.Log then NE.Log("COMBINEDBAG", msg) end end
 -- draws at button+4px (SkinButton insets -2/+2), so ITEM_SIZE 34 → 38px visible slot; spacing 11 →
 -- 45px pitch and a 7px gap. Gutters ~18px via LEFT_PADDING 18 / PADDING_WIDTH 36.
 local NUM_BAG_SLOTS  = NUM_BAG_SLOTS or 4            -- backpack(0) + bags 1..4
+local KEYRING_CONTAINER = KEYRING_CONTAINER or -2    -- the keyring is container -2 (its own key row)
 local COLUMNS        = 10
 local ITEM_SIZE      = 34                             -- +4px recess overhang = 38px visible slot
 local ITEM_SPACING_X = 11                            -- pitch 45, visible gap 7 (matches target)
@@ -86,6 +87,16 @@ local TITLE_TEXT         = (type(COMBINED_BAG_TITLE) == "string" and COMBINED_BA
 
 local frame   -- the window (built lazily)
 local grid    -- NE.itemgrid instance over bags 0..NUM_BAG_SLOTS
+local keyGrid -- NE.itemgrid instance over the keyring (container -2), shown as an opt-in bottom row
+
+-- Keyring row layout: a small "Keys" label + one grid row under the main grid, above the money band.
+local KEYS_TOP_GAP = 10   -- gap between the last item row and the keys section
+local KEYS_LABEL_H = 15   -- height reserved for the "Keys" label above the key slots
+
+-- Opt-in: show the keyring as a row inside the combined window. OFF by default → the stock keyring
+-- frame opens normally when you click the keyring (see installIntercept).
+if CB._showKeys == nil then CB._showKeys = false end
+function CB.ShowKeys() return CB._showKeys and true or false end
 
 -- Player's held bags grouped by TYPE: general bags (family 0, incl. the backpack) first, then
 -- specialty bags (quiver, soul, profession, etc.) grouped by family. Drives both the grid display
@@ -531,6 +542,37 @@ local function buildChrome()
   }
   CB.grid = grid
 
+  -- Keyring row: a second grid over container -2, laid out under the main grid (positioned per refresh).
+  -- Its container list is empty unless the "Show keyring row" option is on, so it's a no-op when off.
+  keyGrid = G.New{
+    host       = frame,
+    containers = function() return CB.ShowKeys() and { KEYRING_CONTAINER } or {} end,
+    slotCount  = function(c)
+      if c == KEYRING_CONTAINER then
+        return (GetKeyRingSize and GetKeyRingSize())
+            or (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerNumSlots(c)) or 0
+      end
+      return (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerNumSlots(c)) or 0
+    end,
+    columns    = COLUMNS,
+    itemSize   = ITEM_SIZE,
+    spacingX   = ITEM_SPACING_X,
+    spacingY   = ITEM_SPACING_Y,
+    originX    = LEFT_PADDING,
+    originY    = -TOP_HEADER,   -- repositioned each refresh, below the main grid
+    direction  = "TLBR",
+    namePrefix = "NE_CombinedKey",
+    frameLevel = function() return (frame:GetFrameLevel() or 1) + 5 end,
+  }
+  CB.keyGrid = keyGrid
+
+  -- "Keys" label above the keyring row (shown only when the row has slots and the option is on).
+  local keysLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  keysLabel:SetText(NE.L["Keys"])
+  keysLabel:SetTextColor(1, 0.82, 0)
+  keysLabel:Hide()
+  frame._keysLabel = keysLabel
+
   -- Sorting cover: an opaque panel over the grid, shown while a sort runs, so the item shuffle is
   -- invisible — the player sees "Sorting…" then the finished layout. Also blocks clicks mid-sort.
   local cover = CreateFrame("Frame", nil, frame)
@@ -628,74 +670,41 @@ local function refresh()
 
   contentW = contentW or (COLUMNS * ITEM_SIZE + (COLUMNS - 1) * ITEM_SPACING_X)
   contentH = contentH or 0
-  -- Repopulate the currency pills, then reserve room below the grid for the divider + money band
-  -- (BAND_RESERVE = top gap + band height + bottom gap) so the bottom breathes like the retail bag.
+
+  -- Keyring row (opt-in): sit it just under the last item row, with a "Keys" label above it. keyGrid's
+  -- container list is empty when the option is off, so this is a no-op (0 rows) then. originY is set
+  -- LIVE each refresh so the row tracks the main grid's height.
+  local keysSectionH = 0
+  if keyGrid then
+    local keysTopY = -(TOP_HEADER + contentH + KEYS_TOP_GAP)
+    keyGrid.originY = keysTopY - KEYS_LABEL_H
+    local _, keyRows, _, keyH = keyGrid:Refresh()
+    if NE.bagskin and keyGrid.ForEachButton then
+      keyGrid:ForEachButton(function(b)
+        NE.bagskin.SkinButton(b, ITEM_SIZE)
+        NE.bagskin.ApplyQuality(b, b._bagID, b._slotID)
+        NE.bagskin.ApplyUsableTint(b, b._bagID, b._slotID, CB._redUnusable)
+        NE.bagskin.SetSearchDim(b, searching and not CB.SlotMatches(b._bagID, b._slotID, text))
+      end)
+    end
+    if CB.ShowKeys() and (keyRows or 0) > 0 then
+      keysSectionH = KEYS_TOP_GAP + KEYS_LABEL_H + (keyH or 0)
+      if frame._keysLabel then
+        frame._keysLabel:ClearAllPoints()
+        frame._keysLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT_PADDING, keysTopY)
+        frame._keysLabel:Show()
+      end
+    elseif frame._keysLabel then
+      frame._keysLabel:Hide()
+    end
+  end
+
+  -- Repopulate the currency pills, then reserve room below the grid (+ keys section) for the divider +
+  -- money band (BAND_RESERVE = top gap + band height + bottom gap) so the bottom breathes like retail.
   updateMoneyBand(frame)
-  frame:SetSize(contentW + PADDING_WIDTH, contentH + TOP_HEADER + BAND_RESERVE)
+  frame:SetSize(contentW + PADDING_WIDTH, contentH + TOP_HEADER + keysSectionH + BAND_RESERVE)
 end
 CB.Refresh = refresh
-
--- Diagnostic (/nebags qual): dump the quality-ring state of the first few item buttons so we can see
--- WHY a rarity glow isn't visible — whether the IconBorder exists, is shown, its layer/alpha/colour.
-function CB.QualityDump()
-  local out = DEFAULT_CHAT_FRAME
-  local function p(s) if out then out:AddMessage("|cff88ccffNEBags|r " .. s) end end
-  if not (frame and frame:IsShown() and grid and grid.ForEachButton) then p("open the bag first"); return end
-  local found = 0
-  grid:ForEachButton(function(b)
-    if found >= 3 then return end
-    local bag, slot = b._bagID, b._slotID
-    local info = bag and slot and C_Container and C_Container.GetContainerItemInfo
-             and C_Container.GetContainerItemInfo(bag, slot)
-    if not info then return end
-    found = found + 1
-    local ib = b.IconBorder
-    local q = info.quality
-    if (not q or q < 0) and (info.hyperlink or info.itemID) and GetItemInfo then
-      q = select(3, GetItemInfo(info.hyperlink or info.itemID))
-    end
-    local shown, layer, sub, a, r, g, bl, tex
-    if ib then
-      shown = ib:IsShown(); layer, sub = ib:GetDrawLayer(); a = ib:GetAlpha()
-      r, g, bl = ib:GetVertexColor(); tex = ib:GetTexture()
-    end
-    p(string.format("[%s,%s] q=%s border=%s shown=%s layer=%s/%s a=%.2f col=%.2f,%.2f,%.2f tex=%s",
-      tostring(bag), tostring(slot), tostring(q), ib and "yes" or "NIL", tostring(shown),
-      tostring(layer), tostring(sub), a or -1, r or -1, g or -1, bl or -1, tostring(tex)))
-  end)
-  if found == 0 then p("no items found in the open bags") end
-end
-
--- Diagnostic (/nebags fam): dump each bag's detected family + a few specialty-family items, so we can
--- see whether specialty-bag routing has the data it needs (bag family from GetContainerNumFreeSlots,
--- item family from GetItemFamily). If a quiver shows family=0 or arrows show family=0, the API is the
--- problem; otherwise routing should place them.
-function CB.FamilyDump()
-  local out = DEFAULT_CHAT_FRAME
-  local function p(s) if out then out:AddMessage("|cff88ccffNEBags|r " .. s) end end
-  p("--- bags (family / slots) ---")
-  for _, bd in ipairs(orderedBags()) do
-    p(string.format("bag %d: family=%d slots=%d", bd.bag, bd.family or 0,
-      C_Container.GetContainerNumSlots(bd.bag) or 0))
-  end
-  p("--- specialty-family items ---")
-  local shown = 0
-  for bag = 0, NUM_BAG_SLOTS do
-    local n = C_Container.GetContainerNumSlots(bag) or 0
-    for s = 1, n do
-      local info = shown < 10 and C_Container.GetContainerItemInfo(bag, s)
-      if info and (info.itemID or info.hyperlink) then
-        local fam = (GetItemFamily and GetItemFamily(info.hyperlink or info.itemID)) or 0
-        if fam ~= 0 then
-          shown = shown + 1
-          p(string.format("  [%d,%d] %s family=%d", bag, s,
-            tostring(GetItemInfo(info.hyperlink or info.itemID)), fam))
-        end
-      end
-    end
-  end
-  if shown == 0 then p("  (no items with a specialty family found in your bags)") end
-end
 
 -- ----------------------------------------------------------------------------
 -- Show / hide / toggle. Showing suppresses the stock container frames.
@@ -922,6 +931,53 @@ local function routePass()
   return moved
 end
 
+-- Sweep loose keys out of the regular bags into the keyring (container -2). Keys carry the keyring bag
+-- family (GetItemFamily → the keyring bit) but ALSO fit general bags, so they can sit loose; this moves
+-- any that aren't already in the keyring while free keyring slots remain. Runs as part of the sort.
+local function routeKeysToKeyRing()
+  if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo
+          and PickupContainerItem and GetItemFamily and GetContainerNumFreeSlots and bit and bit.band) then return false end
+  local keyN = (GetKeyRingSize and GetKeyRingSize()) or 0
+  if keyN <= 0 then return false end
+  local keyFamily = select(2, GetContainerNumFreeSlots(KEYRING_CONTAINER)) or 0
+  if keyFamily == 0 then keyFamily = 256 end   -- keyring bag family (fallback if the API reports 0)
+
+  local function isKeyLink(link)
+    if not link then return false end
+    local fam = GetItemFamily(link) or 0
+    if bit.band(fam, keyFamily) ~= 0 then return true end
+    if GetItemInfo then return (select(6, GetItemInfo(link))) == "Key" end   -- enUS type fallback
+    return false
+  end
+
+  -- Free keyring slots to fill.
+  local freeKey = {}
+  for s = 1, keyN do
+    if not C_Container.GetContainerItemInfo(KEYRING_CONTAINER, s) then freeKey[#freeKey + 1] = s end
+  end
+  if #freeKey == 0 then return false end
+
+  local moved = false
+  if ClearCursor then ClearCursor() end
+  for bag = 0, NUM_BAG_SLOTS do
+    local n = C_Container.GetContainerNumSlots(bag) or 0
+    for s = 1, n do
+      if #freeKey == 0 then break end
+      local info = C_Container.GetContainerItemInfo(bag, s)
+      if info and (info.itemID or info.hyperlink) and not info.isLocked
+         and isKeyLink(info.hyperlink or info.itemID) then
+        local dst = table.remove(freeKey, 1)
+        PickupContainerItem(bag, s)
+        PickupContainerItem(KEYRING_CONTAINER, dst)
+        if CursorHasItem and CursorHasItem() then ClearCursor() end
+        moved = true
+      end
+    end
+  end
+  if ClearCursor then ClearCursor() end
+  return moved
+end
+
 -- One pass toward the CACHED plan: compare each live slot to its baked target itemID and move what
 -- it can (skipping locked items). No re-sorting — just cheap itemID compares. Returns the count of
 -- slots not yet matching, so the driver knows when the bag has reached the planned layout.
@@ -1013,7 +1069,8 @@ function CB._sortStep()
   if CB._sortPhase == "route" then
     CB._routeIter = (CB._routeIter or 0) + 1
     local didRoute = routePass()
-    if didRoute and CB._routeIter < ROUTE_MAX_ITERS and C_Timer and C_Timer.After then
+    local didKeys  = routeKeysToKeyRing()   -- move loose keys into the keyring
+    if (didRoute or didKeys) and CB._routeIter < ROUTE_MAX_ITERS and C_Timer and C_Timer.After then
       C_Timer.After(0.25, CB._sortStep)   -- more mis-placed items to migrate to their bags
       return
     end
@@ -1050,6 +1107,10 @@ function CB.SortBags()
   -- HIDE the item buttons/slots so the shuffle is invisible, then float the spinner over the empty bag.
   if buildChrome() then
     if grid and grid.ForEachButton then grid:ForEachButton(function(b) b:Hide() end) end
+    -- The cover has no opaque fill (we hide slots directly), so hide the keyring row + label too or
+    -- they show through the "Sorting…" cover.
+    if keyGrid and keyGrid.ForEachButton then keyGrid:ForEachButton(function(b) b:Hide() end) end
+    if frame._keysLabel then frame._keysLabel:Hide() end
     if frame.sortCover then
       if frame.sortCover.label then frame.sortCover.label:SetText(NE.L["Sorting…"]) end
       frame.sortCover:Raise(); frame.sortCover:Show()
@@ -1104,7 +1165,8 @@ end
 -- ============================================================================
 local CONTAINER_BAG_OFFSET = 19   -- inventory slot 20..23 ↔ container 1..4
 
--- Debug print (toggle with /nebags debug). Helps diagnose the bag-swap without a live test session.
+-- Dormant bag-swap trace helper. Inert unless CB._debug is set true (no user command sets it); kept
+-- inline so the swap logic stays annotated. Set CB._debug=true via /script to re-enable if debugging.
 local function dbg(...)
   if CB._debug and DEFAULT_CHAT_FRAME then
     local parts = {}
@@ -1355,6 +1417,8 @@ function CB.OpenMenu(anchor)
       func = function() CB._reverseSort = not CB._reverseSort; CB.SaveSortPrefs() end },
     { text = NE.L["Red-tint unusable items"], checked = CB._redUnusable and true or false,
       func = function() CB._redUnusable = not CB._redUnusable; CB.SaveSortPrefs(); CB.Refresh() end },
+    { text = NE.L["Show keyring row"], checked = CB._showKeys and true or false,
+      func = function() CB._showKeys = not CB._showKeys; CB.SaveSortPrefs(); CB.Refresh() end },
     { text = NE.L["Auto-empty old bag when swapping"], checked = CB._autoEmptyBag and true or false,
       func = function() CB._autoEmptyBag = not CB._autoEmptyBag; CB.SaveSortPrefs() end },
     { text = NE.L["Merchant"], isTitle = true, notCheckable = true },
@@ -1374,6 +1438,7 @@ function CB.SaveSortPrefs()
   NE.db.combinedbag.redUnusable = CB._redUnusable and true or false
   NE.db.combinedbag.autoSellJunk = CB._autoSellJunk and true or false
   NE.db.combinedbag.autoEmptyBag = CB._autoEmptyBag and true or false
+  NE.db.combinedbag.showKeys     = CB._showKeys and true or false
 end
 function CB.LoadSortPrefs()
   local c = NE.db and NE.db.combinedbag
@@ -1383,6 +1448,7 @@ function CB.LoadSortPrefs()
   if c.redUnusable ~= nil then CB._redUnusable = c.redUnusable and true or false end
   if c.autoSellJunk ~= nil then CB._autoSellJunk = c.autoSellJunk and true or false end
   if c.autoEmptyBag ~= nil then CB._autoEmptyBag = c.autoEmptyBag and true or false end
+  if c.showKeys ~= nil then CB._showKeys = c.showKeys and true or false end
 end
 
 -- ----------------------------------------------------------------------------
@@ -1416,6 +1482,9 @@ local function installIntercept()
     if f and f.HookScript then
       f:HookScript("OnShow", function(self)
         if InCombatLockdown() then return end
+        -- Keyring (container -2): only take it over when the keys row is enabled; otherwise let the
+        -- stock keyring frame open so keys stay reachable when the row is toggled off.
+        if self.GetID and self:GetID() == KEYRING_CONTAINER and not CB.ShowKeys() then return end
         self:Hide()
         CB.Show()
       end)
@@ -1461,22 +1530,6 @@ local function boot()
   installIntercept()
   installWatcher()
   installBagEquipHooks()
-  -- /nebags debug — toggle bag-swap diagnostics in chat.
-  _G.SLASH_NEBAGS1 = "/nebags"
-  _G.SlashCmdList = _G.SlashCmdList or {}
-  _G.SlashCmdList["NEBAGS"] = function(msg)
-    msg = (msg or ""):lower()
-    if msg:find("qual") then
-      CB.QualityDump()   -- dump the first shown item button's quality-ring state (glow diagnostics)
-    elseif msg:find("fam") then
-      CB.FamilyDump()    -- dump bag families + specialty item families (routing diagnostics)
-    elseif msg:find("debug") then
-      CB._debug = not CB._debug
-      if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cff88ccffNEBags|r debug " .. (CB._debug and "ON" or "OFF")) end
-    else
-      if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cff88ccffNEBags|r usage: /nebags debug | qual | fam") end
-    end
-  end
 end
 CB.Boot = boot
 

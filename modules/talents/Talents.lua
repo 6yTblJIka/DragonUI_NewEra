@@ -39,6 +39,65 @@ local function guard(label, fn)
   return ok
 end
 
+-- Remove a frame name from UISpecialFrames. The stock PlayerTalentFrame/GlyphFrame are ESC-closable
+-- specials; we replace them and keep them hidden, but Blizzard re-shows GlyphFrame while a glyph is
+-- being applied, leaving an invisible ESC target that swallows the key (game menu won't open). Drop
+-- them so ESC falls through to ToggleGameMenu.
+local function dropSpecialFrame(name)
+  if type(name) ~= "string" or type(UISpecialFrames) ~= "table" then return end
+  for i = #UISpecialFrames, 1, -1 do
+    if UISpecialFrames[i] == name then tremove(UISpecialFrames, i) end
+  end
+end
+
+-- PlayerTalentFrame / GlyphFrame are UIPanels (registered in UIPanelWindows). Hiding them with :Hide()
+-- does NOT deregister them from the UIPanel manager, which then RE-SHOWS them on the next panel op — so
+-- CloseAllWindows keeps finding one shown, "closes" it, returns truthy, and ToggleGameMenu bails (the
+-- game menu never opens after a glyph apply). HideUIPanel() closes them properly so they stay hidden.
+local function hideStockPanel(frame)
+  if type(frame) ~= "table" then return end
+  if type(HideUIPanel) == "function" then
+    pcall(HideUIPanel, frame)
+  elseif frame.Hide then
+    frame:Hide()
+  end
+end
+
+-- Cleanup that must run whenever the talent/glyph window closes, so nothing keeps eating ESC:
+--   * a glyph mid-apply sits on the spell cursor (SpellIsTargeting) — ESC would cancel THAT instead of
+--     opening the game menu, so clear it;
+--   * keep the stock talent/glyph frames hidden and off UISpecialFrames.
+local function cleanupOnClose()
+  if type(SpellIsTargeting) == "function" and SpellIsTargeting() then
+    if type(SpellStopTargeting) == "function" then SpellStopTargeting() end
+  end
+  hideStockPanel(_G.PlayerTalentFrame)
+  hideStockPanel(_G.GlyphFrame)
+  dropSpecialFrame("PlayerTalentFrame")
+  dropSpecialFrame("GlyphFrame")
+end
+
+-- The stock GlyphFrame is re-shown on the glyph server round-trip: GLYPH_ADDED/UPDATED fire ~0.5s
+-- AFTER you socket a glyph — usually after you've already closed our window — and Blizzard's own event
+-- handler shows GlyphFrame. Left shown, it swallows ESC (the game menu won't open). This keeper hides it
+-- (deferred, so it runs after Blizzard's same-event handler) whenever our window isn't the one showing.
+do
+  local keeper = CreateFrame("Frame")
+  for _, e in ipairs({ "GLYPH_ADDED", "GLYPH_REMOVED", "GLYPH_UPDATED", "USE_GLYPH" }) do
+    pcall(function() keeper:RegisterEvent(e) end)
+  end
+  keeper:SetScript("OnEvent", function()
+    if T.frame and T.frame:IsShown() then return end     -- our window owns the glyph view; leave it
+    if C_Timer and C_Timer.After then
+      C_Timer.After(0.1, function()
+        if not (T.frame and T.frame:IsShown()) then cleanupOnClose() end
+      end)
+    else
+      cleanupOnClose()
+    end
+  end)
+end
+
 -- ----------------------------------------------------------------------------
 -- Layout spec (DERIVED — no retail baseline exists for an Era-talent frame; WotLK adapts it).
 -- ----------------------------------------------------------------------------
@@ -440,6 +499,11 @@ function T.SetBackground(tab)
   if not (f and f.bg) then return end
   local nick = T.BackgroundNick(tab)
   NE.tex.SetAtlas(f.bg, nick, false)   -- sets texcoord to the atlas element's sub-rect
+  -- Desaturate the spec painting when viewing the INACTIVE (off) spec in dual-spec, so the whole
+  -- off-spec view reads as "not your current spec" (matching the dimmed/desaturated nodes).
+  if f.bg.SetDesaturated then
+    f.bg:SetDesaturated((T._viewGroup or T._activeGroup or 1) ~= (T._activeGroup or 1))
+  end
   -- "Cover" crop so the art isn't stretched, biased to keep the TOP and the RIGHT (the spec art's
   -- focal point sits top-right). At the 1214 talents width the dest is TALLER in aspect than the
   -- source → full height shows and the crop trims the LEFT-side atmosphere.
@@ -610,6 +674,10 @@ local function buildWindow()
     if T.GlyphsApplyPaneVisibility then guard("glyphs.visibility", T.GlyphsApplyPaneVisibility) end
   end)
 
+  -- Close-cleanup: clear a glyph-on-cursor + keep the stock frames off ESC, so the game menu opens
+  -- again after you've socketed a glyph and closed the window.
+  f:HookScript("OnHide", function() guard("cleanupOnClose", cleanupOnClose) end)
+
   return f
 end
 T.Build = buildWindow
@@ -648,8 +716,8 @@ end
 function T.OpenGlyphTab()
   local f = T.frame or buildWindow()
   if not f then return end
-  if PlayerTalentFrame and PlayerTalentFrame.Hide then PlayerTalentFrame:Hide() end
-  if GlyphFrame and GlyphFrame.Hide then GlyphFrame:Hide() end
+  hideStockPanel(PlayerTalentFrame)
+  hideStockPanel(GlyphFrame)
   if not f:IsShown() then f:Show() end
   if T.GlyphsSetActive then T.GlyphsSetActive(true) end
   if T.GlyphsRefresh then guard("glyphs.refresh", T.GlyphsRefresh) end
@@ -676,26 +744,26 @@ local function interceptBlizzard()
     TalentMicroButton:SetScript("OnClick", function() T.Toggle() end)
   end
 
-  -- The stock PlayerTalentFrame/GlyphFrame are UISpecialFrames (ESC-closable). We fully replace them
-  -- and keep them hidden, but Blizzard RE-SHOWS GlyphFrame while a glyph is being applied — leaving it
-  -- as an invisible ESC target that swallows the key, so the game menu never opens after you socket a
-  -- glyph. Drop them from UISpecialFrames so ESC ignores them entirely (we still redirect their OnShow).
-  local function dropSpecialFrame(name)
-    if type(name) ~= "string" or type(UISpecialFrames) ~= "table" then return end
-    for i = #UISpecialFrames, 1, -1 do
-      if UISpecialFrames[i] == name then tremove(UISpecialFrames, i) end
-    end
+  -- HIDE FIRST so the stock frame never lingers shown (a shown GlyphFrame swallows ESC even when it's
+  -- not in UISpecialFrames), THEN mirror into our window — but only if our window is already open, so a
+  -- background glyph-apply show doesn't pop our window open.
+  local function hideStockFrame(self)
+    hideStockPanel(self)   -- HideUIPanel, not :Hide(), or the panel manager re-shows it
+    dropSpecialFrame(self and self.GetName and self:GetName())
+    if T.frame and T.frame:IsShown() and T.OpenGlyphTab then guard("glyph.redirect", T.OpenGlyphTab) end
   end
 
   local function suppressStockFrame(frameName)
     local frame = _G[frameName]
-    if frame and frame.HookScript and not frame._neSuppressed then
-      frame._neSuppressed = true
-      frame:HookScript("OnShow", function(self)
-        if T.OpenGlyphTab then T.OpenGlyphTab() end
-        if self and self.Hide then self:Hide() end
-        dropSpecialFrame(self and self.GetName and self:GetName())   -- keep ESC off the phantom
-      end)
+    if frame and frame.HookScript then
+      if not frame._neSuppressed then
+        frame._neSuppressed = true
+        frame:HookScript("OnShow", hideStockFrame)
+      end
+      -- The frame may ALREADY be shown: Blizzard shows GlyphFrame while Blizzard_GlyphUI loads / during a
+      -- glyph apply, which can happen before this hook exists. OnShow won't fire for an already-shown
+      -- frame, so it stays up and eats ESC — hide it now.
+      if frame.IsShown and frame:IsShown() then hideStockFrame(frame) end
     end
   end
 
@@ -709,15 +777,6 @@ local function interceptBlizzard()
     ToggleGlyphFrame = function(...)
       T.OpenGlyphTab()
     end
-  end
-
-  if GlyphFrame and GlyphFrame.HookScript and not T._glyphFrameHooked then
-    T._glyphFrameHooked = true
-    GlyphFrame:HookScript("OnShow", function(self)
-      if T.OpenGlyphTab then T.OpenGlyphTab() end
-      if self and self.Hide then self:Hide() end
-      dropSpecialFrame("GlyphFrame")   -- glyph-apply re-shows it; keep ESC off the phantom
-    end)
   end
 end
 
