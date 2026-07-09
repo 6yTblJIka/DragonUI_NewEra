@@ -49,6 +49,7 @@ local function log(msg) if NE.Log then NE.Log("COMBINEDBAG", msg) end end
 -- draws at button+4px (SkinButton insets -2/+2), so ITEM_SIZE 34 → 38px visible slot; spacing 11 →
 -- 45px pitch and a 7px gap. Gutters ~18px via LEFT_PADDING 18 / PADDING_WIDTH 36.
 local NUM_BAG_SLOTS  = NUM_BAG_SLOTS or 4            -- backpack(0) + bags 1..4
+local KEYRING_CONTAINER = KEYRING_CONTAINER or -2    -- the keyring is container -2 (its own key row)
 local COLUMNS        = 10
 local ITEM_SIZE      = 34                             -- +4px recess overhang = 38px visible slot
 local ITEM_SPACING_X = 11                            -- pitch 45, visible gap 7 (matches target)
@@ -86,6 +87,16 @@ local TITLE_TEXT         = (type(COMBINED_BAG_TITLE) == "string" and COMBINED_BA
 
 local frame   -- the window (built lazily)
 local grid    -- NE.itemgrid instance over bags 0..NUM_BAG_SLOTS
+local keyGrid -- NE.itemgrid instance over the keyring (container -2), shown as an opt-in bottom row
+
+-- Keyring row layout: a small "Keys" label + one grid row under the main grid, above the money band.
+local KEYS_TOP_GAP = 10   -- gap between the last item row and the keys section
+local KEYS_LABEL_H = 15   -- height reserved for the "Keys" label above the key slots
+
+-- Opt-in: show the keyring as a row inside the combined window. OFF by default → the stock keyring
+-- frame opens normally when you click the keyring (see installIntercept).
+if CB._showKeys == nil then CB._showKeys = false end
+function CB.ShowKeys() return CB._showKeys and true or false end
 
 -- Player's held bags grouped by TYPE: general bags (family 0, incl. the backpack) first, then
 -- specialty bags (quiver, soul, profession, etc.) grouped by family. Drives both the grid display
@@ -531,6 +542,37 @@ local function buildChrome()
   }
   CB.grid = grid
 
+  -- Keyring row: a second grid over container -2, laid out under the main grid (positioned per refresh).
+  -- Its container list is empty unless the "Show keyring row" option is on, so it's a no-op when off.
+  keyGrid = G.New{
+    host       = frame,
+    containers = function() return CB.ShowKeys() and { KEYRING_CONTAINER } or {} end,
+    slotCount  = function(c)
+      if c == KEYRING_CONTAINER then
+        return (GetKeyRingSize and GetKeyRingSize())
+            or (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerNumSlots(c)) or 0
+      end
+      return (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerNumSlots(c)) or 0
+    end,
+    columns    = COLUMNS,
+    itemSize   = ITEM_SIZE,
+    spacingX   = ITEM_SPACING_X,
+    spacingY   = ITEM_SPACING_Y,
+    originX    = LEFT_PADDING,
+    originY    = -TOP_HEADER,   -- repositioned each refresh, below the main grid
+    direction  = "TLBR",
+    namePrefix = "NE_CombinedKey",
+    frameLevel = function() return (frame:GetFrameLevel() or 1) + 5 end,
+  }
+  CB.keyGrid = keyGrid
+
+  -- "Keys" label above the keyring row (shown only when the row has slots and the option is on).
+  local keysLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  keysLabel:SetText(NE.L["Keys"])
+  keysLabel:SetTextColor(1, 0.82, 0)
+  keysLabel:Hide()
+  frame._keysLabel = keysLabel
+
   -- Sorting cover: an opaque panel over the grid, shown while a sort runs, so the item shuffle is
   -- invisible — the player sees "Sorting…" then the finished layout. Also blocks clicks mid-sort.
   local cover = CreateFrame("Frame", nil, frame)
@@ -628,10 +670,39 @@ local function refresh()
 
   contentW = contentW or (COLUMNS * ITEM_SIZE + (COLUMNS - 1) * ITEM_SPACING_X)
   contentH = contentH or 0
-  -- Repopulate the currency pills, then reserve room below the grid for the divider + money band
-  -- (BAND_RESERVE = top gap + band height + bottom gap) so the bottom breathes like the retail bag.
+
+  -- Keyring row (opt-in): sit it just under the last item row, with a "Keys" label above it. keyGrid's
+  -- container list is empty when the option is off, so this is a no-op (0 rows) then. originY is set
+  -- LIVE each refresh so the row tracks the main grid's height.
+  local keysSectionH = 0
+  if keyGrid then
+    local keysTopY = -(TOP_HEADER + contentH + KEYS_TOP_GAP)
+    keyGrid.originY = keysTopY - KEYS_LABEL_H
+    local _, keyRows, _, keyH = keyGrid:Refresh()
+    if NE.bagskin and keyGrid.ForEachButton then
+      keyGrid:ForEachButton(function(b)
+        NE.bagskin.SkinButton(b, ITEM_SIZE)
+        NE.bagskin.ApplyQuality(b, b._bagID, b._slotID)
+        NE.bagskin.ApplyUsableTint(b, b._bagID, b._slotID, CB._redUnusable)
+        NE.bagskin.SetSearchDim(b, searching and not CB.SlotMatches(b._bagID, b._slotID, text))
+      end)
+    end
+    if CB.ShowKeys() and (keyRows or 0) > 0 then
+      keysSectionH = KEYS_TOP_GAP + KEYS_LABEL_H + (keyH or 0)
+      if frame._keysLabel then
+        frame._keysLabel:ClearAllPoints()
+        frame._keysLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT_PADDING, keysTopY)
+        frame._keysLabel:Show()
+      end
+    elseif frame._keysLabel then
+      frame._keysLabel:Hide()
+    end
+  end
+
+  -- Repopulate the currency pills, then reserve room below the grid (+ keys section) for the divider +
+  -- money band (BAND_RESERVE = top gap + band height + bottom gap) so the bottom breathes like retail.
   updateMoneyBand(frame)
-  frame:SetSize(contentW + PADDING_WIDTH, contentH + TOP_HEADER + BAND_RESERVE)
+  frame:SetSize(contentW + PADDING_WIDTH, contentH + TOP_HEADER + keysSectionH + BAND_RESERVE)
 end
 CB.Refresh = refresh
 
@@ -1294,6 +1365,8 @@ function CB.OpenMenu(anchor)
       func = function() CB._reverseSort = not CB._reverseSort; CB.SaveSortPrefs() end },
     { text = NE.L["Red-tint unusable items"], checked = CB._redUnusable and true or false,
       func = function() CB._redUnusable = not CB._redUnusable; CB.SaveSortPrefs(); CB.Refresh() end },
+    { text = NE.L["Show keyring row"], checked = CB._showKeys and true or false,
+      func = function() CB._showKeys = not CB._showKeys; CB.SaveSortPrefs(); CB.Refresh() end },
     { text = NE.L["Auto-empty old bag when swapping"], checked = CB._autoEmptyBag and true or false,
       func = function() CB._autoEmptyBag = not CB._autoEmptyBag; CB.SaveSortPrefs() end },
     { text = NE.L["Merchant"], isTitle = true, notCheckable = true },
@@ -1313,6 +1386,7 @@ function CB.SaveSortPrefs()
   NE.db.combinedbag.redUnusable = CB._redUnusable and true or false
   NE.db.combinedbag.autoSellJunk = CB._autoSellJunk and true or false
   NE.db.combinedbag.autoEmptyBag = CB._autoEmptyBag and true or false
+  NE.db.combinedbag.showKeys     = CB._showKeys and true or false
 end
 function CB.LoadSortPrefs()
   local c = NE.db and NE.db.combinedbag
@@ -1322,6 +1396,7 @@ function CB.LoadSortPrefs()
   if c.redUnusable ~= nil then CB._redUnusable = c.redUnusable and true or false end
   if c.autoSellJunk ~= nil then CB._autoSellJunk = c.autoSellJunk and true or false end
   if c.autoEmptyBag ~= nil then CB._autoEmptyBag = c.autoEmptyBag and true or false end
+  if c.showKeys ~= nil then CB._showKeys = c.showKeys and true or false end
 end
 
 -- ----------------------------------------------------------------------------
@@ -1355,6 +1430,9 @@ local function installIntercept()
     if f and f.HookScript then
       f:HookScript("OnShow", function(self)
         if InCombatLockdown() then return end
+        -- Keyring (container -2): only take it over when the keys row is enabled; otherwise let the
+        -- stock keyring frame open so keys stay reachable when the row is toggled off.
+        if self.GetID and self:GetID() == KEYRING_CONTAINER and not CB.ShowKeys() then return end
         self:Hide()
         CB.Show()
       end)
