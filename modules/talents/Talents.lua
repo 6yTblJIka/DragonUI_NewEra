@@ -64,6 +64,27 @@ local function cleanupOnClose()
   dropSpecialFrame("GlyphFrame")
 end
 
+-- The stock GlyphFrame is re-shown on the glyph server round-trip: GLYPH_ADDED/UPDATED fire ~0.5s
+-- AFTER you socket a glyph — usually after you've already closed our window — and Blizzard's own event
+-- handler shows GlyphFrame. Left shown, it swallows ESC (the game menu won't open). This keeper hides it
+-- (deferred, so it runs after Blizzard's same-event handler) whenever our window isn't the one showing.
+do
+  local keeper = CreateFrame("Frame")
+  for _, e in ipairs({ "GLYPH_ADDED", "GLYPH_REMOVED", "GLYPH_UPDATED", "USE_GLYPH" }) do
+    pcall(function() keeper:RegisterEvent(e) end)
+  end
+  keeper:SetScript("OnEvent", function()
+    if T.frame and T.frame:IsShown() then return end     -- our window owns the glyph view; leave it
+    if C_Timer and C_Timer.After then
+      C_Timer.After(0.1, function()
+        if not (T.frame and T.frame:IsShown()) then cleanupOnClose() end
+      end)
+    else
+      cleanupOnClose()
+    end
+  end)
+end
+
 -- ----------------------------------------------------------------------------
 -- Layout spec (DERIVED — no retail baseline exists for an Era-talent frame; WotLK adapts it).
 -- ----------------------------------------------------------------------------
@@ -705,15 +726,26 @@ local function interceptBlizzard()
     TalentMicroButton:SetScript("OnClick", function() T.Toggle() end)
   end
 
+  -- HIDE FIRST so the stock frame never lingers shown (a shown GlyphFrame swallows ESC even when it's
+  -- not in UISpecialFrames), THEN mirror into our window — but only if our window is already open, so a
+  -- background glyph-apply show doesn't pop our window open.
+  local function hideStockFrame(self)
+    if self and self.Hide then self:Hide() end
+    dropSpecialFrame(self and self.GetName and self:GetName())
+    if T.frame and T.frame:IsShown() and T.OpenGlyphTab then guard("glyph.redirect", T.OpenGlyphTab) end
+  end
+
   local function suppressStockFrame(frameName)
     local frame = _G[frameName]
-    if frame and frame.HookScript and not frame._neSuppressed then
-      frame._neSuppressed = true
-      frame:HookScript("OnShow", function(self)
-        if T.OpenGlyphTab then T.OpenGlyphTab() end
-        if self and self.Hide then self:Hide() end
-        dropSpecialFrame(self and self.GetName and self:GetName())   -- keep ESC off the phantom
-      end)
+    if frame and frame.HookScript then
+      if not frame._neSuppressed then
+        frame._neSuppressed = true
+        frame:HookScript("OnShow", hideStockFrame)
+      end
+      -- The frame may ALREADY be shown: Blizzard shows GlyphFrame while Blizzard_GlyphUI loads / during a
+      -- glyph apply, which can happen before this hook exists. OnShow won't fire for an already-shown
+      -- frame, so it stays up and eats ESC — hide it now.
+      if frame.IsShown and frame:IsShown() then hideStockFrame(frame) end
     end
   end
 
@@ -727,15 +759,6 @@ local function interceptBlizzard()
     ToggleGlyphFrame = function(...)
       T.OpenGlyphTab()
     end
-  end
-
-  if GlyphFrame and GlyphFrame.HookScript and not T._glyphFrameHooked then
-    T._glyphFrameHooked = true
-    GlyphFrame:HookScript("OnShow", function(self)
-      if T.OpenGlyphTab then T.OpenGlyphTab() end
-      if self and self.Hide then self:Hide() end
-      dropSpecialFrame("GlyphFrame")   -- glyph-apply re-shows it; keep ESC off the phantom
-    end)
   end
 end
 
