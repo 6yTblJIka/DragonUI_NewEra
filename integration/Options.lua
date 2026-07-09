@@ -51,16 +51,22 @@ local function builder(scroll)
         C:AddHeading(scroll, "Windows")
         C:AddDescription(scroll,
             "Use DragonUI's window in place of the Blizzard default. Changes take effect after a /reload.")
+        -- The per-window "Retail bags" restyle toggle stays hidden (the combined bag replaces it), but
+        -- the combined bag itself IS toggleable so players can turn our bag UI off entirely and fall
+        -- back to the stock Blizzard bags. To also re-expose the per-window restyle, add a row:
+        --   { id = "bags", label = "Retail bags" }
         local WINDOWS = {
-            { id = "character", label = "Character panel" },
-            { id = "Spellbook", label = "Spellbook" },
-            { id = "Talents",   label = "Talents" },
+            { id = "character",   label = "Character panel" },
+            { id = "Spellbook",   label = "Spellbook" },
+            { id = "Talents",     label = "Talents" },
+            { id = "combinedbag", label = "Combined bag (all-in-one)",
+              desc = "Our all-in-one bag window. Turn OFF to use the stock Blizzard bags instead. Reload (/reload) to apply." },
         }
         for _, w in ipairs(WINDOWS) do
             local id = w.id
             C:AddToggle(scroll, {
                 label   = w.label,
-                desc    = "Reload (/reload) to apply.",
+                desc    = w.desc or "Reload (/reload) to apply.",
                 getFunc = function() return NE.modules.IsEnabled(id) and true or false end,
                 setFunc = function(v)
                     if NE.modules.SetEnabled then pcall(NE.modules.SetEnabled, id, v) end

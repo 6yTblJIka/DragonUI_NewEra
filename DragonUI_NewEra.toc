@@ -96,5 +96,13 @@ modules\talents\Behavior.lua
 modules\talents\Loadouts.lua
 modules\talents\LoadoutsUI.lua
 
+# --- Bags (DF metal chrome, smart sort, rarity/usable cues) — WORK IN PROGRESS ---
+# CombinedBag.lua = the all-in-one grid window (default; can be turned off in the NewEra options).
+# Bags.lua = per-window restyle of the stock frames (superseded by the combined window by default).
+# Both build on core/ItemGrid + the chrome toolkit.
+modules\bags\BagSkin.lua
+modules\bags\Bags.lua
+modules\bags\CombinedBag.lua
+
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---
 core\_HelloDemo.lua

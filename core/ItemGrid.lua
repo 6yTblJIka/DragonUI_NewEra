@@ -110,9 +110,23 @@ local function updateItemOverlays(btn, bag, slot, info)
     local startsQuest = (isQuestItem or questID) and (not questID)
       and info and itemStartsQuest(bag, slot, info.itemID)
     if (questID and not isActive) or startsQuest then
-      if TEXTURE_ITEM_QUEST_BANG then qt:SetTexture(TEXTURE_ITEM_QUEST_BANG) end; qt:Show()
+      -- Item that STARTS a quest → the native "!" bang (a meaningful icon, not a rarity-style glow).
+      -- Reset to native blend/geometry in case this pooled button last held a quest OBJECTIVE (below).
+      if TEXTURE_ITEM_QUEST_BANG then qt:SetTexture(TEXTURE_ITEM_QUEST_BANG) end
+      qt:SetBlendMode("BLEND"); qt:SetVertexColor(1, 1, 1)
+      qt:ClearAllPoints(); qt:SetAllPoints(btn)
+      qt:Show()
     elseif questID or isQuestItem then
-      if TEXTURE_ITEM_QUEST_BORDER then qt:SetTexture(TEXTURE_ITEM_QUEST_BORDER) end; qt:Show()
+      -- Quest OBJECTIVE item → OUR glow (UI-ActionButton-Border, ADD-blended) tinted quest-gold, sized
+      -- like the rarity ring, instead of the oversized default quest border. Matches the bag's look.
+      qt:SetTexture((NE.bagskin and NE.bagskin.QUALITY_GLOW_PATH) or "Interface\\Buttons\\UI-ActionButton-Border")
+      qt:SetBlendMode("ADD"); qt:SetVertexColor(1, 0.82, 0)
+      local w = (btn.GetWidth and btn:GetWidth()) or 34
+      local over = math.max(8, math.floor(w * 0.35 + 0.5))
+      qt:ClearAllPoints()
+      qt:SetPoint("TOPLEFT",     btn, "TOPLEFT",     -over,  over)
+      qt:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT",  over, -over)
+      qt:Show()
     else
       qt:Hide()
     end
@@ -225,8 +239,25 @@ local function slotWireTooltip(b)
     if self.UpdateTooltip then self.UpdateTooltip = nil end
     GameTooltip:SetBagItem(bag, slot)
     GameTooltip:Show()
+    -- Cursor feedback, mirroring the stock ContainerFrameItemButton_OnEnter: show the merchant
+    -- "sell item" (coin) cursor while a vendor is open, the inspect cursor for dress-up/readable
+    -- items, else the plain cursor. Without this the grid's custom OnEnter suppressed the native
+    -- sell-cursor the default bags give you at a merchant.
+    if IsModifiedClick and IsModifiedClick("DRESSUP") and self.hasItem then
+      if ShowInspectCursor then ShowInspectCursor() end
+    elseif MerchantFrame and MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1
+           and ShowContainerSellCursor then
+      ShowContainerSellCursor(bag, slot)
+    elseif self.readable then
+      if ShowInspectCursor then ShowInspectCursor() end
+    elseif ResetCursor then
+      ResetCursor()
+    end
   end)
-  b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  b:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+    if ResetCursor then ResetCursor() end
+  end)
 end
 local function slotMarkEmpty(b) if NE.slot and NE.slot.MarkEmpty then NE.slot.MarkEmpty(b) end end
 local function slotApplyEmpty(b)

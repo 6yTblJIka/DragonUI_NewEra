@@ -38,6 +38,14 @@ end
 -- Simple registry the QA harness reads: panels append { name=, frame=, open=, close= }.
 NE.qa = NE.qa or { modules = {} }
 
+-- Localization seam. Keys ARE the English text: NE.L["Retail bags"] returns a registered
+-- translation if a locale file set one, else the English key itself. All user-facing NewEra
+-- strings should route through NE.L (or, when WoW already ships a localized GLOBAL string like
+-- SEARCH/BACKPACK/CHARACTER, prefer that global with an English literal fallback). A future
+-- locale file, loaded after this, translates by assigning into it:
+--   local L = DragonUI_NewEra.L; if GetLocale() == "deDE" then L["Retail bags"] = "…" end
+NE.L = NE.L or setmetatable({}, { __index = function(_, k) return k end })
+
 -- SavedVariables. Our OWN db holds panel-internal per-char state (equipment sets, talent prefs)
 -- plus account-wide window positions (db.windowPos[key], see FrameUtil.PersistWindowPosition).
 -- Panel ENABLE flags live in DragonUI (DragonUIDB) via profile.newera for a unified UX.

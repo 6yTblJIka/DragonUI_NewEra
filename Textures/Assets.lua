@@ -37,6 +37,11 @@ NE.tex.RegisterLocal(2406979, P .. "Common\\2406979-uiframe-metal-corners.blp") 
 NE.tex.RegisterLocal(2406984, P .. "Common\\2406984-uiframe-metal-edges-vert.blp")  -- 512x32  BGRA; !-tile L/R edges
 NE.tex.RegisterLocal(2406987, P .. "Common\\2406987-uiframe-metal-edges-horiz.blp") -- 64x256  BGRA; _-tile Top/Bottom edges
 
+-- --- Common-currencybox — the rounded 3-piece pill border behind each watched-currency token in
+--     the combined bag's bottom money band (modules/bags/CombinedBag.lua). One 32x64 sheet holds
+--     left/right end caps + a stretched center (atlas coords registered by the bags module).
+NE.tex.RegisterLocal(4701880, P .. "Common\\4701880-common-currencybox.blp")        -- 32x64 BGRA; common-currencybox-{left,right,center}
+
 -- --- UI-Background-Rock — ButtonFrameTemplate rock fill (shared: CharacterPanel + Social).
 NE.tex.RegisterLocal(374155,  P .. "Common\\374155-uibackground-rock.blp")          -- 1024x1024 DXT1
 
