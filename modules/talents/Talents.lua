@@ -499,6 +499,11 @@ function T.SetBackground(tab)
   if not (f and f.bg) then return end
   local nick = T.BackgroundNick(tab)
   NE.tex.SetAtlas(f.bg, nick, false)   -- sets texcoord to the atlas element's sub-rect
+  -- Desaturate the spec painting when viewing the INACTIVE (off) spec in dual-spec, so the whole
+  -- off-spec view reads as "not your current spec" (matching the dimmed/desaturated nodes).
+  if f.bg.SetDesaturated then
+    f.bg:SetDesaturated((T._viewGroup or T._activeGroup or 1) ~= (T._activeGroup or 1))
+  end
   -- "Cover" crop so the art isn't stretched, biased to keep the TOP and the RIGHT (the spec art's
   -- focal point sits top-right). At the 1214 talents width the dest is TALLER in aspect than the
   -- source → full height shows and the crop trims the LEFT-side atmosphere.
