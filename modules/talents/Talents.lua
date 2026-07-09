@@ -50,6 +50,19 @@ local function dropSpecialFrame(name)
   end
 end
 
+-- PlayerTalentFrame / GlyphFrame are UIPanels (registered in UIPanelWindows). Hiding them with :Hide()
+-- does NOT deregister them from the UIPanel manager, which then RE-SHOWS them on the next panel op — so
+-- CloseAllWindows keeps finding one shown, "closes" it, returns truthy, and ToggleGameMenu bails (the
+-- game menu never opens after a glyph apply). HideUIPanel() closes them properly so they stay hidden.
+local function hideStockPanel(frame)
+  if type(frame) ~= "table" then return end
+  if type(HideUIPanel) == "function" then
+    pcall(HideUIPanel, frame)
+  elseif frame.Hide then
+    frame:Hide()
+  end
+end
+
 -- Cleanup that must run whenever the talent/glyph window closes, so nothing keeps eating ESC:
 --   * a glyph mid-apply sits on the spell cursor (SpellIsTargeting) — ESC would cancel THAT instead of
 --     opening the game menu, so clear it;
@@ -58,8 +71,8 @@ local function cleanupOnClose()
   if type(SpellIsTargeting) == "function" and SpellIsTargeting() then
     if type(SpellStopTargeting) == "function" then SpellStopTargeting() end
   end
-  if type(_G.PlayerTalentFrame) == "table" and _G.PlayerTalentFrame.Hide then _G.PlayerTalentFrame:Hide() end
-  if type(_G.GlyphFrame) == "table" and _G.GlyphFrame.Hide then _G.GlyphFrame:Hide() end
+  hideStockPanel(_G.PlayerTalentFrame)
+  hideStockPanel(_G.GlyphFrame)
   dropSpecialFrame("PlayerTalentFrame")
   dropSpecialFrame("GlyphFrame")
 end
@@ -698,8 +711,8 @@ end
 function T.OpenGlyphTab()
   local f = T.frame or buildWindow()
   if not f then return end
-  if PlayerTalentFrame and PlayerTalentFrame.Hide then PlayerTalentFrame:Hide() end
-  if GlyphFrame and GlyphFrame.Hide then GlyphFrame:Hide() end
+  hideStockPanel(PlayerTalentFrame)
+  hideStockPanel(GlyphFrame)
   if not f:IsShown() then f:Show() end
   if T.GlyphsSetActive then T.GlyphsSetActive(true) end
   if T.GlyphsRefresh then guard("glyphs.refresh", T.GlyphsRefresh) end
@@ -730,7 +743,7 @@ local function interceptBlizzard()
   -- not in UISpecialFrames), THEN mirror into our window — but only if our window is already open, so a
   -- background glyph-apply show doesn't pop our window open.
   local function hideStockFrame(self)
-    if self and self.Hide then self:Hide() end
+    hideStockPanel(self)   -- HideUIPanel, not :Hide(), or the panel manager re-shows it
     dropSpecialFrame(self and self.GetName and self:GetName())
     if T.frame and T.frame:IsShown() and T.OpenGlyphTab then guard("glyph.redirect", T.OpenGlyphTab) end
   end
