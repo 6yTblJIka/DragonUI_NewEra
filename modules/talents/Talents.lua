@@ -39,6 +39,31 @@ local function guard(label, fn)
   return ok
 end
 
+-- Remove a frame name from UISpecialFrames. The stock PlayerTalentFrame/GlyphFrame are ESC-closable
+-- specials; we replace them and keep them hidden, but Blizzard re-shows GlyphFrame while a glyph is
+-- being applied, leaving an invisible ESC target that swallows the key (game menu won't open). Drop
+-- them so ESC falls through to ToggleGameMenu.
+local function dropSpecialFrame(name)
+  if type(name) ~= "string" or type(UISpecialFrames) ~= "table" then return end
+  for i = #UISpecialFrames, 1, -1 do
+    if UISpecialFrames[i] == name then tremove(UISpecialFrames, i) end
+  end
+end
+
+-- Cleanup that must run whenever the talent/glyph window closes, so nothing keeps eating ESC:
+--   * a glyph mid-apply sits on the spell cursor (SpellIsTargeting) — ESC would cancel THAT instead of
+--     opening the game menu, so clear it;
+--   * keep the stock talent/glyph frames hidden and off UISpecialFrames.
+local function cleanupOnClose()
+  if type(SpellIsTargeting) == "function" and SpellIsTargeting() then
+    if type(SpellStopTargeting) == "function" then SpellStopTargeting() end
+  end
+  if type(_G.PlayerTalentFrame) == "table" and _G.PlayerTalentFrame.Hide then _G.PlayerTalentFrame:Hide() end
+  if type(_G.GlyphFrame) == "table" and _G.GlyphFrame.Hide then _G.GlyphFrame:Hide() end
+  dropSpecialFrame("PlayerTalentFrame")
+  dropSpecialFrame("GlyphFrame")
+end
+
 -- ----------------------------------------------------------------------------
 -- Layout spec (DERIVED — no retail baseline exists for an Era-talent frame; WotLK adapts it).
 -- ----------------------------------------------------------------------------
@@ -610,6 +635,10 @@ local function buildWindow()
     if T.GlyphsApplyPaneVisibility then guard("glyphs.visibility", T.GlyphsApplyPaneVisibility) end
   end)
 
+  -- Close-cleanup: clear a glyph-on-cursor + keep the stock frames off ESC, so the game menu opens
+  -- again after you've socketed a glyph and closed the window.
+  f:HookScript("OnHide", function() guard("cleanupOnClose", cleanupOnClose) end)
+
   return f
 end
 T.Build = buildWindow
@@ -674,17 +703,6 @@ local function interceptBlizzard()
   -- Reroute the button's handler directly so it opens our window too.
   if TalentMicroButton and TalentMicroButton.SetScript then
     TalentMicroButton:SetScript("OnClick", function() T.Toggle() end)
-  end
-
-  -- The stock PlayerTalentFrame/GlyphFrame are UISpecialFrames (ESC-closable). We fully replace them
-  -- and keep them hidden, but Blizzard RE-SHOWS GlyphFrame while a glyph is being applied — leaving it
-  -- as an invisible ESC target that swallows the key, so the game menu never opens after you socket a
-  -- glyph. Drop them from UISpecialFrames so ESC ignores them entirely (we still redirect their OnShow).
-  local function dropSpecialFrame(name)
-    if type(name) ~= "string" or type(UISpecialFrames) ~= "table" then return end
-    for i = #UISpecialFrames, 1, -1 do
-      if UISpecialFrames[i] == name then tremove(UISpecialFrames, i) end
-    end
   end
 
   local function suppressStockFrame(frameName)
