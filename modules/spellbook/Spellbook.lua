@@ -232,6 +232,11 @@ local function createCard(i)
   -- full art (no crop); the 0.84 size inset lets the frame border cover the icon edge (talents look).
   b.Icon:SetTexCoord(0, 1, 0, 1)
 
+  -- Cooldown swipe over the icon so spells on cooldown show the sweep instead of looking ready.
+  b.Cooldown = CreateFrame("Cooldown", "NE_SpellBookCard" .. i .. "Cooldown", b, "CooldownFrameTemplate")
+  b.Cooldown:SetAllPoints(b.Icon)
+  if b.Cooldown.SetDrawEdge then pcall(b.Cooldown.SetDrawEdge, b.Cooldown, false) end
+
   b.Border = b:CreateTexture(nil, "OVERLAY", nil, 1)
   b.Border:SetAllPoints(b.IconSlot)
 
@@ -917,15 +922,50 @@ function SB.UpdateActiveOverlays()
   end
 end
 
--- Live watcher: buffs gained/lost + form changes flip the glow without a full re-render.
+-- Push a card's spell cooldown onto its swipe. Spellbook spells query by slot; mounts/companions
+-- (no slot) by name. Passives/unlearned cards clear the swipe.
+local function setCardCooldown(card)
+  local cd = card.Button and card.Button.Cooldown
+  if not (cd and CooldownFrame_Set) then return end
+  if card.passive or card.unlearned then
+    CooldownFrame_Set(cd, 0, 0, 0)
+    return
+  end
+  local start, duration, enable
+  if card.slot and card.bookType and GetSpellCooldown then
+    start, duration, enable = GetSpellCooldown(card.slot, card.bookType)
+  elseif card.spellID and GetSpellInfo and GetSpellCooldown then
+    local name = GetSpellInfo(card.spellID)
+    if name then start, duration, enable = GetSpellCooldown(name) end
+  end
+  CooldownFrame_Set(cd, start or 0, duration or 0, enable or 0)
+end
+SB.SetCardCooldown = setCardCooldown
+
+-- Refresh every visible card's cooldown swipe (cheap loop) between full re-renders.
+function SB.UpdateCooldowns()
+  if not SB.cards then return end
+  for _, card in pairs(SB.cards) do
+    if card and card.IsShown and card:IsShown() then setCardCooldown(card) end
+  end
+end
+
+-- Live watcher: buffs gained/lost + form changes flip the glow, and cooldown starts/ends drive the
+-- swipe, all without a full re-render.
 do
   local w = CreateFrame("Frame")
   w:RegisterEvent("UNIT_AURA")
   w:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
   w:RegisterEvent("COMPANION_UPDATE")   -- summon/dismiss a mount or companion flips its card glow
+  w:RegisterEvent("SPELL_UPDATE_COOLDOWN")   -- a spell went on / off cooldown → repaint the swipe
   w:SetScript("OnEvent", function(_, ev, unit)
     if ev == "UNIT_AURA" and unit ~= "player" then return end
-    if SB.frame and SB.frame:IsShown() then SB.UpdateActiveOverlays() end
+    if not (SB.frame and SB.frame:IsShown()) then return end
+    if ev == "SPELL_UPDATE_COOLDOWN" then
+      SB.UpdateCooldowns()
+    else
+      SB.UpdateActiveOverlays()
+    end
   end)
 end
 
@@ -1054,6 +1094,7 @@ function SB.RenderCards()
         local pt, rp, x, y = pagePoint(e.p, e.r, e.c)
         card:ClearAllPoints(); card:SetPoint(pt, h, rp, x, y)
         applyCardVisual(card, e)
+        setCardCooldown(card)   -- paint the cooldown swipe if the spell is on cooldown
         card:Show()
       else
         card:Hide()
