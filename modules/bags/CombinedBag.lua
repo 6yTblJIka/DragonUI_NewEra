@@ -931,6 +931,53 @@ local function routePass()
   return moved
 end
 
+-- Sweep loose keys out of the regular bags into the keyring (container -2). Keys carry the keyring bag
+-- family (GetItemFamily → the keyring bit) but ALSO fit general bags, so they can sit loose; this moves
+-- any that aren't already in the keyring while free keyring slots remain. Runs as part of the sort.
+local function routeKeysToKeyRing()
+  if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo
+          and PickupContainerItem and GetItemFamily and GetContainerNumFreeSlots and bit and bit.band) then return false end
+  local keyN = (GetKeyRingSize and GetKeyRingSize()) or 0
+  if keyN <= 0 then return false end
+  local keyFamily = select(2, GetContainerNumFreeSlots(KEYRING_CONTAINER)) or 0
+  if keyFamily == 0 then keyFamily = 256 end   -- keyring bag family (fallback if the API reports 0)
+
+  local function isKeyLink(link)
+    if not link then return false end
+    local fam = GetItemFamily(link) or 0
+    if bit.band(fam, keyFamily) ~= 0 then return true end
+    if GetItemInfo then return (select(6, GetItemInfo(link))) == "Key" end   -- enUS type fallback
+    return false
+  end
+
+  -- Free keyring slots to fill.
+  local freeKey = {}
+  for s = 1, keyN do
+    if not C_Container.GetContainerItemInfo(KEYRING_CONTAINER, s) then freeKey[#freeKey + 1] = s end
+  end
+  if #freeKey == 0 then return false end
+
+  local moved = false
+  if ClearCursor then ClearCursor() end
+  for bag = 0, NUM_BAG_SLOTS do
+    local n = C_Container.GetContainerNumSlots(bag) or 0
+    for s = 1, n do
+      if #freeKey == 0 then break end
+      local info = C_Container.GetContainerItemInfo(bag, s)
+      if info and (info.itemID or info.hyperlink) and not info.isLocked
+         and isKeyLink(info.hyperlink or info.itemID) then
+        local dst = table.remove(freeKey, 1)
+        PickupContainerItem(bag, s)
+        PickupContainerItem(KEYRING_CONTAINER, dst)
+        if CursorHasItem and CursorHasItem() then ClearCursor() end
+        moved = true
+      end
+    end
+  end
+  if ClearCursor then ClearCursor() end
+  return moved
+end
+
 -- One pass toward the CACHED plan: compare each live slot to its baked target itemID and move what
 -- it can (skipping locked items). No re-sorting — just cheap itemID compares. Returns the count of
 -- slots not yet matching, so the driver knows when the bag has reached the planned layout.
@@ -1022,7 +1069,8 @@ function CB._sortStep()
   if CB._sortPhase == "route" then
     CB._routeIter = (CB._routeIter or 0) + 1
     local didRoute = routePass()
-    if didRoute and CB._routeIter < ROUTE_MAX_ITERS and C_Timer and C_Timer.After then
+    local didKeys  = routeKeysToKeyRing()   -- move loose keys into the keyring
+    if (didRoute or didKeys) and CB._routeIter < ROUTE_MAX_ITERS and C_Timer and C_Timer.After then
       C_Timer.After(0.25, CB._sortStep)   -- more mis-placed items to migrate to their bags
       return
     end
@@ -1059,6 +1107,10 @@ function CB.SortBags()
   -- HIDE the item buttons/slots so the shuffle is invisible, then float the spinner over the empty bag.
   if buildChrome() then
     if grid and grid.ForEachButton then grid:ForEachButton(function(b) b:Hide() end) end
+    -- The cover has no opaque fill (we hide slots directly), so hide the keyring row + label too or
+    -- they show through the "Sorting…" cover.
+    if keyGrid and keyGrid.ForEachButton then keyGrid:ForEachButton(function(b) b:Hide() end) end
+    if frame._keysLabel then frame._keysLabel:Hide() end
     if frame.sortCover then
       if frame.sortCover.label then frame.sortCover.label:SetText(NE.L["Sorting…"]) end
       frame.sortCover:Raise(); frame.sortCover:Show()
