@@ -78,6 +78,36 @@ local function updateHeader(h, info)
   end)
 end
 
+-- How many currencies are currently watched on the backpack (native cap = MAX_WATCHED_TOKENS = 3).
+local function numWatched()
+  local n = 0
+  if GetBackpackCurrencyInfo then
+    for i = 1, (MAX_WATCHED_TOKENS or 3) do
+      if GetBackpackCurrencyInfo(i) then n = n + 1 end
+    end
+  end
+  return n
+end
+
+-- Toggle whether a currency shows on the backpack. Guards the 3-currency cap when turning one ON,
+-- then refreshes this tab AND the combined bag's bottom money band.
+local function toggleWatch(info)
+  if not (info and SetCurrencyBackpack) then return end
+  local want = not info.isWatched
+  if want and numWatched() >= (MAX_WATCHED_TOKENS or 3) then
+    if UIErrorsFrame then
+      UIErrorsFrame:AddMessage(
+        (L("TOO_MANY_WATCHED_TOKENS", "You can watch at most %d currencies on your backpack.")):format(MAX_WATCHED_TOKENS or 3),
+        1, 0.2, 0.2)
+    end
+    return
+  end
+  pcall(SetCurrencyBackpack, info.index, want and 1 or 0)
+  CP.RefreshCurrency()
+  if NE.combinedbag and NE.combinedbag.Refresh then NE.combinedbag.Refresh() end
+end
+CP.ToggleCurrencyWatch = toggleWatch
+
 local function buildEntry(parent)
   local e = CreateFrame("Button", nil, parent)
   e:SetHeight(ROW_HEIGHT)
@@ -90,8 +120,21 @@ local function buildEntry(parent)
   e._name:SetPoint("LEFT", e._icon, "RIGHT", 8, 0)
   e._name:SetJustifyH("LEFT")
 
+  -- "Show on backpack" checkbox at the far right; the count sits to its left.
+  e._watch = CreateFrame("CheckButton", nil, e, "UICheckButtonTemplate")
+  e._watch:SetSize(22, 22)
+  e._watch:SetPoint("RIGHT", e, "RIGHT", -6, 0)
+  e._watch:SetHitRectInsets(2, 2, 2, 2)
+  e._watch:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    GameTooltip:SetText(L("TOKEN_OPTIONS_TRACK", "Show on Backpack"), 1, 1, 1)
+    GameTooltip:AddLine(L("TOKEN_OPTIONS_TRACK_HINT", "Watch this currency at the bottom of your bags (up to 3)."), nil, nil, nil, true)
+    GameTooltip:Show()
+  end)
+  e._watch:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
   e._count = e:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  e._count:SetPoint("RIGHT", e, "RIGHT", -10, 0)
+  e._count:SetPoint("RIGHT", e._watch, "LEFT", -6, 0)
   e._count:SetJustifyH("RIGHT")
 
   e._name:SetPoint("RIGHT", e._count, "LEFT", -8, 0)
@@ -115,10 +158,12 @@ local function updateEntry(e, info)
     e._icon:Hide()
   end
 
-  local idx = info.index
-  e:SetScript("OnClick", function()
-    if SetCurrencyBackpack then pcall(SetCurrencyBackpack, idx, 1) end
-  end)
+  -- Watch checkbox reflects the current state; clicking it (or the row) toggles tracking.
+  if e._watch then
+    e._watch:SetChecked(info.isWatched and true or false)
+    e._watch:SetScript("OnClick", function() toggleWatch(info) end)
+  end
+  e:SetScript("OnClick", function() toggleWatch(info) end)
 end
 
 local pane
@@ -160,13 +205,15 @@ local function releaseAll()
 end
 
 local function parseCurrencyInfo(idx)
-  local ok, a, b, c, d, e, f, g, h = pcall(GetCurrencyListInfo, idx)
+  -- GetCurrencyListInfo: name, isHeader, isExpanded, isUnused, isWatched, count, extraType, icon, itemID
+  local ok, a, b, c, d, e, f, g, h, i = pcall(GetCurrencyListInfo, idx)
   if not ok or not a then return nil end
 
   local name = a
   local isHeader = b and true or false
   local isExpanded = c and true or false
   local isUnused = d and true or false
+  local isWatched = e and true or false
   local count = tonumber(f) or 0
   local icon = h or g
 
@@ -176,8 +223,10 @@ local function parseCurrencyInfo(idx)
     isHeader = isHeader,
     isExpanded = isExpanded,
     isUnused = isUnused,
+    isWatched = isWatched,
     count = count,
     icon = icon,
+    itemID = i,
   }
 end
 

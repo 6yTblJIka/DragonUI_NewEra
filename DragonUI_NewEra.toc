@@ -97,6 +97,14 @@ modules\talents\Loadouts.lua
 modules\talents\LoadoutsUI.lua
 modules\talents\Glyphs.lua
 
+# --- Bags (DF metal chrome, smart sort, rarity/usable cues) — WORK IN PROGRESS ---
+# CombinedBag.lua = the all-in-one grid window (default; can be turned off in the NewEra options).
+# Bags.lua = per-window restyle of the stock frames (superseded by the combined window by default).
+# Both build on core/ItemGrid + the chrome toolkit.
+modules\bags\BagSkin.lua
+modules\bags\Bags.lua
+modules\bags\CombinedBag.lua
+
 # --- Professions (retail-style crafting window; downport of NewEra/Professions/Crafting) ---
 # Load order: Assets (atlas + texcoord registration) -> Window (chrome + event wiring) ->
 # RecipeList (left panel, FauxScrollFrame) -> Crafting (schematic form, rank bar, controls).
