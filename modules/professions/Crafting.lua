@@ -189,8 +189,9 @@ local function stopFlip(tex)
 end
 
 -- Flipbook layout differs by atlas. The themed sheets are 2-column sprite grids.
--- Both DefaultBlue and art-based atlases have a black first cell; use the second cell as
--- the static fallback frame to avoid rendering black bars.
+-- DefaultBlue needs only the first cell skipped, but some themed profession sheets carry more
+-- than one black lead cell before the animated art begins. Start themed bars one frame deeper so
+-- first-open/static renders don't land on an all-black tile.
 local function fillLayoutForAtlas(atlasName, entry)
   if atlasName == "skillbar_fill_flipbook_defaultblue" then
     return 1, 1, 1, 2
@@ -198,7 +199,7 @@ local function fillLayoutForAtlas(atlasName, entry)
 
   local cols = 2
   local rows = math.max(1, math.floor(((entry and entry.height or 34) / 34) + 0.5))
-  return rows, cols, rows * cols, 2
+  return rows, cols, rows * cols, 3
 end
 
 -- ============================================================================
@@ -1089,11 +1090,11 @@ function C.UpdateRank()
       local tc     = { l = entry.left, r = entry.right, t = entry.top, b = entry.bottom }
       if frames > 2 then
         if atlasChanged or not rb._flipping then
-          startFlip(rb.Fill, tc, rows, cols, frames, 2.0, 2); rb._flipping = true
+          startFlip(rb.Fill, tc, rows, cols, frames, 2.0, staticFrame); rb._flipping = true
         end
       else
         stopFlip(rb.Fill); rb._flipping = false
-        -- Static: choose a deterministic frame (defaultblue uses frame 2 to avoid black cell).
+        -- Static: choose a deterministic non-black frame for this atlas family.
         local idx = math.max(1, math.min(frames, staticFrame or 1)) - 1
         local cellW = (tc.r - tc.l) / cols
         local cellH = (tc.b - tc.t) / rows

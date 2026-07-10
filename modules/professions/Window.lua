@@ -55,6 +55,20 @@ C.ATLAS_RECIPE_BG   = ATLAS_RECIPE_BG
 C.ATLAS_SKILL_BG    = ATLAS_SKILL_BG
 C.ATLAS_SKILL_FRAME = ATLAS_SKILL_FRAME
 
+local SKILLBAR_PREWARM_ATLASES = {
+  "skillbar_fill_flipbook_defaultblue",
+  "skillbar_fill_flipbook_alchemy",
+  "skillbar_fill_flipbook_blacksmithing",
+  "skillbar_fill_flipbook_cooking",
+  "skillbar_fill_flipbook_enchanting",
+  "skillbar_fill_flipbook_engineering",
+  "skillbar_fill_flipbook_inscription",
+  "skillbar_fill_flipbook_jewelcrafting",
+  "skillbar_fill_flipbook_leatherworking",
+  "skillbar_fill_flipbook_tailoring",
+  "skillbar_fill_flipbook_skinning",
+}
+
 local FRAME_NAME = "NE_ProfessionsCraftingFrame"
 local MODULE     = "Professions"
 
@@ -259,6 +273,40 @@ local function saveOpts()
   o.colorByDifficulty = C.opts.colorByDifficulty
   o.genericBar        = C.opts.genericBar
   _G.DragonUI_NewEraDB.professions = o
+end
+
+local function prewarmSkillBarAtlases()
+  if C._barPrewarmed then return end
+  C._barPrewarmed = true
+
+  local pw = CreateFrame("Frame", nil, UIParent)
+  pw:SetFrameStrata("BACKGROUND")
+  pw:SetFrameLevel(1)
+  pw:SetSize(2, 2)
+  pw:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
+
+  local previous
+  for index, atlasName in ipairs(SKILLBAR_PREWARM_ATLASES) do
+    local tex = pw:CreateTexture(nil, "BACKGROUND")
+    tex:SetSize(1, 1)
+    if previous then
+      tex:SetPoint("LEFT", previous, "RIGHT", 0, 0)
+    else
+      tex:SetPoint("LEFT", pw, "LEFT", 0, 0)
+    end
+
+    local applied = NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(tex, atlasName, false)
+    if applied then
+      tex:SetAlpha(0.01)
+      tex:Show()
+      previous = tex
+    else
+      tex:Hide()
+    end
+  end
+
+  pw:Show()
+  C._barPrewarm = pw
 end
 
 local function buildCogMenu(f, cog)
@@ -566,18 +614,20 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
   if event == "PLAYER_LOGIN" then
     guard("loadOpts", loadOpts)
     guard("buildWindow", buildWindow)
-    -- Prewarm the plain-bar fill texture on a SHOWN frame so it's cached before the bar is first
-    -- displayed — otherwise its first use renders as a dark placeholder (needs a reload to fix).
+    -- Prewarm both the plain-bar fill texture and the art-based profession flipbook sheets on a
+    -- SHOWN frame so their first visible use doesn't resolve as a dark placeholder.
     guard("prewarmBar", function()
-      if C._barPrewarmed then return end
-      C._barPrewarmed = true
-      local pw = CreateFrame("Frame", nil, UIParent)
-      pw:SetFrameStrata("BACKGROUND"); pw:SetFrameLevel(1)
-      pw:SetSize(1, 1); pw:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
+      prewarmSkillBarAtlases()
+
+      local pw = C._barPrewarm
+      if not pw then return end
+
       local t = pw:CreateTexture(nil, "BACKGROUND")
-      t:SetAllPoints(pw); t:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar")
-      pw:Show()
-      C._barPrewarm = pw
+      t:SetAllPoints(pw)
+      t:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar")
+      t:SetAlpha(0.01)
+      t:Show()
+      C._genericBarPrewarm = t
     end)
     -- Register with the module system.
     guard("RegisterPanel", function()
