@@ -83,11 +83,11 @@ local PROF_MAP = {
   tailor         = { kit = "Tailoring",      icon = 4620681, fill = "skillbar_fill_flipbook_tailoring"      },
   cooking        = { kit = "Cooking",        icon = 4620671, fill = "skillbar_fill_flipbook_cooking"        },
   fishing        = { kit = "Fishing",        icon = 4620674 },
-  inscription    = { kit = nil,              icon = "Interface\\Icons\\INV_Inscription_Tradeskill01" },
-  inscript       = { kit = nil,              icon = "Interface\\Icons\\INV_Inscription_Tradeskill01" },
-  jewel          = { kit = nil,              icon = 4620677, fill = "skillbar_fill_flipbook_blacksmithing" },
-  jewelcraft     = { kit = nil,              icon = 4620677, fill = "skillbar_fill_flipbook_blacksmithing" },
-  prospect       = { kit = nil,              icon = 4620677, fill = "skillbar_fill_flipbook_blacksmithing" },
+  inscription    = { kit = "Inscription",   icon = 4620676, fill = "skillbar_fill_flipbook_inscription" },
+  inscript       = { kit = "Inscription",   icon = 4620676, fill = "skillbar_fill_flipbook_inscription" },
+  jewel          = { kit = "Jewelcrafting", icon = 4620677, fill = "skillbar_fill_flipbook_jewelcrafting" },
+  jewelcraft     = { kit = "Jewelcrafting", icon = 4620677, fill = "skillbar_fill_flipbook_jewelcrafting" },
+  prospect       = { kit = "Jewelcrafting", icon = 4620677, fill = "skillbar_fill_flipbook_jewelcrafting" },
   ["first aid"]  = { kit = nil,              icon = "Interface\\Icons\\Spell_Holy_SealOfSacrifice",
                      fill = "skillbar_fill_flipbook_skinning" },
 }
@@ -115,6 +115,7 @@ local function infoFromIconPath(texPath)
   if p:find("tailor", 1, true) then return PROF_MAP.tailor end
   if p:find("cooking", 1, true) then return PROF_MAP.cooking end
   if p:find("fishing", 1, true) then return PROF_MAP.fishing end
+  if p:find("inscription", 1, true) then return PROF_MAP.inscription end
   if p:find("jewel", 1, true) then return PROF_MAP.jewel end
   return nil
 end
@@ -125,6 +126,12 @@ end
 -- ============================================================================
 local flipDriver  = CreateFrame("Frame")
 local flipActive  = {}
+
+-- The flare sprite lives on the SAME sheet file as each profession flipbook. The atlas crop for
+-- the animated fill ends just before this block, so sample this fixed UV strip from that file.
+local FLARE_U0 = 0.837402
+local FLARE_U1 = 0.863281
+local FLARE_H  = 0.016114
 
 flipDriver:SetScript("OnUpdate", function(_, dt)
   for i = #flipActive, 1, -1 do
@@ -182,8 +189,9 @@ local function stopFlip(tex)
 end
 
 -- Flipbook layout differs by atlas. The themed sheets are 2-column sprite grids.
--- Both DefaultBlue and art-based atlases have a black first cell; use the second cell as
--- the static fallback frame to avoid rendering black bars.
+-- DefaultBlue needs only the first cell skipped, but some themed profession sheets carry more
+-- than one black lead cell before the animated art begins. Start themed bars one frame deeper so
+-- first-open/static renders don't land on an all-black tile.
 local function fillLayoutForAtlas(atlasName, entry)
   if atlasName == "skillbar_fill_flipbook_defaultblue" then
     return 1, 1, 1, 2
@@ -191,7 +199,7 @@ local function fillLayoutForAtlas(atlasName, entry)
 
   local cols = 2
   local rows = math.max(1, math.floor(((entry and entry.height or 34) / 34) + 0.5))
-  return rows, cols, rows * cols, 2
+  return rows, cols, rows * cols, 3
 end
 
 -- ============================================================================
@@ -1082,11 +1090,11 @@ function C.UpdateRank()
       local tc     = { l = entry.left, r = entry.right, t = entry.top, b = entry.bottom }
       if frames > 2 then
         if atlasChanged or not rb._flipping then
-          startFlip(rb.Fill, tc, rows, cols, frames, 2.0); rb._flipping = true
+          startFlip(rb.Fill, tc, rows, cols, frames, 2.0, staticFrame); rb._flipping = true
         end
       else
         stopFlip(rb.Fill); rb._flipping = false
-        -- Static: choose a deterministic frame (defaultblue uses frame 2 to avoid black cell).
+        -- Static: choose a deterministic non-black frame for this atlas family.
         local idx = math.max(1, math.min(frames, staticFrame or 1)) - 1
         local cellW = (tc.r - tc.l) / cols
         local cellH = (tc.b - tc.t) / rows
@@ -1104,9 +1112,13 @@ function C.UpdateRank()
 
     -- Flare at the leading edge.
     if rb.Flare then
-      local fa = C._flareAtlas
-      if fa and entry and frac > 0 and frac < 1 then
-        NE.tex.SetAtlas(rb.Flare, fa, false); rb.Flare:SetSize(53, 16); rb.Flare:Show()
+      local themed = (atlasName ~= defaultAtlas)
+      if themed and entry and frac > 0 and frac < 1 then
+        local srcFile = entry.file and (NE.tex and NE.tex.localFiles and NE.tex.localFiles[entry.file]) or entry.file
+        rb.Flare:SetTexture(srcFile)
+        rb.Flare:SetTexCoord(FLARE_U0, FLARE_U1, entry.top, math.min(1, entry.top + FLARE_H))
+        rb.Flare:SetSize(53, 16)
+        rb.Flare:Show()
       else
         rb.Flare:Hide()
       end
