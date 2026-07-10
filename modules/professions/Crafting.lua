@@ -127,6 +127,12 @@ end
 local flipDriver  = CreateFrame("Frame")
 local flipActive  = {}
 
+-- The flare sprite lives on the SAME sheet file as each profession flipbook. The atlas crop for
+-- the animated fill ends just before this block, so sample this fixed UV strip from that file.
+local FLARE_U0 = 0.837402
+local FLARE_U1 = 0.863281
+local FLARE_H  = 0.016114
+
 flipDriver:SetScript("OnUpdate", function(_, dt)
   for i = #flipActive, 1, -1 do
     local f = flipActive[i]
@@ -1083,7 +1089,7 @@ function C.UpdateRank()
       local tc     = { l = entry.left, r = entry.right, t = entry.top, b = entry.bottom }
       if frames > 2 then
         if atlasChanged or not rb._flipping then
-          startFlip(rb.Fill, tc, rows, cols, frames, 2.0); rb._flipping = true
+          startFlip(rb.Fill, tc, rows, cols, frames, 2.0, 2); rb._flipping = true
         end
       else
         stopFlip(rb.Fill); rb._flipping = false
@@ -1105,9 +1111,13 @@ function C.UpdateRank()
 
     -- Flare at the leading edge.
     if rb.Flare then
-      local fa = C._flareAtlas
-      if fa and entry and frac > 0 and frac < 1 then
-        NE.tex.SetAtlas(rb.Flare, fa, false); rb.Flare:SetSize(53, 16); rb.Flare:Show()
+      local themed = (atlasName ~= defaultAtlas)
+      if themed and entry and frac > 0 and frac < 1 then
+        local srcFile = entry.file and (NE.tex and NE.tex.localFiles and NE.tex.localFiles[entry.file]) or entry.file
+        rb.Flare:SetTexture(srcFile)
+        rb.Flare:SetTexCoord(FLARE_U0, FLARE_U1, entry.top, math.min(1, entry.top + FLARE_H))
+        rb.Flare:SetSize(53, 16)
+        rb.Flare:Show()
       else
         rb.Flare:Hide()
       end
