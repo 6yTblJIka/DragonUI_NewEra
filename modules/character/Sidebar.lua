@@ -592,6 +592,38 @@ local sectionExpanded = {
   pet_defense = true, pet_resistance = true,
 }
 
+-- Persist the section collapse state PER CHARACTER (NE.db.charStats[charKey]). The defaults above hold
+-- until a saved state is loaded (once NE.db is ready); every header toggle writes it back — so a /reload
+-- restores each section's open/closed state for that character.
+local _stateLoaded = false
+local function statsStore(create)
+  if not (NE.db and NE.CharKey) then return nil end
+  if create then
+    NE.db.charStats = NE.db.charStats or {}
+    local key = NE.CharKey()
+    NE.db.charStats[key] = NE.db.charStats[key] or {}
+    return NE.db.charStats[key]
+  end
+  return NE.db.charStats and NE.db.charStats[NE.CharKey()]
+end
+local function loadSectionState()
+  if _stateLoaded then return end
+  -- Need the DB AND a real character name (CharKey is "?-realm" before PLAYER_LOGIN); retry next layout.
+  if not (NE.db and NE.CharKey and UnitName and UnitName("player")) then return end
+  _stateLoaded = true
+  local store = statsStore(false)
+  if store then
+    for id, v in pairs(store) do
+      if sectionExpanded[id] ~= nil then sectionExpanded[id] = v and true or false end
+    end
+  end
+end
+local function saveSectionState()
+  local store = statsStore(true)
+  if not store then return end
+  for id, v in pairs(sectionExpanded) do store[id] = v and true or false end
+end
+
 -- ----------------------------------------------------------------------------
 -- Tooltip rendering for a stat row (pcall the getter — §B).
 -- ----------------------------------------------------------------------------
@@ -654,6 +686,7 @@ local function createCategoryHeader(content, section)
   row:RegisterForClicks("LeftButtonUp")
   row:SetScript("OnClick", function()
     sectionExpanded[section.id] = not sectionExpanded[section.id]
+    saveSectionState()   -- persist per character so /reload keeps this section's open/closed state
     if PlaySound then pcall(PlaySound, "igCharacterInfoTab") end
     if CP.LayoutSidebar then CP.LayoutSidebar() end
   end)
@@ -707,6 +740,7 @@ end
 -- TOPRIGHT(-5,0) to the header's BOTTOMRIGHT; subsequent rows chain TOPRIGHT(0,0) row→row.
 -- ----------------------------------------------------------------------------
 local function layoutSidebar()
+  loadSectionState()   -- restore per-character collapse state once NE.db is ready (idempotent)
   local pane = CP._sidebar
   if not (pane and pane._content and pane._sectionRows) then return end
   local content = pane._content

@@ -181,9 +181,16 @@ end
 
 local function nodeTooltip(self)
   GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-  -- 3.3.5a GameTooltip:SetTalent keys on (tab, index, isInspect, isPet, group), NOT talentID.
+  -- 3.3.5a GameTooltip:SetTalent keys on (tab, index, isInspect, isPet, group, PREVIEW), NOT talentID.
+  -- The 6th arg (preview) makes the tooltip show the PENDING previewed rank/effects rather than only
+  -- the learned rank — so spending points before Apply is reflected in the tooltip.
   if self._tab and self._index and GameTooltip.SetTalent then
-    local ok = pcall(GameTooltip.SetTalent, GameTooltip, self._tab, self._index, false, false, T._viewGroup or T._activeGroup or 1)
+    local group = T._viewGroup or T._activeGroup or 1
+    local ok = pcall(GameTooltip.SetTalent, GameTooltip, self._tab, self._index, false, false, group, previewOn())
+    if not ok then
+      -- Fall back to the plain form if a client rejects the preview arg (keeps the tooltip working).
+      ok = pcall(GameTooltip.SetTalent, GameTooltip, self._tab, self._index, false, false, group)
+    end
     if ok then
       GameTooltip:Show()
       return
@@ -205,6 +212,7 @@ local function wireNode(n)
     if (T._viewGroup or 1) ~= (T._activeGroup or 1) then return end
     if btn == "LeftButton" then nodeLeftClick(self)
     elseif btn == "RightButton" then nodeRightClick(self) end
+    nodeTooltip(self)   -- re-show so the tooltip reflects the just-changed previewed rank immediately
   end)
   -- Preserve the scaffold's hover-ring behaviour (ShowHover/HideHover) AND layer the tooltip on.
   n:SetScript("OnEnter", function(self)
