@@ -83,11 +83,11 @@ local PROF_MAP = {
   tailor         = { kit = "Tailoring",      icon = 4620681, fill = "skillbar_fill_flipbook_tailoring"      },
   cooking        = { kit = "Cooking",        icon = 4620671, fill = "skillbar_fill_flipbook_cooking"        },
   fishing        = { kit = "Fishing",        icon = 4620674 },
-  inscription    = { kit = nil,              icon = "Interface\\Icons\\INV_Inscription_Tradeskill01" },
-  inscript       = { kit = nil,              icon = "Interface\\Icons\\INV_Inscription_Tradeskill01" },
-  jewel          = { kit = nil,              icon = 4620677, fill = "skillbar_fill_flipbook_blacksmithing" },
-  jewelcraft     = { kit = nil,              icon = 4620677, fill = "skillbar_fill_flipbook_blacksmithing" },
-  prospect       = { kit = nil,              icon = 4620677, fill = "skillbar_fill_flipbook_blacksmithing" },
+  inscription    = { kit = "Inscription",   icon = 4620676, fill = "skillbar_fill_flipbook_inscription" },
+  inscript       = { kit = "Inscription",   icon = 4620676, fill = "skillbar_fill_flipbook_inscription" },
+  jewel          = { kit = "Jewelcrafting", icon = 4620677, fill = "skillbar_fill_flipbook_jewelcrafting" },
+  jewelcraft     = { kit = "Jewelcrafting", icon = 4620677, fill = "skillbar_fill_flipbook_jewelcrafting" },
+  prospect       = { kit = "Jewelcrafting", icon = 4620677, fill = "skillbar_fill_flipbook_jewelcrafting" },
   ["first aid"]  = { kit = nil,              icon = "Interface\\Icons\\Spell_Holy_SealOfSacrifice",
                      fill = "skillbar_fill_flipbook_skinning" },
 }
@@ -115,6 +115,7 @@ local function infoFromIconPath(texPath)
   if p:find("tailor", 1, true) then return PROF_MAP.tailor end
   if p:find("cooking", 1, true) then return PROF_MAP.cooking end
   if p:find("fishing", 1, true) then return PROF_MAP.fishing end
+  if p:find("inscription", 1, true) then return PROF_MAP.inscription end
   if p:find("jewel", 1, true) then return PROF_MAP.jewel end
   return nil
 end

@@ -110,14 +110,14 @@ T.CLASS_BACKGROUND = {
   MAGE    = { "talents-background-mage-arcane",           "talents-background-mage-fire",           "talents-background-mage-frost" },
   WARLOCK = { "talents-background-warlock-affliction",    "talents-background-warlock-demonology",  "talents-background-warlock-destruction" },
   DRUID   = { "talents-background-druid-balance",         "talents-background-druid-feral",         "talents-background-druid-restoration" },
+  DEATHKNIGHT = { "talents-background-deathknight-blood", "talents-background-deathknight-frost",   "talents-background-deathknight-unholy" },
 }
 -- Fallback used before the dominant tab is known (no points yet).
 T.DEFAULT_BACKGROUND_TAB = 1
 
--- Spec backgrounds (Phase-1 art step DONE): 9 classes x 3 trees = 27 atlases on 18 sheets.
+-- Spec backgrounds (Phase-1 art step DONE): 10 classes x 3 trees = 30 atlases on 20 sheets.
 -- Sheets downscaled 2048->1024 POT (2048-wide crashes this client) via blpconverter; rects are
--- the ORIGINAL normalized texcoords (resolution-independent). DEATHKNIGHT bg art absent in the
--- NewEra source (4631290/4631293 not shipped) -> DK falls back to warrior-arms via BackgroundNick.
+-- the ORIGINAL normalized texcoords (resolution-independent).
 
 NE.tex.RegisterLocal(4631392, "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\4631392-talents-bg.blp")
 NE.tex.RegisterLocal(4631395, "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\4631395-talents-bg.blp")
@@ -137,6 +137,8 @@ NE.tex.RegisterLocal(4631386, "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Tal
 NE.tex.RegisterLocal(4631389, "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\4631389-talents-bg.blp")
 NE.tex.RegisterLocal(4631299, "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\4631299-talents-bg.blp")
 NE.tex.RegisterLocal(4631304, "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\4631304-talents-bg.blp")
+NE.tex.RegisterLocal(4631290, "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\4631290-talents-bg.blp")
+NE.tex.RegisterLocal(4631293, "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\4631293-talents-bg.blp")
 
 NE.tex.RegisterAtlases({
   ["talents-background-warrior-arms"] = { file=4631392, left=0.000488, right=0.787598, top=0.000488, bottom=0.378418, width=1612, height=774 },
@@ -166,4 +168,7 @@ NE.tex.RegisterAtlases({
   ["talents-background-druid-balance"] = { file=4631299, left=0.000488, right=0.787598, top=0.000488, bottom=0.378418, width=1612, height=774 },
   ["talents-background-druid-feral"] = { file=4631299, left=0.000488, right=0.787598, top=0.379395, bottom=0.757324, width=1612, height=774 },
   ["talents-background-druid-restoration"] = { file=4631304, left=0.000488, right=0.787598, top=0.379395, bottom=0.757324, width=1612, height=774 },
+  ["talents-background-deathknight-blood"] = { file=4631290, left=0.000488, right=0.787598, top=0.000488, bottom=0.378418, width=1612, height=774 },
+  ["talents-background-deathknight-frost"] = { file=4631290, left=0.000488, right=0.787598, top=0.379395, bottom=0.757324, width=1612, height=774 },
+  ["talents-background-deathknight-unholy"] = { file=4631293, left=0.000488, right=0.787598, top=0.000977, bottom=0.756836, width=1612, height=774 },
 })

@@ -38,6 +38,8 @@ NE.tex.RegisterLocal(4723308, P .. "4723308-professions-recipe-background-skinni
 NE.tex.RegisterLocal(4627497, P .. "4627497-professions-recipe-background-tailoring.blp")
 NE.tex.RegisterLocal(4671747, P .. "4671747-professions-recipe-background-cooking.blp")
 NE.tex.RegisterLocal(4723316, P .. "4723316-professions-recipe-background-fishing.blp")
+NE.tex.RegisterLocal(4723119, P .. "4723119-professions-background-inscription.blp")
+NE.tex.RegisterLocal(4723112, P .. "4723112-professions-recipe-background-jewelcrafting.blp")
 
 -- 4626279 — RankBar skill-progress mask (the WHOLE BLP is the mask; reveals the fill by
 -- width-clamping). Retail uses AddMaskTexture; we guard for 3.3.5a nil-return below.
@@ -54,6 +56,7 @@ NE.tex.RegisterLocal(4620672, P .. "4620672-ui-profession-enchanting.blp")
 NE.tex.RegisterLocal(4620673, P .. "4620673-ui-profession-engineering.blp")
 NE.tex.RegisterLocal(4620674, P .. "4620674-ui-profession-fishing.blp")
 NE.tex.RegisterLocal(4620675, P .. "4620675-ui-profession-herbalism.blp")
+NE.tex.RegisterLocal(4620676, P .. "4620676-ui-profession-inscription.blp")
 NE.tex.RegisterLocal(4620677, P .. "4620677-ui-profession-jewelcrafting.blp")   -- WotLK forward-compat
 NE.tex.RegisterLocal(4620678, P .. "4620678-ui-profession-leatherworking.blp")
 NE.tex.RegisterLocal(4620679, P .. "4620679-ui-profession-mining.blp")
@@ -69,6 +72,8 @@ NE.tex.RegisterLocal(4683154, P .. "4683154-skillbar-fill-flipbook-blacksmithing
 NE.tex.RegisterLocal(4872261, P .. "4872261-skillbar-fill-flipbook-cooking.blp")
 NE.tex.RegisterLocal(4693223, P .. "4693223-skillbar-fill-flipbook-enchanting.blp")
 NE.tex.RegisterLocal(4881558, P .. "4881558-skillbar-fill-flipbook-engineering.blp")
+NE.tex.RegisterLocal(4872264, P .. "4872264-skillbar-fill-flipbook-inscription.blp")
+NE.tex.RegisterLocal(4693237, P .. "4693237-skillbar-fill-flipbook-jewelcrafting.blp")
 NE.tex.RegisterLocal(4696971, P .. "4696971-skillbar-fill-flipbook-leatherworking.blp")
 NE.tex.RegisterLocal(4693230, P .. "4693230-skillbar-fill-flipbook-tailoring.blp")
 NE.tex.RegisterLocal(4872267, P .. "4872267-skillbar-fill-flipbook-skinning.blp")   -- also reused for First Aid
@@ -148,6 +153,8 @@ NE.tex.RegisterAtlases({
   ["skillbar_fill_flipbook_cooking"]        = { file=4872261, left=0.000488, right=0.836426, top=0.000977, bottom=0.997070, width=1712, height=1020 },
   ["skillbar_fill_flipbook_enchanting"]     = { file=4693223, left=0.000488, right=0.836426, top=0.000488, bottom=0.614746, width=1712, height=1258 },
   ["skillbar_fill_flipbook_engineering"]    = { file=4881558, left=0.000488, right=0.836426, top=0.000488, bottom=0.498535, width=1712, height=1020 },
+  ["skillbar_fill_flipbook_inscription"]    = { file=4872264, left=0.000488, right=0.836426, top=0.000488, bottom=0.498535, width=1712, height=1020 },
+  ["skillbar_fill_flipbook_jewelcrafting"]  = { file=4693237, left=0.000488, right=0.836426, top=0.000488, bottom=0.365723, width=1712, height=748 },
   ["skillbar_fill_flipbook_leatherworking"] = { file=4696971, left=0.000488, right=0.836426, top=0.000488, bottom=0.498535, width=1712, height=1020 },
   ["skillbar_fill_flipbook_tailoring"]      = { file=4693230, left=0.000488, right=0.836426, top=0.000488, bottom=0.498535, width=1712, height=1020 },
   ["skillbar_fill_flipbook_skinning"]       = { file=4872267, left=0.000488, right=0.836426, top=0.000488, bottom=0.498535, width=1712, height=1020 },
@@ -164,6 +171,8 @@ NE.tex.RegisterAtlases({
   ["professions-recipe-background-engineering"]  = { file=4722478, left=0.000977, right=0.660156, top=0.000977, bottom=0.536133, width=675, height=548 },
   ["professions-recipe-background-fishing"]      = { file=4723316, left=0.000977, right=0.660156, top=0.000977, bottom=0.536133, width=675, height=548 },
   ["professions-recipe-background-herbalism"]    = { file=4723159, left=0.000977, right=0.660156, top=0.000977, bottom=0.536133, width=675, height=548 },
+  ["professions-recipe-background-inscription"]  = { file=4723119, left=0.000977, right=0.660156, top=0.000977, bottom=0.536133, width=675, height=548 },
+  ["professions-recipe-background-jewelcrafting"] = { file=4723112, left=0.000977, right=0.660156, top=0.000977, bottom=0.536133, width=675, height=548 },
   ["professions-recipe-background-leatherworking"]={ file=4723154, left=0.000977, right=0.660156, top=0.000977, bottom=0.536133, width=675, height=548 },
   ["professions-recipe-background-mining"]       = { file=4723189, left=0.000977, right=0.660156, top=0.000977, bottom=0.536133, width=675, height=548 },
   ["professions-recipe-background-skinning"]     = { file=4723308, left=0.000977, right=0.660156, top=0.000977, bottom=0.536133, width=675, height=548 },
