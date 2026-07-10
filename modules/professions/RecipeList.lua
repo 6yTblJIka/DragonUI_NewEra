@@ -60,6 +60,22 @@ local function unlearnedRGB()
   return 0.5, 0.5, 0.5
 end
 
+-- Skill-difficulty colours (cog option "Colour names by skill difficulty"): orange = optimal,
+-- yellow = medium, green = easy, grey = trivial. Prefer the stock TradeSkillTypeColor table.
+local DIFF_COLOR = {
+  optimal      = { 1.00, 0.50, 0.25 },
+  medium       = { 1.00, 1.00, 0.00 },
+  easy         = { 0.25, 0.75, 0.25 },
+  trivial      = { 0.50, 0.50, 0.50 },
+  nodifficulty = { 0.96, 0.96, 0.96 },
+}
+local function difficultyRGB(diff)
+  local t = _G.TradeSkillTypeColor and _G.TradeSkillTypeColor[diff]
+  if t and t.r then return t.r, t.g, t.b end
+  local f = DIFF_COLOR[diff] or DIFF_COLOR.trivial
+  return f[1], f[2], f[3]
+end
+
 -- ============================================================================
 -- SavedVariables helpers for Favorites.
 -- NE.db.profFavorites[professionName][recipeName] = true
@@ -351,6 +367,10 @@ local function initRecipeRow(btn, entry, rl)
 
   btn.RLabel:SetText(r.name)
   local cr, cg, cb = (r.learned and learnedRGB or unlearnedRGB)()
+  -- Cog option: colour learned recipes by skill difficulty instead of the flat parchment-gold.
+  if C.opts and C.opts.colorByDifficulty and r.learned then
+    cr, cg, cb = difficultyRGB(r.difficulty)
+  end
   btn.RLabel:SetVertexColor(cr, cg, cb)
 
   -- Skill-up chevron.
@@ -380,7 +400,13 @@ local function initRecipeRow(btn, entry, rl)
       -- Right-click: Favorite toggle via UIDropDownMenu.
       if not r.learned then return end
       if UIDropDownMenu_Initialize then
-        local dd = CreateFrame("Frame", "NE_ProfCraftFavDropDown", UIParent, "UIDropDownMenuTemplate")
+        -- Reuse a single dropdown frame; re-init per click for the current recipe.
+        -- (CreateFrame with a fixed global name every click leaks the prior frame.)
+        local dd = C._favDropdown
+        if not dd then
+          dd = CreateFrame("Frame", "NE_ProfCraftFavDropDown", UIParent, "UIDropDownMenuTemplate")
+          C._favDropdown = dd
+        end
         UIDropDownMenu_Initialize(dd, function()
           local info = UIDropDownMenu_CreateInfo()
           info.text     = isFav(r.name) and (BATTLE_PET_UNFAVORITE or "Remove Favorite")
@@ -415,6 +441,8 @@ local function initRecipeRow(btn, entry, rl)
   end)
 
   btn:SetScript("OnEnter", function()
+    -- Cog option: suppress the item tooltip while scrolling/hovering the list.
+    if C.opts and C.opts.hideListTooltips then return end
     GameTooltip:SetOwner(btn, "ANCHOR_RIGHT")
     local shown = false
     if r.isCraft and GameTooltip.SetCraftSpell then
@@ -530,7 +558,8 @@ function C.buildRecipeList(f)
   local ns = CreateFrame("Frame", nil, rl)
   ns:SetAllPoints(rl); ns:EnableMouse(false)
   if NE.nineslice and NE.nineslice.ApplyLayout then
-    pcall(NE.nineslice.ApplyLayout, NE.nineslice, ns, "InsetFrameTemplate")
+    -- DOWNPORT: ApplyLayout is a plain function (container, layoutName) — no self arg.
+    pcall(NE.nineslice.ApplyLayout, ns, "InsetFrameTemplate")
   end
   rl.BackgroundNineSlice = ns
 
@@ -615,7 +644,17 @@ function C.buildRecipeList(f)
 
   filter:SetScript("OnClick", function(self)
     if not UIDropDownMenu_Initialize then return end
-    local dd = CreateFrame("Frame", "NE_ProfCraftFilterDropDown", UIParent, "UIDropDownMenuTemplate")
+    -- Reuse a single dropdown frame (see fav dropdown note above).
+    local dd = C._filterDropdown
+    if not dd then
+      dd = CreateFrame("Frame", "NE_ProfCraftFilterDropDown", UIParent, "UIDropDownMenuTemplate")
+      C._filterDropdown = dd
+    end
+    -- Toggle: a second click on the filter button closes the open list instead of reopening it.
+    if _G.UIDROPDOWNMENU_OPEN_MENU == dd and _G.DropDownList1 and _G.DropDownList1:IsShown() then
+      if CloseDropDownMenus then CloseDropDownMenus() end
+      return
+    end
     UIDropDownMenu_Initialize(dd, function()
       local function toggle(key)
         C.filters[key] = not C.filters[key]; C.RefreshRecipes(); C.UpdateFilterReset()
@@ -631,7 +670,8 @@ function C.buildRecipeList(f)
       addCheck(_G.TRADESKILL_FILTER_HAS_SKILL_UP    or "Has Skill Up",    "skillUp")
       addCheck(_G.CRAFT_IS_MAKEABLE                 or "Have Materials",  "makeable")
     end, "MENU")
-    ToggleDropDownMenu(1, nil, dd, "cursor", 0, 0)
+    -- Anchor the list to the filter button (drops below it) instead of at the cursor.
+    ToggleDropDownMenu(1, nil, dd, self, 0, 0)
   end)
   rl.FilterDropdown = filter
 
@@ -646,6 +686,8 @@ function C.buildRecipeList(f)
   end
   reset:Hide()
   reset:SetScript("OnClick", function()
+    -- Close the (possibly open) filter dropdown so its checkboxes can't go out of sync with the reset.
+    if CloseDropDownMenus then CloseDropDownMenus() end
     C.filters.showLearned   = true
     C.filters.showUnlearned = false
     C.filters.makeable      = false
@@ -683,11 +725,23 @@ function C.buildRecipeList(f)
   scroll:SetScript("OnVerticalScroll", function(self, offset)
     FauxScrollFrame_OnVerticalScroll(self, offset, ROW_H_RECIPE, function() refreshRows(rl) end)
   end)
+  -- DOWNPORT/REPORT: wheel scrolling via the (hidden) Faux slider value; auto-clamps to its range.
+  scroll:EnableMouseWheel(true)
+  scroll:SetScript("OnMouseWheel", function(self, delta)
+    local sb = _G[(self:GetName() or "") .. "ScrollBar"]
+    if not sb then return end
+    local mn, mx = sb:GetMinMaxValues()
+    local v = sb:GetValue() - delta * ROW_H_RECIPE
+    if v < mn then v = mn elseif v > mx then v = mx end
+    sb:SetValue(v)
+  end)
   rl.ScrollFrame = scroll
 
-  -- Reskin the scrollbar (classic UIPanelScrollBar path from ScrollbarReskin.lua).
-  if NE.scrollbar and NE.scrollbar.Reskin then
-    pcall(NE.scrollbar.Reskin, NE.scrollbar, scroll)
+  -- Scrollbar: use the same hand-built minimal DF bar as the Character window's FauxScroll panes
+  -- (Skills/Reputation/Honor/Currency). BuildCustom is a plain function (scrollFrame, opts) — the
+  -- stock-slider Reskin path never rendered on 3.3.5a. x pushes the bar into the right gutter.
+  if NE.scrollbar and NE.scrollbar.BuildCustom then
+    pcall(NE.scrollbar.BuildCustom, scroll, { x = -8 })
   end
 
   -- Row button pool (MAX_ROWS buttons, reused per scroll position).

@@ -76,6 +76,10 @@ NE.tex.RegisterLocal(4872267, P .. "4872267-skillbar-fill-flipbook-skinning.blp"
 -- 5094125 — Minimized-view right-panel background (compact 404px mode, future use).
 NE.tex.RegisterLocal(5094125, P .. "5094125-professions-minimizedview-background.blp")
 
+-- 3046538 — AuctionHouse chrome sheet. Hosts the favorite star (on/off) AND the white item-icon
+-- border used by the output icon. Both were referenced but never shipped/registered → invisible.
+NE.tex.RegisterLocal(3046538, P .. "3046538-auctionhouse-chrome.blp")
+
 -- ============================================================================
 -- 2. Atlas-name → texcoord rect  (NE.tex.RegisterAtlases)
 --    All coords transcribed verbatim from
@@ -115,6 +119,20 @@ NE.tex.RegisterAtlases({
   ["professions-slot-frame-epic"]        = { file=4417031, left=0.197754, right=0.217285, top=0.843262, bottom=0.862793, width=40,   height=40  },
   ["professions-slot-frame-green"]       = { file=4417031, left=0.107422, right=0.126953, top=0.968262, bottom=0.987793, width=40,   height=40  },
   ["professions-slot-frame-white"]       = { file=4417031, left=0.158691, right=0.178223, top=0.890625, bottom=0.910156, width=40,   height=40  },
+
+  -- Detail/quality pane 3-slice (charcoal fill, rounded corners, ornate top/bottom flourishes).
+  -- Used as the background for the repurposed "Item Details" box — the same dark panel retail
+  -- uses for its Crafting Details window. Top/bottom are fixed caps; middle (1px) tiles/stretches.
+  ["professions-qualitypane-bg-top"]     = { file=4417031, left=0.233398, right=0.360352, top=0.210449, bottom=0.259277, width=260,  height=100 },
+  ["professions-qualitypane-bg-middle"]  = { file=4417031, left=0.399414, right=0.526367, top=0.161621, bottom=0.162109, width=260,  height=1   },
+  ["professions-qualitypane-bg-bottom"]  = { file=4417031, left=0.361328, right=0.488281, top=0.210449, bottom=0.258789, width=260,  height=99  },
+})
+
+-- Sheet 3046538 — AuctionHouse chrome: favorite star (on/off) + white item-icon border.
+NE.tex.RegisterAtlases({
+  ["auctionhouse-icon-favorite"]        = { file=3046538, left=0.940430, right=0.979492, top=0.047852, bottom=0.083008, width=40,  height=36  },
+  ["auctionhouse-icon-favorite-off"]    = { file=3046538, left=0.940430, right=0.979492, top=0.084961, bottom=0.120117, width=40,  height=36  },
+  ["auctionhouse-itemicon-border-white"]= { file=3046538, left=0.135742, right=0.268555, top=0.698242, bottom=0.831055, width=136, height=136 },
 })
 
 -- Sheet 4626279 — skillbar mask (full-BLP, alpha shape applied via width-clamp or AddMaskTexture).
