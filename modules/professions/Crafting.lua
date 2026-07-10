@@ -22,6 +22,8 @@
 --   C.SetProfession([name])
 --   C.UpdateRank()
 --   C.OnRecipeSelected(r)
+--   C.UpdateItemDetails(r, link)
+--   C.UpdateRequires(r)
 --   C.UpdateReagents(r)
 --   C.UpdateCreateButtons(r)
 --   C.ResetOutput()
@@ -42,9 +44,25 @@ local ATLAS_RECIPE_BG   = C.ATLAS_RECIPE_BG   or "professions-recipe-background"
 local ATLAS_SKILL_BG    = C.ATLAS_SKILL_BG    or "professions-skillbar-bg"
 local ATLAS_SKILL_FRAME = C.ATLAS_SKILL_FRAME or "professions-skillbar-frame"
 
+-- Cog-toggled "plain skill bar": one generic bar texture (the reputation/skills fill) for every
+-- profession, tinted, with no per-profession flipbook animation.
+local GENERIC_BAR_TEX   = "Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar"
+local GENERIC_BAR_COLOR = { 0.15, 0.68, 0.20 }   -- green
+
 -- Max reagent slots shown (retail shows up to 8 on WotLK; WoTLK recipes rarely exceed 6).
 local MAX_REAGENT_SLOTS = 8
 local REAGENT_ROW_H     = 48
+
+-- Item-details panel (right side). Repurposes retail's floating "Crafting Details" box —
+-- whose mechanics (Concentration/Resourcefulness/Ingenuity/Multicraft/quality tiers) DON'T
+-- exist on 3.3.5a — into a live tooltip of the item you're about to craft.
+local DETAILS_W     = 250
+-- The 3-slice pane's top/bottom caps are this tall (native 260×100, kept aspect). The panel must
+-- be at least 2× this so the two caps meet edge-to-edge instead of overlapping (which double-darkens
+-- the seam). Used both when building the pane and when clamping the min height.
+local DETAILS_CAP_H = math.floor(100 * (DETAILS_W / 260) + 0.5)   -- 96 for DETAILS_W = 250
+-- Reagent rows are narrowed to a left column so their names don't run under the details panel.
+local REAGENT_COL_W = SCHEMATIC_W - DETAILS_W - 70
 
 -- ============================================================================
 -- Per-profession theming map. key = lowercase substring of the profession name.
@@ -113,8 +131,19 @@ flipDriver:SetScript("OnUpdate", function(_, dt)
     local f = flipActive[i]
     f.elapsed = f.elapsed + dt
     while f.elapsed >= f.duration do f.elapsed = f.elapsed - f.duration end
-    local idx = math.floor((f.elapsed / f.duration) * f.frames)
-    if idx >= f.frames then idx = f.frames - 1 end
+    -- DOWNPORT FIX (PR#7 "skill bar occasionally goes black"): cell 0 of every fill sheet is a
+    -- black frame (see fillLayoutForAtlas / static-fallback comment). The old stepper cycled
+    -- idx over 0..frames-1, so it landed on the black cell once per loop → a periodic flash.
+    -- Animate over first..frames-1 instead, skipping the black lead cell entirely.
+    local first = f.first or 1
+    local span  = f.frames - first
+    local idx
+    if span <= 0 then
+      idx = first
+    else
+      idx = first + math.floor((f.elapsed / f.duration) * span)
+      if idx >= f.frames then idx = f.frames - 1 end
+    end
     local col = idx % f.cols
     local row = math.floor(idx / f.cols)
     f.tex:SetTexCoord(
@@ -126,16 +155,23 @@ end)
 flipDriver:Hide()
 
 -- tc = { l, r, t, b }; rows/cols/frames describe the sprite grid; duration in seconds.
-local function startFlip(tex, tc, rows, cols, frames, duration)
+-- first = index of the first NON-black frame to animate from (defaults to 1 — cell 0 is black).
+local function startFlip(tex, tc, rows, cols, frames, duration, first)
+  first = first or 1
+  local cellW = (tc.r - tc.l) / cols
+  local cellH = (tc.b - tc.t) / rows
   for i = #flipActive, 1, -1 do if flipActive[i].tex == tex then table.remove(flipActive, i) end end
+  -- Seed the texcoord on the first non-black frame so we never flash cell 0.
+  local col0 = first % cols
+  local row0 = math.floor(first / cols)
   tex:SetTexCoord(
-    tc.l,                     tc.l + ((tc.r - tc.l) / cols),
-    tc.t,                     tc.t + ((tc.b - tc.t) / rows))
+    tc.l + col0 * cellW,      tc.l + (col0 + 1) * cellW,
+    tc.t + row0 * cellH,      tc.t + (row0 + 1) * cellH)
   flipActive[#flipActive + 1] = {
     tex = tex, l = tc.l, t = tc.t, cols = cols, frames = frames,
-    duration = duration, elapsed = 0,
-    cellW = (tc.r - tc.l) / cols,
-    cellH = (tc.b - tc.t) / rows,
+    duration = duration, elapsed = 0, first = first,
+    cellW = cellW,
+    cellH = cellH,
   }
   flipDriver:Show()
 end
@@ -172,22 +208,15 @@ local function unlearnedRGB()
   return 0.5, 0.5, 0.5
 end
 
-local function applyItemQualityBorder(borderTex, glowTex, quality)
-  if not borderTex then return end
-  local r, g, b = 1, 1, 1
-  if quality ~= nil and GetItemQualityColor then
-    local qr, qg, qb = GetItemQualityColor(quality)
-    if qr and qg and qb then r, g, b = qr, qg, qb end
-  end
-  borderTex:SetVertexColor(r, g, b)
-
-  if glowTex then
-    if quality and quality > 1 then
-      glowTex:SetVertexColor(r, g, b)
-      glowTex:Show()
-    else
-      glowTex:Hide()
-    end
+-- Rarity is shown by the glow RING only (matching the bags window); the metal slot frame stays
+-- neutral. Poor/Common (quality <= 1) get no glow.
+local function applyItemQualityBorder(_borderTex, glowTex, quality)
+  if not glowTex then return end
+  if quality and quality > 1 and GetItemQualityColor then
+    local r, g, b = GetItemQualityColor(quality)
+    if r then glowTex:SetVertexColor(r, g, b); glowTex:Show() else glowTex:Hide() end
+  else
+    glowTex:Hide()
   end
 end
 
@@ -401,7 +430,7 @@ end
 -- ============================================================================
 local function buildReagentSlot(parent)
   local b = CreateFrame("Frame", nil, parent)
-  b:SetSize(SCHEMATIC_W - 80, REAGENT_ROW_H)
+  b:SetSize(REAGENT_COL_W, REAGENT_ROW_H)
   b:EnableMouse(false)
 
   b.SlotBg = b:CreateTexture(nil, "BACKGROUND")
@@ -417,12 +446,15 @@ local function buildReagentSlot(parent)
   NE.tex.SetAtlas(b.IconBorder, "professions-slot-frame", false)
   b.IconBorder:SetSize(40, 40); b.IconBorder:SetPoint("CENTER", b.SlotBg, "CENTER", 0, 0)
 
-  b.QualityGlow = b:CreateTexture(nil, "OVERLAY")
+  -- Rarity glow ring — SAME texture + method as the bags window: UI-ActionButton-Border keeps its
+  -- glow inset within a transparent margin, so it's anchored to the slot corners with a ~35% overhang
+  -- (not a hardcoded oversize) so the glow reaches the slot edge cleanly.
+  b.QualityGlow = b:CreateTexture(nil, "OVERLAY", nil, 7)
   b.QualityGlow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
   b.QualityGlow:SetBlendMode("ADD")
-  b.QualityGlow:SetSize(74, 74)
-  b.QualityGlow:SetPoint("CENTER", b.IconBorder, "CENTER", 0, 0)
-  b.QualityGlow:SetAlpha(0.85)
+  local gover = math.max(8, math.floor(43 * 0.35 + 0.5))
+  b.QualityGlow:SetPoint("TOPLEFT",     b.SlotBg, "TOPLEFT",     -gover,  gover)
+  b.QualityGlow:SetPoint("BOTTOMRIGHT", b.SlotBg, "BOTTOMRIGHT",  gover, -gover)
   b.QualityGlow:Hide()
 
   b.Count = b:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -438,6 +470,11 @@ local function buildReagentSlot(parent)
   local iconHit = CreateFrame("Button", nil, b)
   iconHit:SetAllPoints(b.SlotBg)
   iconHit:SetScript("OnLeave", function() if GameTooltip_Hide then GameTooltip_Hide() else GameTooltip:Hide() end end)
+  -- Shift-click → link the reagent in chat; Ctrl-click → try it on (no-op for non-equippable).
+  iconHit:RegisterForClicks("LeftButtonUp")
+  iconHit:SetScript("OnClick", function()
+    if b._link and HandleModifiedItemClick then HandleModifiedItemClick(b._link) end
+  end)
   b.IconHit = iconHit
 
   return b
@@ -463,7 +500,8 @@ function C.buildSchematicForm(f)
   local ns = CreateFrame("Frame", nil, sf)
   ns:SetAllPoints(sf); ns:EnableMouse(false)
   if NE.nineslice and NE.nineslice.ApplyLayout then
-    pcall(NE.nineslice.ApplyLayout, NE.nineslice, ns, "InsetFrameTemplate")
+    -- DOWNPORT: ApplyLayout is a plain function (container, layoutName) — no self arg.
+    pcall(NE.nineslice.ApplyLayout, ns, "InsetFrameTemplate")
   end
   sf.NineSlice = ns
 
@@ -474,16 +512,8 @@ function C.buildSchematicForm(f)
   out.Icon:SetAllPoints(out)
   out.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
   out.Icon:Hide()
-  out.IconBorder = out:CreateTexture(nil, "OVERLAY")
-  NE.tex.SetAtlas(out.IconBorder, "auctionhouse-itemicon-border-white", false)
-  out.IconBorder:SetSize(68, 68); out.IconBorder:SetPoint("CENTER", out, "CENTER", 0, 0); out.IconBorder:Hide()
-  out.QualityGlow = out:CreateTexture(nil, "OVERLAY")
-  out.QualityGlow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-  out.QualityGlow:SetBlendMode("ADD")
-  out.QualityGlow:SetSize(92, 92)
-  out.QualityGlow:SetPoint("CENTER", out.IconBorder, "CENTER", 0, 0)
-  out.QualityGlow:SetAlpha(0.85)
-  out.QualityGlow:Hide()
+  -- No rarity ring/glow on the crafted-item icon: its rarity reads from the (rarity-colored) name
+  -- and the details panel. Keeping a colored circle here looked noisy.
   out:SetScript("OnEnter", function()
     local rec = out._recipe; if not rec then return end
     GameTooltip:SetOwner(out, "ANCHOR_RIGHT")
@@ -492,13 +522,21 @@ function C.buildSchematicForm(f)
     GameTooltip:Show()
   end)
   out:SetScript("OnLeave", function() if GameTooltip_Hide then GameTooltip_Hide() else GameTooltip:Hide() end end)
+  -- Shift-click → link the crafted item in an open chat edit box; Ctrl-click → try it on in the
+  -- dressing room. HandleModifiedItemClick (stock 3.3.5a) routes both from the item link.
+  out:RegisterForClicks("LeftButtonUp")
+  out:SetScript("OnClick", function()
+    if out._link and HandleModifiedItemClick then HandleModifiedItemClick(out._link) end
+  end)
   sf.OutputIcon = out
 
   -- Output item name. GameFontHighlightMed2 is retail-only; fall back to GameFontHighlight.
   local outName = sf:CreateFontString(nil, "ARTWORK",
     _G.GameFontHighlightMed2 and "GameFontHighlightMed2" or "GameFontHighlight")
   do local fn, _, fl = outName:GetFont(); if fn then outName:SetFont(fn, 20, fl) end end
-  outName:SetPoint("LEFT", out, "RIGHT", 14, 17); outName:SetJustifyH("LEFT"); outName:SetJustifyV("TOP")
+  -- Offset chosen so the name + "Requires:" line below it straddle the icon's vertical center
+  -- (rather than sitting up at the icon's top).
+  outName:SetPoint("LEFT", out, "RIGHT", 14, 8); outName:SetJustifyH("LEFT"); outName:SetJustifyV("TOP")
   sf.OutputText = outName
 
   -- Favourite star button (20×18, next to item name).
@@ -539,6 +577,15 @@ function C.buildSchematicForm(f)
   fav:SetScript("OnLeave", function() if GameTooltip_Hide then GameTooltip_Hide() else GameTooltip:Hide() end end)
   sf.FavoriteButton = fav
 
+  -- "Requires: <tools>" line (Anvil, Tool Bench, spell focus, …) — below the item NAME and
+  -- indented to it (right of the icon), matching the stock/reference layout.
+  local req = sf:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+  req:SetPoint("TOPLEFT", outName, "BOTTOMLEFT", 0, -6)
+  req:SetWidth(REAGENT_COL_W - 30)
+  req:SetJustifyH("LEFT"); req:SetJustifyV("TOP")
+  req:Hide()
+  sf.RequiresText = req
+
   -- Empty-state hint (shown until a recipe is selected).
   local empty = sf:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
   empty:SetPoint("CENTER", sf, "CENTER", 0, 40)
@@ -556,9 +603,65 @@ function C.buildSchematicForm(f)
 
   local rc = CreateFrame("Frame", nil, sf)
   rc:SetPoint("TOPLEFT", rh, "BOTTOMLEFT", 0, -10)
-  rc:SetSize(SCHEMATIC_W - 80, 240)
+  rc:SetSize(REAGENT_COL_W, 240)
   sf.ReagentContainer = rc
   sf._reagentSlots = {}
+
+  -- -------------------------------------------------------------------------
+  -- Item-details panel (right side) — see DETAILS_W note at top of file.
+  -- A dark titled box (like retail's "Crafting Details") holding a live, embedded
+  -- item tooltip of the output. Hidden until a recipe is selected.
+  -- -------------------------------------------------------------------------
+  local dp = CreateFrame("Frame", "NE_ProfessionsCraftingDetails", sf)
+  dp:SetWidth(DETAILS_W)
+  -- Anchored by its vertical CENTER (right edge), so a small box sits centered on the Y axis and
+  -- a taller box grows symmetrically up and down instead of dropping from a fixed top.
+  dp:SetPoint("RIGHT", sf, "RIGHT", -16, 0)
+  dp:SetHeight(220)   -- resized to fit content in C.UpdateItemDetails
+  dp:Hide()
+  sf.DetailsPanel = dp
+
+  -- Background: the DF "detail/quality pane" 3-slice (charcoal fill, rounded corners, ornate
+  -- top/bottom flourishes) — the same dark panel retail uses for its Crafting Details box. All
+  -- three slices live on the already-shipped chrome sheet (4417031). Top/bottom are fixed caps
+  -- sized to preserve the flourish aspect; the 1px middle stretches between them.
+  local capH = DETAILS_CAP_H
+  local paneTop = dp:CreateTexture(nil, "BACKGROUND")
+  NE.tex.SetAtlas(paneTop, "professions-qualitypane-bg-top", false)
+  paneTop:SetPoint("TOPLEFT",  dp, "TOPLEFT",  0, 0)
+  paneTop:SetPoint("TOPRIGHT", dp, "TOPRIGHT", 0, 0)
+  paneTop:SetHeight(capH)
+
+  local paneBot = dp:CreateTexture(nil, "BACKGROUND")
+  NE.tex.SetAtlas(paneBot, "professions-qualitypane-bg-bottom", false)
+  paneBot:SetPoint("BOTTOMLEFT",  dp, "BOTTOMLEFT",  0, 0)
+  paneBot:SetPoint("BOTTOMRIGHT", dp, "BOTTOMRIGHT", 0, 0)
+  paneBot:SetHeight(capH)
+
+  local paneMid = dp:CreateTexture(nil, "BACKGROUND")
+  NE.tex.SetAtlas(paneMid, "professions-qualitypane-bg-middle", false)
+  paneMid:SetPoint("TOPLEFT",     paneTop, "BOTTOMLEFT", 0, 0)
+  paneMid:SetPoint("BOTTOMRIGHT", paneBot, "TOPRIGHT",   0, 0)
+  dp.PaneTop, dp.PaneMid, dp.PaneBottom = paneTop, paneMid, paneBot
+
+  -- Output item icon, centered near the top. An empty row's worth of gap sits above it so the
+  -- icon isn't jammed against the top flourish.
+  local dicon = dp:CreateTexture(nil, "ARTWORK")
+  dicon:SetSize(38, 38)
+  dicon:SetPoint("TOP", dp, "TOP", 0, -34)
+  dicon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+  dicon:Hide()
+  dp.Icon = dicon
+
+  local diconb = dp:CreateTexture(nil, "OVERLAY")
+  NE.tex.SetAtlas(diconb, "professions-slot-frame", false)
+  diconb:SetSize(46, 46)
+  diconb:SetPoint("CENTER", dicon, "CENTER", 0, 0)
+  diconb:Hide()
+  dp.IconBorder = diconb
+
+  -- Wrapped text lines are scanned from the item/recipe tooltip and pooled here.
+  dp.Lines = {}
 end
 
 -- ============================================================================
@@ -611,6 +714,29 @@ function C.buildRankBar(f)
   NE.tex.SetAtlas(border, ATLAS_SKILL_FRAME, true)
   border:SetPoint("TOPLEFT", rb, "TOPLEFT", 0, 0)
   rb.Border = border
+
+  -- Generic-bar chrome (shown only in the "Plain skill bar" cog mode): a dark trough + 1px outline
+  -- that matches the RECTANGULAR generic fill and stays inside the bar space. The DF frame art above
+  -- is shaped for the flipbook fill, so it can't frame this one. All constrained within rb.
+  local genBg = rb:CreateTexture(nil, "ARTWORK", nil, 0)
+  genBg:SetTexture(0, 0, 0, 0.85)
+  genBg:SetPoint("TOPLEFT", rb, "TOPLEFT", 5, -1)
+  genBg:SetSize(443, 22)   -- top-anchored, so the extra height extends the bar at the BOTTOM
+  genBg:Hide()
+  rb.GenBg = genBg
+
+  rb.GenBorder = {}
+  local function genEdge()
+    local t = rb:CreateTexture(nil, "ARTWORK", nil, 3)
+    t:SetTexture(0, 0, 0, 0.95); t:Hide()
+    rb.GenBorder[#rb.GenBorder + 1] = t
+    return t
+  end
+  local eT, eB, eL, eR = genEdge(), genEdge(), genEdge(), genEdge()
+  eT:SetPoint("TOPLEFT", genBg, "TOPLEFT", 0, 0);      eT:SetPoint("TOPRIGHT", genBg, "TOPRIGHT", 0, 0);       eT:SetHeight(1)
+  eB:SetPoint("BOTTOMLEFT", genBg, "BOTTOMLEFT", 0, 0); eB:SetPoint("BOTTOMRIGHT", genBg, "BOTTOMRIGHT", 0, 0); eB:SetHeight(1)
+  eL:SetPoint("TOPLEFT", genBg, "TOPLEFT", 0, 0);      eL:SetPoint("BOTTOMLEFT", genBg, "BOTTOMLEFT", 0, 0);   eL:SetWidth(1)
+  eR:SetPoint("TOPRIGHT", genBg, "TOPRIGHT", 0, 0);     eR:SetPoint("BOTTOMRIGHT", genBg, "BOTTOMRIGHT", 0, 0); eR:SetWidth(1)
 
   -- Rank text (centered, on OVERLAY layer so it renders above the border).
   local rank = rb:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -728,15 +854,19 @@ function C.buildCreateControls(f)
 end
 
 -- ============================================================================
--- C.buildLinkButton(f) — profession link-to-chat button (native Classic art).
+-- C.buildLinkButton(f) — profession link-to-chat button.
+-- DOWNPORT: the Classic-source art (UI-LinkProfession-Up/Down) doesn't render on 3.3.5a. Use the
+-- SAME chat glyph the stock WotLK tradeskill link button uses — UI-ChatIcon-Chat (a single speech
+-- bubble). (UI-ChatConversationIcon, the Cata+ double-bubble, looked wrong.) Up/Down states +
+-- the classic mouse-over highlight.
 -- ============================================================================
 function C.buildLinkButton(f)
   if not f.RankBar then return end
   local link = CreateFrame("Button", "NE_ProfessionsCraftingLink", f)
   link:SetSize(30, 30)
-  link:SetPoint("LEFT", f.RankBar, "RIGHT", 0, -2)
-  link:SetNormalTexture("Interface\\Buttons\\UI-LinkProfession-Up")
-  link:SetPushedTexture("Interface\\Buttons\\UI-LinkProfession-Down")
+  link:SetPoint("LEFT", f.RankBar, "RIGHT", 4, -2)
+  link:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIcon-Chat-Up")
+  link:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIcon-Chat-Down")
   link:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
   link:SetScript("OnClick", function()
     if ChatEdit_GetActiveWindow then
@@ -898,6 +1028,36 @@ function C.UpdateRank()
       rb._ratio = frac
     end
 
+    -- Cog option: one plain green bar for every profession (no flipbook animation), inside its own
+    -- rectangular border. Swap out the DF-shaped chrome for the generic box + fit the fill within it.
+    if C.opts and C.opts.genericBar then
+      stopFlip(rb.Fill); rb._flipping = false; rb._flipAtlas = nil
+      rb.Fill:Hide()
+      if rb.Flare  then rb.Flare:Hide()  end
+      if rb.Border then rb.Border:Hide() end     -- DF frame doesn't match the rectangular fill
+      if rb.BarBg  then rb.BarBg:Hide()  end     -- DF trough too
+      if rb.GenBg  then rb.GenBg:Show()  end
+      if rb.GenBorder then for _, e in ipairs(rb.GenBorder) do e:Show() end end
+      if rb.BaseFill and rb.GenBg then
+        rb.BaseFill:SetTexture(GENERIC_BAR_TEX)
+        rb.BaseFill:SetTexCoord(0, 1, 0, 1)
+        rb.BaseFill:SetVertexColor(GENERIC_BAR_COLOR[1], GENERIC_BAR_COLOR[2], GENERIC_BAR_COLOR[3], 1)
+        rb.BaseFill:ClearAllPoints()
+        rb.BaseFill:SetPoint("TOPLEFT",    rb.GenBg, "TOPLEFT",    1, -1)
+        rb.BaseFill:SetPoint("BOTTOMLEFT", rb.GenBg, "BOTTOMLEFT", 1,  1)
+        local innerW = (rb.GenBg:GetWidth() or 443) - 2
+        rb.BaseFill:SetWidth(math.max(1, innerW * frac))
+        if frac > 0 then rb.BaseFill:Show() else rb.BaseFill:Hide() end
+      end
+      if rb.RankText then rb.RankText:SetText(("%d / %d"):format(rank, maxRank)) end
+      return
+    end
+    -- Non-generic: ensure the DF bar chrome is the visible one.
+    if rb.GenBg then rb.GenBg:Hide() end
+    if rb.GenBorder then for _, e in ipairs(rb.GenBorder) do e:Hide() end end
+    if rb.Border then rb.Border:Show() end
+    if rb.BarBg  then rb.BarBg:Show()  end
+
     rb.Fill:SetShown(frac > 0)
     rb.Fill:SetBlendMode(atlasName == defaultAtlas and "ADD" or "BLEND")
     rb.Fill:SetAlpha(atlasName == defaultAtlas and 0.95 or 1)
@@ -960,6 +1120,8 @@ function C.UpdateRank()
     rb.Fill:Hide(); stopFlip(rb.Fill)
     if rb.BaseFill then rb.BaseFill:Hide() end
     if rb.Flare then rb.Flare:Hide() end
+    if rb.GenBg then rb.GenBg:Hide() end
+    if rb.GenBorder then for _, e in ipairs(rb.GenBorder) do e:Hide() end end
     if rb.RankText then rb.RankText:SetText("") end
   end
 end
@@ -970,17 +1132,197 @@ end
 function C.ResetOutput()
   local sf = C.frame and C.frame.SchematicForm
   if not sf then return end
-  if sf.OutputIcon then sf.OutputIcon._recipe = nil; sf.OutputIcon:Hide() end
-  if sf.OutputIcon and sf.OutputIcon.QualityGlow then sf.OutputIcon.QualityGlow:Hide() end
+  if sf.OutputIcon then sf.OutputIcon._recipe = nil; sf.OutputIcon._link = nil; sf.OutputIcon:Hide() end
   if sf.OutputText then sf.OutputText:SetText("") end
+  if sf.RequiresText then sf.RequiresText:Hide() end
   if sf.FavoriteButton then sf.FavoriteButton:Hide() end
   if sf.EmptyText then sf.EmptyText:Show() end
   if sf.ReagentHeader then sf.ReagentHeader:Hide() end
   if sf._reagentSlots then for _, s in ipairs(sf._reagentSlots) do s:Hide() end end
+  if sf.DetailsPanel then sf.DetailsPanel:Hide() end
   C._selected = nil
   C.UpdateCreateButtons(nil)
   local rl = C.frame and C.frame.RecipeList
   if rl then rl._selectedKey = nil end
+end
+
+-- ============================================================================
+-- C.UpdateItemDetails(r, link) — fill the right-side details panel with a live
+-- tooltip of the output item (or the recipe/enchant tooltip when there's no item).
+-- ============================================================================
+-- Content geometry (kept as locals so the fit math and the layout can't drift apart).
+local DETAILS_PAD      = 16   -- left/right text inset
+local DETAILS_LINE_GAP = 3    -- gap between wrapped lines
+local DETAILS_TOP      = 80   -- dp-top → first text line (top gap + icon + gap, no title)
+local DETAILS_BOTTOM   = 26   -- clearance for the bottom flourish
+-- At least 2× the cap height (+ a sliver of middle) so the top/bottom caps never overlap → no dark seam.
+local DETAILS_MIN_H    = DETAILS_CAP_H * 2 + 4
+-- Top/bottom breathing room when the box is at its tallest. The panel is CENTER-anchored, so a
+-- maxed box gets this same gap above (below the item name) and below (above the Create buttons).
+local DETAILS_MARGIN   = 44
+
+-- Resolve the crafted item's icon (crafted-item icon → recipe icon → item-link icon → item id).
+-- Shared so the details panel and the output icon always agree — and so callers that don't pass an
+-- icon (e.g. the TRADE_SKILL_UPDATE refresh) still get one instead of blanking the details icon.
+function C.ResolveOutputIcon(r)
+  if not r then return nil end
+  local function norm(v)
+    if not v then return nil end
+    if type(v) == "string" then return (v ~= "") and v or nil end
+    if type(v) == "number" and NE and NE.tex and NE.tex.localFiles then return NE.tex.localFiles[v] end
+    return nil
+  end
+  local icon
+  if (not r.isCraft) and GetTradeSkillItemInfo then
+    local _, itemTex = GetTradeSkillItemInfo(r.index); icon = norm(itemTex)
+  end
+  if not icon then
+    if r.isCraft and GetCraftIcon then icon = norm(GetCraftIcon(r.index))
+    elseif GetTradeSkillIcon then icon = norm(GetTradeSkillIcon(r.index)) end
+  end
+  if not icon then
+    local link = (r.isCraft and GetCraftItemLink and GetCraftItemLink(r.index))
+              or (GetTradeSkillItemLink and GetTradeSkillItemLink(r.index))
+    if link and GetItemInfo then icon = norm(select(10, GetItemInfo(link))) end
+    if not icon and link and GetItemIcon then
+      local itemID = tonumber((link:match("item:(%d+)")))
+      if itemID then icon = norm(GetItemIcon(itemID)) end
+    end
+  end
+  return icon
+end
+
+function C.UpdateItemDetails(r, link, iconTex)
+  local sf = C.frame and C.frame.SchematicForm
+  local dp = sf and sf.DetailsPanel
+  if not dp then return end
+
+  -- Resolve the icon ourselves when the caller didn't pass one, so the details icon never blanks.
+  iconTex = iconTex or C.ResolveOutputIcon(r)
+
+  -- Scan the item/recipe tooltip into our OWN wrapped, rarity-colored text block. A live
+  -- embedded GameTooltip auto-sizes to its widest line and can't wrap, so its text spilled
+  -- out of the panel; scanning lets us clamp width (wrap) and size the panel to the content.
+  local scan = C._scanTip
+  if not scan then
+    scan = CreateFrame("GameTooltip", "NE_ProfItemDetailsScan", UIParent, "GameTooltipTemplate")
+    C._scanTip = scan
+  end
+  scan:SetOwner(UIParent, "ANCHOR_NONE")
+  scan:ClearLines()
+  local ok = false
+  if link then ok = pcall(scan.SetHyperlink, scan, link) end
+  if not ok and r then
+    if r.isCraft and scan.SetCraftSpell then ok = pcall(scan.SetCraftSpell, scan, r.index)
+    elseif scan.SetTradeSkillItem then ok = pcall(scan.SetTradeSkillItem, scan, r.index) end
+  end
+  if not ok then dp:Hide(); return end
+
+  dp:Show()   -- shown before measuring so GetStringHeight() is reliable
+
+  -- Centered output icon.
+  if iconTex then
+    dp.Icon:SetTexture(iconTex); dp.Icon:Show(); dp.IconBorder:Show()
+  else
+    dp.Icon:Hide(); dp.IconBorder:Hide()
+  end
+
+  -- Rarity color for the name line (item quality; enchants have no item → keep tooltip color).
+  local nameR, nameG, nameB
+  if link and GetItemInfo and GetItemQualityColor then
+    local q = select(3, GetItemInfo(link))
+    if q then nameR, nameG, nameB = GetItemQualityColor(q) end
+  end
+
+  local interior = DETAILS_W - DETAILS_PAD * 2
+  dp.Lines = dp.Lines or {}
+  local numLines = scan:NumLines()
+  local prev, sumH, count = nil, 0, 0
+
+  for i = 1, numLines do
+    local src  = _G["NE_ProfItemDetailsScanTextLeft" .. i]
+    local text = src and src:GetText()
+    if text and text ~= "" then
+      count = count + 1
+      local fs = dp.Lines[i]
+      if not fs then
+        fs = dp:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        fs:SetJustifyH("LEFT")
+        dp.Lines[i] = fs
+      end
+      fs:SetWidth(interior)          -- fixed width → words wrap, text stays inside the panel
+      fs:SetText(text)
+      if i == 1 and nameR then
+        fs:SetTextColor(nameR, nameG, nameB)   -- rarity-colored item name
+      else
+        local cr, cg, cb = src:GetTextColor()
+        fs:SetTextColor(cr or 1, cg or 1, cb or 1)
+      end
+      fs:ClearAllPoints()
+      if not prev then
+        fs:SetPoint("TOPLEFT", dp, "TOPLEFT", DETAILS_PAD, -DETAILS_TOP)
+      else
+        fs:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -DETAILS_LINE_GAP)
+      end
+      fs:Show()
+      sumH = sumH + (fs:GetStringHeight() or 12)
+      prev = fs
+    elseif dp.Lines[i] then
+      dp.Lines[i]:Hide()
+    end
+  end
+  for i = numLines + 1, #dp.Lines do
+    if dp.Lines[i] then dp.Lines[i]:Hide() end
+  end
+
+  -- Size the panel to fit: top block + all wrapped lines + inter-line gaps + bottom flourish.
+  -- Cap is derived from the schematic form's height so a tall box fills from just under the item
+  -- name down to just above the Create buttons, with equal margins (it's center-anchored).
+  local avail = (sf.GetHeight and sf:GetHeight()) or 0
+  if avail < DETAILS_MIN_H then avail = 560 end          -- fallback before first layout pass
+  local maxH = math.max(DETAILS_MIN_H, avail - DETAILS_MARGIN * 2)
+  local h = DETAILS_TOP + sumH + DETAILS_LINE_GAP * math.max(0, count - 1) + DETAILS_BOTTOM
+  if h < DETAILS_MIN_H then h = DETAILS_MIN_H elseif h > maxH then h = maxH end
+  dp:SetHeight(h)
+end
+
+-- ============================================================================
+-- C.UpdateRequires(r) — "Requires: <tools>" line (Anvil, Tool Bench, spell focus, …).
+-- GetTradeSkillTools' return shape varies (a tool string, or tool/have pairs), so parse
+-- defensively: strings are tool names, a following boolean is that tool's have-flag.
+-- ============================================================================
+function C.UpdateRequires(r)
+  local sf  = C.frame and C.frame.SchematicForm
+  local req = sf and sf.RequiresText
+  if not req then return end
+
+  local names, anyMissing = {}, false
+  if r and not r.isCraft and GetTradeSkillTools then
+    local rets = { GetTradeSkillTools(r.index) }
+    local i = 1
+    while i <= #rets do
+      local v = rets[i]
+      if type(v) == "string" and v ~= "" then
+        names[#names + 1] = v
+        if type(rets[i + 1]) == "boolean" then
+          if not rets[i + 1] then anyMissing = true end
+          i = i + 1
+        end
+      end
+      i = i + 1
+    end
+  elseif r and r.isCraft and GetCraftSpellFocus then
+    local ok, focus = pcall(GetCraftSpellFocus, r.index)
+    if ok and type(focus) == "string" and focus ~= "" then names[#names + 1] = focus end
+  end
+
+  if #names > 0 then
+    req:SetText("Requires: " .. table.concat(names, ", "))
+    if anyMissing then req:SetTextColor(1, 0.3, 0.3) else req:SetTextColor(0.82, 0.82, 0.82) end
+    req:Show()
+  else
+    req:Hide()
+  end
 end
 
 -- ============================================================================
@@ -997,47 +1339,16 @@ function C.OnRecipeSelected(r)
   sf.OutputIcon._recipe = r
   if sf.EmptyText then sf.EmptyText:Hide() end
 
-  local function normalizeIconPath(v)
-    if not v then return nil end
-    if type(v) == "string" then
-      return (v ~= "") and v or nil
-    end
-    if type(v) == "number" and NE and NE.tex and NE.tex.localFiles then
-      return NE.tex.localFiles[v]
-    end
-    return nil
-  end
-
-  -- Output icon.
-  local icon
-  if (not r.isCraft) and GetTradeSkillItemInfo then
-    local _, itemTex = GetTradeSkillItemInfo(r.index)
-    icon = normalizeIconPath(itemTex)
-  end
-  if not icon then
-    if r.isCraft and GetCraftIcon then icon = normalizeIconPath(GetCraftIcon(r.index))
-    elseif GetTradeSkillIcon then icon = normalizeIconPath(GetTradeSkillIcon(r.index)) end
-  end
-  if not icon then
-    local link = (r.isCraft and GetCraftItemLink and GetCraftItemLink(r.index))
-              or (GetTradeSkillItemLink and GetTradeSkillItemLink(r.index))
-    if link and GetItemInfo then
-      icon = normalizeIconPath(select(10, GetItemInfo(link)))
-    end
-    if not icon and link and GetItemIcon then
-      local itemID = tonumber((link:match("item:(%d+)")))
-      if itemID then icon = normalizeIconPath(GetItemIcon(itemID)) end
-    end
-  end
+  -- Output icon (shared resolver, so the details panel shows the same icon).
+  local icon = C.ResolveOutputIcon(r)
   sf.OutputIcon.Icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
   sf.OutputIcon.Icon:SetTexCoord(0.079, 0.921, 0.079, 0.921)
-  sf.OutputIcon.Icon:Show(); sf.OutputIcon.IconBorder:Show(); sf.OutputIcon:Show()
+  sf.OutputIcon.Icon:Show(); sf.OutputIcon:Show()
 
-  -- Quality-tint the border.
+  -- Item quality (used for the rarity-colored name below; no ring/glow on the output icon).
   local link = (r.isCraft and GetCraftItemLink and GetCraftItemLink(r.index))
             or (GetTradeSkillItemLink and GetTradeSkillItemLink(r.index))
   local q = link and select(3, GetItemInfo(link))
-  applyItemQualityBorder(sf.OutputIcon.IconBorder, sf.OutputIcon.QualityGlow, q)
 
   -- Output name + optional "x N" suffix.
   local made = ""
@@ -1047,14 +1358,30 @@ function C.OnRecipeSelected(r)
     elseif mn and mn > 1 then made = (" x%d"):format(mn) end
   end
   sf.OutputText:SetText((r.name or "") .. made)
-  sf.OutputText:SetTextColor(1, 1, 1)
+  -- Rarity-color the crafted item's name (falls back to white for enchants with no item quality).
+  local nr, ng, nb = 1, 1, 1
+  if q and GetItemQualityColor then
+    local a, b2, c2 = GetItemQualityColor(q)
+    if a then nr, ng, nb = a, b2, c2 end
+  end
+  sf.OutputText:SetTextColor(nr, ng, nb)
+
+  -- Store the crafted item's link for shift/ctrl-click (chat link / dress up).
+  sf.OutputIcon._link = link
+
+  -- "Requires:" line — crafting tools / spell focus (Anvil, Tool Bench, …).
+  C.UpdateRequires(r)
 
   -- Favourite star.
   if sf.FavoriteButton then
     sf.FavoriteButton:SetIsFavorite(isFav(r.name)); sf.FavoriteButton:Show()
   end
 
+  -- Right-side item-details panel (scanned, wrapped, rarity-colored — sized to its content).
+  C.UpdateItemDetails(r, link, icon)
+
   C._selected = r
+  r._reagentTries = 0   -- fresh selection → allow the reagent-cache retry loop to run again
   C.UpdateReagents(r)
   C.UpdateCreateButtons(r)
 end
@@ -1081,78 +1408,83 @@ function C.UpdateReagents(r)
     slots[i]:SetPoint("TOPLEFT", rc, "TOPLEFT", 0, -(i - 1) * REAGENT_ROW_H)
   end
 
+  local incomplete = false
   for i = 1, MAX_REAGENT_SLOTS do
     local s = slots[i]
     if not s then break end
     if i <= numReagents then
+      -- Prime the item cache FIRST: querying the reagent link asks the server for the item when it
+      -- isn't cached yet — the usual reason a reagent's name/icon comes back nil on first view.
+      local rLink
+      if r.isCraft and GetCraftReagentItemLink then
+        rLink = GetCraftReagentItemLink(r.index, i)
+      elseif GetTradeSkillReagentItemLink then
+        rLink = GetTradeSkillReagentItemLink(r.index, i)
+      end
+      s._link = rLink   -- for shift/ctrl-click (chat link / dress up)
+
       local rName, rTex, rCount, rHave
       if r.isCraft and GetCraftReagentInfo then
         rName, rTex, rCount, rHave = GetCraftReagentInfo(r.index, i)
       elseif GetTradeSkillReagentInfo then
         rName, rTex, rCount, rHave = GetTradeSkillReagentInfo(r.index, i)
       end
-      if rName then
-        s.Icon:SetTexture(rTex or "Interface\\Icons\\INV_Misc_QuestionMark")
-        local rLink
-        if r.isCraft and GetCraftReagentItemLink then
-          rLink = GetCraftReagentItemLink(r.index, i)
-        elseif GetTradeSkillReagentItemLink then
-          rLink = GetTradeSkillReagentItemLink(r.index, i)
+
+      -- Not fully cached yet → keep the slot (with a placeholder) and flag a retry, so a reagent
+      -- is never dropped from the list.
+      if not rName or not rTex then incomplete = true end
+
+      s.Icon:SetTexture(rTex or "Interface\\Icons\\INV_Misc_QuestionMark")
+      local rq = rLink and GetItemInfo and select(3, GetItemInfo(rLink)) or nil
+      applyItemQualityBorder(s.IconBorder, s.QualityGlow, rq)
+      local enough = (rHave or 0) >= (rCount or 1)
+      s.Count:SetText(("%d/%d"):format(rHave or 0, rCount or 1))
+      s.Name:SetText(rName or "")
+      local cc = enough and 1 or 0.5
+      s.Count:SetVertexColor(cc, cc, cc); s.Name:SetVertexColor(cc, cc, cc)
+
+      -- Tooltip.
+      local idx = i
+      s.IconHit:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(s.IconHit, "ANCHOR_RIGHT")
+        local shown = false
+        if r.isCraft and GameTooltip.SetCraftReagentItem then
+          shown = pcall(GameTooltip.SetCraftReagentItem, GameTooltip, r.index, idx)
+        elseif GameTooltip.SetTradeSkillReagentItem then
+          shown = pcall(GameTooltip.SetTradeSkillReagentItem, GameTooltip, r.index, idx)
         end
-        local rq = rLink and GetItemInfo and select(3, GetItemInfo(rLink)) or nil
-        applyItemQualityBorder(s.IconBorder, s.QualityGlow, rq)
-        local enough = (rHave or 0) >= (rCount or 1)
-        local countTxt = ("%d/%d"):format(rHave or 0, rCount or 1)
-        s.Count:SetText(countTxt)
-        s.Name:SetText(rName)
-        local cr, cg, cb = enough and 1 or 0.5, enough and 1 or 0.5, enough and 1 or 0.5
-        s.Count:SetVertexColor(cr, cg, cb); s.Name:SetVertexColor(cr, cg, cb)
-        -- Tooltip.
-        s.IconHit:SetScript("OnEnter", function()
-          GameTooltip:SetOwner(s.IconHit, "ANCHOR_RIGHT")
-          local shown = false
-          if r.isCraft and GameTooltip.SetCraftReagentItem then
-            shown = pcall(GameTooltip.SetCraftReagentItem, GameTooltip, r.index, i)
-          elseif GameTooltip.SetTradeSkillReagentItem then
-            shown = pcall(GameTooltip.SetTradeSkillReagentItem, GameTooltip, r.index, i)
-          end
-
-          if not shown then
-            local link
-            if r.isCraft and GetCraftReagentItemLink then
-              local ok, v = pcall(GetCraftReagentItemLink, r.index, i)
-              if ok then link = v end
-            elseif GetTradeSkillReagentItemLink then
-              local ok, v = pcall(GetTradeSkillReagentItemLink, r.index, i)
-              if ok then link = v end
-            end
-
-            if link and GameTooltip.SetHyperlink then
-              local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, link)
-              shown = ok and true or false
-            end
-          end
-
-          if not shown then
-            GameTooltip:ClearLines()
-            GameTooltip:AddLine(rName or (_G.REAGENT or "Reagent"), 1, 1, 1)
-            GameTooltip:AddLine(("%d / %d"):format(rHave or 0, rCount or 1), 0.8, 0.8, 0.8)
-          end
-          GameTooltip:Show()
-        end)
-        s:Show()
-      else
-        s:Hide()
-      end
+        if not shown and s._link and GameTooltip.SetHyperlink then
+          shown = pcall(GameTooltip.SetHyperlink, GameTooltip, s._link) and true or false
+        end
+        if not shown then
+          GameTooltip:ClearLines()
+          GameTooltip:AddLine(rName or (_G.REAGENT or "Reagent"), 1, 1, 1)
+          GameTooltip:AddLine(("%d / %d"):format(rHave or 0, rCount or 1), 0.8, 0.8, 0.8)
+        end
+        GameTooltip:Show()
+      end)
+      s:Show()
     else
       s:Hide()
     end
   end
 
-  if numReagents > 0 then
-    if sf.ReagentHeader then sf.ReagentHeader:Show() end
-  else
-    if sf.ReagentHeader then sf.ReagentHeader:Hide() end
+  if sf.ReagentHeader then
+    if numReagents > 0 then sf.ReagentHeader:Show() else sf.ReagentHeader:Hide() end
+  end
+
+  -- Bounded retry until every reagent's cached data arrives (token guards against a newer
+  -- selection/update superseding this pass; ~25 × 0.12s ≈ 3s ceiling).
+  C._reagentToken = (C._reagentToken or 0) + 1
+  local token = C._reagentToken
+  if incomplete and C_Timer and C_Timer.After and (r._reagentTries or 0) < 25 then
+    r._reagentTries = (r._reagentTries or 0) + 1
+    C_Timer.After(0.12, function()
+      if token ~= C._reagentToken then return end
+      if C._selected == r and C.frame and C.frame:IsShown() then C.UpdateReagents(r) end
+    end)
+  elseif not incomplete then
+    r._reagentTries = 0
   end
 end
 

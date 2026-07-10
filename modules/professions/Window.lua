@@ -31,9 +31,9 @@ local C = NE.profcraft
 -- Geometry (retail-confirmed via probe; 942×658 is the normal/full view).
 local FRAME_W, FRAME_H         = 942, 658
 local RANKBAR_W, RANKBAR_H     = 453, 18
-local RANKBAR_TL               = { 280, -40 }   -- TOPLEFT offset from frame
+local RANKBAR_TL               = { 280, -34 }   -- TOPLEFT offset from frame (upper band, under the title)
 local RECIPELIST_W             = 274
-local RECIPELIST_TL            = { 5,  -90 }   -- extra clearance below PortraitFrameTemplate chrome
+local RECIPELIST_TL            = { 5,  -72 }   -- below the rank bar; matches spellbook's content top
 local RECIPELIST_BL            = { 0,   5  }
 local SCHEMATIC_W, SCHEMATIC_H = 655, 553
 
@@ -197,7 +197,12 @@ local function buildChrome(f)
   tc:SetPoint("TOPRIGHT", f, "TOPRIGHT", -24, -1)
   tc:SetHeight(20); tc:EnableMouse(false)
   local titleStr = tc:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  titleStr:SetAllPoints(tc); titleStr:SetJustifyH("LEFT")
+  -- Centered in the true middle of the window (symmetric insets clear the portrait + close button),
+  -- matching how the Character window centers the player name.
+  titleStr:SetJustifyH("CENTER")
+  titleStr:SetPoint("TOP",   f, "TOP",    0,  -6)
+  titleStr:SetPoint("LEFT",  f, "LEFT",   58,  0)
+  titleStr:SetPoint("RIGHT", f, "RIGHT", -58,  0)
   titleStr:SetText(_G.TRADE_SKILLS or "Professions")
   f.TitleText = titleStr
   f.TitleContainer = tc
@@ -227,6 +232,111 @@ local function buildChrome(f)
     end
   end)
   f.CloseButton = close
+end
+
+-- ============================================================================
+-- Cog settings (top-right, like the spellbook). Two persisted options:
+--   hideListTooltips  — don't show recipe tooltips when hovering the left list
+--   colorByDifficulty — colour recipe names by skill difficulty (orange/yellow/green/grey)
+-- Options live on C.opts and persist in DragonUI_NewEraDB.professions.
+-- ============================================================================
+C.opts = C.opts or { hideListTooltips = false, colorByDifficulty = false, genericBar = false }
+
+local function loadOpts()
+  local root = _G.DragonUI_NewEraDB
+  local o = root and root.professions
+  if type(o) == "table" then
+    if o.hideListTooltips  ~= nil then C.opts.hideListTooltips  = o.hideListTooltips  and true or false end
+    if o.colorByDifficulty ~= nil then C.opts.colorByDifficulty = o.colorByDifficulty and true or false end
+    if o.genericBar        ~= nil then C.opts.genericBar        = o.genericBar        and true or false end
+  end
+end
+
+local function saveOpts()
+  _G.DragonUI_NewEraDB = _G.DragonUI_NewEraDB or {}
+  local o = _G.DragonUI_NewEraDB.professions or {}
+  o.hideListTooltips  = C.opts.hideListTooltips
+  o.colorByDifficulty = C.opts.colorByDifficulty
+  o.genericBar        = C.opts.genericBar
+  _G.DragonUI_NewEraDB.professions = o
+end
+
+local function buildCogMenu(f, cog)
+  if f.CogMenu then return f.CogMenu end
+  local menu = CreateFrame("Frame", "NE_ProfessionsCraftingCogMenu", cog)
+  menu:SetSize(236, 106)
+  menu:SetFrameStrata("DIALOG")
+  menu:SetPoint("TOPRIGHT", cog, "BOTTOMRIGHT", 0, -2)
+  if menu.SetBackdrop then
+    menu:SetBackdrop({
+      bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+      edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+      tile = true, tileSize = 16, edgeSize = 16,
+      insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+  end
+  menu:Hide(); menu:EnableMouse(true)
+
+  local function checkRow(label, getfn, setfn, y)
+    local cb = CreateFrame("CheckButton", nil, menu, "UICheckButtonTemplate")
+    cb:SetSize(20, 20); cb:SetPoint("TOPLEFT", 10, y)
+    local fs = cb:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    fs:SetPoint("LEFT", cb, "RIGHT", 2, 0); fs:SetText(label)
+    cb:SetChecked(getfn())
+    cb:SetScript("OnClick", function(self) setfn(self:GetChecked() and true or false) end)
+    cb._sync = function() cb:SetChecked(getfn()) end
+    return cb
+  end
+
+  menu.cbTip = checkRow("Hide item tooltips in list",
+    function() return C.opts.hideListTooltips end,
+    function(v) C.opts.hideListTooltips = v; saveOpts() end, -12)
+  menu.cbDiff = checkRow("Colour names by skill difficulty",
+    function() return C.opts.colorByDifficulty end,
+    function(v)
+      C.opts.colorByDifficulty = v; saveOpts()
+      if C.RefreshRecipes then C.RefreshRecipes() end
+    end, -40)
+  menu.cbBar = checkRow("Plain skill bar (no animation)",
+    function() return C.opts.genericBar end,
+    function(v)
+      C.opts.genericBar = v; saveOpts()
+      if C.UpdateRank then C.UpdateRank() end
+    end, -68)
+
+  menu:SetScript("OnShow", function(self)
+    if self.cbTip  and self.cbTip._sync  then self.cbTip._sync()  end
+    if self.cbDiff and self.cbDiff._sync then self.cbDiff._sync() end
+    if self.cbBar  and self.cbBar._sync  then self.cbBar._sync()  end
+  end)
+  f:HookScript("OnHide", function() menu:Hide() end)
+  f.CogMenu = menu
+  return menu
+end
+
+local function buildCog(f)
+  if f.Cog then return f.Cog end
+  local cog = CreateFrame("Button", "NE_ProfessionsCraftingCog", f)
+  cog:SetSize(16, 18)
+  cog:SetFrameLevel((f.NineSlice and f.NineSlice.GetFrameLevel and f.NineSlice:GetFrameLevel() or f:GetFrameLevel() or 2) + 10)
+  -- Same spot as the spellbook cog: frame-relative TOPRIGHT (-14, -38) — just below the close button.
+  cog:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -38)
+  cog.Icon = cog:CreateTexture(nil, "ARTWORK")
+  if not (NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(cog.Icon, "questlog-icon-setting", true)) then
+    cog.Icon:SetTexture("Interface\\Buttons\\UI-OptionsButton"); cog.Icon:SetSize(16, 16)
+  end
+  cog.Icon:SetPoint("CENTER")
+  cog.Hi = cog:CreateTexture(nil, "HIGHLIGHT")
+  if not (NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(cog.Hi, "questlog-icon-setting", true)) then
+    cog.Hi:SetTexture("Interface\\Buttons\\UI-OptionsButton"); cog.Hi:SetSize(16, 16)
+  end
+  cog.Hi:SetPoint("CENTER"); cog.Hi:SetBlendMode("ADD"); cog.Hi:SetAlpha(0.4)
+  cog:SetScript("OnClick", function()
+    local menu = buildCogMenu(f, cog)
+    if menu:IsShown() then menu:Hide() else menu:Show() end
+  end)
+  f.Cog = cog
+  return cog
 end
 
 -- ============================================================================
@@ -272,6 +382,9 @@ local function buildWindow()
 
   -- Chrome (portrait frame, rock bg, title, close).
   guard("buildChrome", function() buildChrome(f) end)
+
+  -- Cog settings button (top-right, left of the close button).
+  guard("buildCog", function() buildCog(f) end)
 
   -- Window scale.
   guard("windowScale", function() applyWindowScale(f) end)
@@ -451,7 +564,21 @@ eventFrame:RegisterEvent("CRAFT_UPDATE")
 eventFrame:RegisterEvent("BAG_UPDATE")   -- reagent counts change → refresh schematic
 eventFrame:SetScript("OnEvent", function(_, event, ...)
   if event == "PLAYER_LOGIN" then
+    guard("loadOpts", loadOpts)
     guard("buildWindow", buildWindow)
+    -- Prewarm the plain-bar fill texture on a SHOWN frame so it's cached before the bar is first
+    -- displayed — otherwise its first use renders as a dark placeholder (needs a reload to fix).
+    guard("prewarmBar", function()
+      if C._barPrewarmed then return end
+      C._barPrewarmed = true
+      local pw = CreateFrame("Frame", nil, UIParent)
+      pw:SetFrameStrata("BACKGROUND"); pw:SetFrameLevel(1)
+      pw:SetSize(1, 1); pw:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
+      local t = pw:CreateTexture(nil, "BACKGROUND")
+      t:SetAllPoints(pw); t:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar")
+      pw:Show()
+      C._barPrewarm = pw
+    end)
     -- Register with the module system.
     guard("RegisterPanel", function()
       if NE.RegisterPanel then
@@ -519,6 +646,14 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
   elseif event == "TRADE_SKILL_UPDATE" or event == "CRAFT_UPDATE" then
     if isModuleEnabled() and C.frame and C.frame:IsShown() then
       guard("Refresh.update", C.Refresh)
+      -- New item/skill data arrived — re-fill the open recipe's reagents/details so any that were
+      -- still uncached (missing) now resolve.
+      guard("Refresh.update.selected", function()
+        if C._selected then
+          if C.UpdateReagents then C.UpdateReagents(C._selected) end
+          if C.UpdateItemDetails then C.UpdateItemDetails(C._selected) end
+        end
+      end)
     end
 
   elseif event == "BAG_UPDATE" then
