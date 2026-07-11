@@ -524,6 +524,25 @@ function C.Refresh()
   guard("UpdateRank",     function() if C.UpdateRank     then C.UpdateRank()     end end)
 end
 
+local function refreshSelectedRecipeAvailability()
+  local r = C._selected
+  if not r then return end
+
+  local numAvailable
+  if r.isCraft and GetCraftInfo then
+    numAvailable = select(4, GetCraftInfo(r.index))
+  elseif GetTradeSkillInfo then
+    numAvailable = select(3, GetTradeSkillInfo(r.index))
+  end
+
+  if numAvailable ~= nil then
+    r.numAvailable = numAvailable or 0
+  end
+
+  if C.UpdateReagents then C.UpdateReagents(r) end
+  if C.UpdateCreateButtons then C.UpdateCreateButtons(r) end
+end
+
 -- First-open on 3.3.5a can race the skill-line API population, leaving the header portrait/title
 -- unresolved until a manual reopen. Run a couple of deferred refresh passes right after SHOW so
 -- the same open cycle converges once the client has populated the trade/craft data.
@@ -708,10 +727,11 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 
   elseif event == "BAG_UPDATE" then
     if isModuleEnabled() and C.frame and C.frame:IsShown() then
-      -- Throttle: only update reagent counts, not the full recipe list.
-      guard("UpdateReagents.bag", function()
-        if C.UpdateReagents and C._selected then C.UpdateReagents(C._selected) end
-        if C.UpdateCreateButtons then C.UpdateCreateButtons(C._selected) end
+      -- Bag changes can alter the live craftable count for every recipe, so refresh the list and
+      -- then resync the selected row's controls against the updated API values.
+      guard("RefreshRecipes.bag", function()
+        if C.RefreshRecipes then C.RefreshRecipes() end
+        refreshSelectedRecipeAvailability()
       end)
     end
   end
