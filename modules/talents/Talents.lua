@@ -178,13 +178,16 @@ local function nodeCenter(tier, column)
   local x = (lay and lay[tier] and lay[tier][column]) or ((column - 1) * PITCH_X + NODE / 2)
   -- The final (deepest) tier can take extra drop; WotLK sets LAST_TIER_EXTRA=0 → no-op.
   local extraLast = (tier == TIERS) and LAST_TIER_EXTRA or 0
-  local y = -((tier - 1) * PITCH_Y) - NODE / 2 - HEADER_H - extraLast
+  -- T._nodeYShift pushes the whole grid DOWN (0 for player's full 11-tier trees; >0 for a shallow pet
+  -- tree so it's vertically centered in the space instead of clinging to the top). Set by Behavior.
+  local y = -((tier - 1) * PITCH_Y) - NODE / 2 - HEADER_H - extraLast - (T._nodeYShift or 0)
   return x, y
 end
 
 -- Expose layout + helpers so Behavior.lua can drive real rendering.
 T.LAYOUT = { NODE = NODE, ICON = ICON, PITCH = PITCH_X, PITCH_X = PITCH_X, PITCH_Y = PITCH_Y,
-             COLS = COLS, TIERS = TIERS, HEADER_H = HEADER_H, HEADER_CENTER_Y = HEADER_CENTER_Y }
+             COLS = COLS, TIERS = TIERS, HEADER_H = HEADER_H, HEADER_CENTER_Y = HEADER_CENTER_Y,
+             TREE_W = TREE_W }
 T.nodeCenter = nodeCenter
 
 -- Build the per-tier centered column->x map for the CURRENT tab from its occupied (tier,column)
@@ -719,6 +722,7 @@ function T.OpenGlyphTab()
   hideStockPanel(PlayerTalentFrame)
   hideStockPanel(GlyphFrame)
   if not f:IsShown() then f:Show() end
+  T._petView = false                         -- glyphs leaves pet view
   if T.GlyphsSetActive then T.GlyphsSetActive(true) end
   if T.GlyphsRefresh then guard("glyphs.refresh", T.GlyphsRefresh) end
   if T.GlyphsApplyPaneVisibility then guard("glyphs.visibility", T.GlyphsApplyPaneVisibility) end

@@ -9,6 +9,9 @@ DragonUI ports the Dragonflight **HUD** to 3.3.5a. **DragonUI_NewEra** fills in 
 ## What's inside
 
 ### Character panel
+
+![Character panel](screenshots/characterpanel.png)
+
 A full custom replacement for the 3.3.5a `CharacterFrame`, styled to match Dragonflight:
 
 - Paperdoll (3D model + all equipment slots) with modern model controls (zoom, click-drag rotate / pan)
@@ -33,6 +36,9 @@ Save gear sets in the Equipment Manager, then swap to one from chat or a macro:
 *(Note: `/equip` and `/equipset` are reserved built-in WotLK macro commands, hence `/gearset` / `/dnequip`.)*
 
 ### Spellbook
+
+![Spellbook](screenshots/spellbook.png)
+
 A standalone War-Within-style two-page spellbook, replacing the 3.3.5a `SpellBookFrame`:
 
 - **Card layout** — every learned spell as a Dragonflight-style card (icon + name + rank), flowing across a two-page evergreen book; a min/max button collapses it to a single page (↗ Expand / ↙ Condense).
@@ -44,6 +50,9 @@ A standalone War-Within-style two-page spellbook, replacing the 3.3.5a `SpellBoo
 Built natively for 3.3.5a's index-based spellbook API (a compat shim maps the Cataclysm `GetSpellBookItem*` family onto it).
 
 ### Talents
+
+![Talents](screenshots/talents.png)
+
 A standalone War-Within-style talent window over WotLK's classic grid talents, opened with **`/netalents`** or the default talent key:
 
 - **Three trees** on the Dragonflight metal chrome, with real talent data, per-tree point readouts, and a live **preview → Apply / Reset** flow — left-click to spend, right-click to refund, nothing is permanent until you Apply (behind a confirm).
@@ -52,17 +61,38 @@ A standalone War-Within-style talent window over WotLK's classic grid talents, o
 - **Spec-art backgrounds** — each class/spec paints its own artwork behind the trees.
 - **Animated connectors** — prerequisite links draw as a flowing dotted line straight from one talent to the talent that needs it.
 - **Dual-spec** — bottom tabs switch between **Primary** and **Secondary**; rename either spec from the cog (custom names persist per character). View your other spec read-only (dimmed) and hit **Activate** to switch to it.
+- **Pet talents** — hunters with a talented pet out get a **Pet** tab (Ferocity / Tenacity / Cunning) on the pet's own family artwork, with the same live preview → Apply / Reset flow, the pet's circular portrait, the correct 3-points-per-tier gating, and the single tree centred in the window.
 - Sound cues for spending, refunding, applying, and switching specs.
 
-Built natively for 3.3.5a's talent + preview-talent API (`GetTalentInfo`, `AddPreviewTalentPoints`, `LearnPreviewTalents`, dual `GetActiveTalentGroup`).
+Built natively for 3.3.5a's talent + preview-talent API (`GetTalentInfo`, `AddPreviewTalentPoints`, `LearnPreviewTalents`, dual `GetActiveTalentGroup`, and their `isPet` variants).
+
+### Glyphs
+
+![Glyphs](screenshots/glyphs.png)
+
+The **Glyphs** tab shares the talent window — a hexagon of major/minor glyph sockets you socket, swap, and clear directly (the stock glyph frame is suppressed):
+
+- **Class artwork** — each class gets its own full-window Legion-artifact-style backdrop behind the sockets.
+- **One title, per-spec labels** — a single **GLYPHS** header; under dual spec each spec's name (**PRIMARY** / **SECONDARY**, or your custom rename, in caps) is lined up above its own socket cluster instead of repeating the title.
+- **Animated links** — the same flowing dotted connectors as the talent trees tie the sockets together.
+
+### Professions
+
+![Professions](screenshots/professions.png)
+
+A standalone Dragonflight-style profession window replacing the 3.3.5a `TradeSkillFrame`, with a modern recipe list, item/reagent details, a generic skill bar, and cog options — plus optional **Auctionator** integration via an AH scan button.
 
 ### Bags — *work in progress*
+
+![Bags](screenshots/bags.png)
 
 A retail-style **combined bag** plus a per-window restyle for the **individual** Blizzard bag frames, both sharing the same metal chrome, recessed slots, portrait treatment, and item cues as the rest of the addon. **This one is still being built and polished — expect rough edges.**
 
 - **Combined window** (default) — every backpack/bag slot in one movable Dragonflight-style grid, with a search box, a smart sort, and a bottom band showing your money + watched currencies. It takes over bag opening; a toggle in the NewEra options turns it off (→ stock Blizzard bags, needs `/reload`).
 - **Individual bags** — a lighter restyle that skins the stock per-window bags in place (metal frame, portrait, recessed slots, rarity/usable cues) for players who prefer separate windows. Superseded by the combined window by default.
-- **Smart sort** — consolidates partial stacks, routes specialty items into their bags (arrows → quiver, bullets → ammo pouch, herbs → herb bag, soul shards → soul bag, profession mats → their bags), then arranges by category → subtype → quality, with the Hearthstone pinned first and same-item stacks ordered fullest-first.
+- **Smart sort** — consolidates partial stacks, routes specialty items into their bags (arrows → quiver, bullets → ammo pouch, herbs → herb bag, soul shards → soul bag, profession mats → their bags), then arranges by category → subtype → quality, with the Hearthstone pinned first and same-item stacks ordered fullest-first. The sort runs behind a "Sorting…" cover and keeps going until the layout settles rather than for a fixed number of passes.
+- **Separate specialty bags** *(optional toggle)* — split quivers, ammo pouches, soul bags, and profession bags out of the general grid into their own labeled sections below it (**QUIVER**, **MINING BAG**, **HERB BAG**, …), mirroring the keyring row.
+- **Keyring row** *(optional)* — show your keys as a **KEYS** row inside the window.
 - **At-a-glance cues** — item-rarity glow, a red tint on anything you can't use (missing weapon/armor proficiency, too low a level, or a recipe whose profession/skill you don't have), the merchant "sell" cursor, a quest-item glow, and optional auto-sell-junk at vendors.
 
 ## Roadmap
@@ -71,9 +101,9 @@ Faithfully downporting the remaining NewEra panels to 3.3.5a:
 
 - [x] ~~**Character panel**~~ — *done* (paperdoll, stats sidebar, Skills / Honor / Reputation / Pet tabs, Titles, Equipment Manager + `/gearset`)
 - [x] ~~**Spellbook**~~ — *done* (two-page book, category tabs, active/passive frames, search + Hide Passives / Show All Ranks, single/double-page toggle)
-- [x] ~~**Talents**~~ — *done* (3-tree panel, live preview/Apply/Reset, retail-style nodes, per-tier centering, spec-art backgrounds, animated connectors, dual-spec tabs with custom names)
+- [x] ~~**Talents**~~ — *done* (3-tree panel, live preview/Apply/Reset, retail-style nodes, per-tier centering, spec-art backgrounds, animated connectors, dual-spec tabs with custom names, hunter **pet talents** tab, and a **glyphs** page with per-class artwork)
 - [x] ~~**Professions**~~ — *done* (Main profession Window, extra integration with Auctionator via AH Scan Button)
-- [ ] **Bags** — *work in progress* (retail combined bag + individual-bag restyle: grid, smart sort, rarity/usable cues, money + currency band)
+- [ ] **Bags** — *work in progress* (retail combined bag + individual-bag restyle: grid, smart sort, separated specialty-bag sections, keyring row, rarity/usable cues, money + currency band)
 - [ ] **Quest Log**
 - [ ] **Merchant**
 - [ ] **Mail**

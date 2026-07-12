@@ -740,7 +740,15 @@ local function layoutRoot()
   if not root then
     root = CreateFrame("Frame", "NE_TalentGlyphRoot", h)
     root:SetFrameLevel((h:GetFrameLevel() or 1))
-    -- No small "Glyphs" title here — the big "GLYPHS" header lives on each pane (see buildPane).
+    -- Single page-level "GLYPHS" title, centered over the WHOLE page (shown once even under dual spec).
+    -- Each pane then shows its spec NAME as a second row beneath it (see buildPane / applyPaneStyle).
+    root.title = root:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+    if _G.SystemFont_Shadow_Large2 then root.title:SetFontObject(_G.SystemFont_Shadow_Large2) end
+    if root.title.SetTextScale then root.title:SetTextScale(1.1) end
+    root.title:SetJustifyH("CENTER")
+    root.title:SetPoint("TOP", root, "TOP", 0, -28)
+    root.title:SetText("GLYPHS")
+    root.title:SetTextColor(1, 1, 1)
     buildGlyphCog(root)
   end
 
@@ -763,13 +771,20 @@ local function buildPane(group)
   pane.bg:SetAllPoints(pane)
   pane._bgNick = specBackgroundNick(group)
   pane._bgFlip = (group == 1)
+  -- The Glyphs page now uses a single full-window class ARTIFACT painting (f.glyphBg, applied in
+  -- GlyphsApplyPaneVisibility) rather than a per-pane spec painting, so hide this pane background to
+  -- avoid doubling. (_bgNick/applyPaneBackground kept for a graceful fallback if the class art is absent.)
+  pane.bg:Hide()
 
+  -- Per-pane header: this pane's SPEC NAME (Primary/Secondary or custom), centered over its own
+  -- sockets, a row BELOW the single page-level "GLYPHS" title. Text + visibility set in applyPaneStyle
+  -- (shown only under dual spec; a lone spec needs no name since the page title says it all).
   pane.spec = pane:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
   if _G.SystemFont_Shadow_Large2 then pane.spec:SetFontObject(_G.SystemFont_Shadow_Large2) end
-  if pane.spec.SetTextScale then pane.spec:SetTextScale(1.1) end
+  if pane.spec.SetTextScale then pane.spec:SetTextScale(0.72) end   -- smaller than the GLYPHS title (hierarchy)
   pane.spec:SetJustifyH("CENTER")
-  pane.spec:SetPoint("TOP", 0, -28)
-  pane.spec:SetText("GLYPHS")   -- big caps header (styled like the talents-tab spec names)
+  pane.spec:SetPoint("TOP", pane, "TOP", 0, -66)
+  pane.spec:SetText("")
 
   pane.core = pane:CreateTexture(nil, "ARTWORK")
   pane.core:SetSize(84, 84)
@@ -805,8 +820,17 @@ end
 
 local function applyPaneStyle(pane, active)
   if not pane then return end
-  pane.spec:SetText("GLYPHS")
-  pane.spec:SetTextColor(1, 1, 1)
+  -- Show the spec name only when there are two specs (each labels its own pane). With a single spec
+  -- the page-level "GLYPHS" title is enough, so leave the per-pane header blank/hidden.
+  local totalGroups = (GetNumTalentGroups and (GetNumTalentGroups() or 1)) or 1
+  if totalGroups >= 2 then
+    pane.spec:SetText(string.upper(groupStatus(pane._group or 1) or ""))   -- CAPS "PRIMARY"/"SECONDARY" (matches the GLYPHS title)
+    pane.spec:Show()
+  else
+    pane.spec:SetText("")
+    pane.spec:Hide()
+  end
+  pane.spec:SetTextColor(1, 1, 1)   -- off-spec dims via pane:SetAlpha in updatePane
 end
 
 local function updateSocket(button, info, activePane, wantMajor)
@@ -1067,6 +1091,31 @@ function T.GlyphsIsActive()
   return T._glyphActive and true or false
 end
 
+-- Full-window class ARTIFACT painting for the Glyphs page (bundled from the TalentArt Artifact pack,
+-- one per class). A single BORDER texture on the frame filling the same content rect as the talent
+-- paintings — the glyph panes/sockets draw above it on the Host. Returns true if class art was set.
+local GLYPH_BG_PATH = "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\Artifact\\"
+local GLYPH_BG_FILE = {
+  WARRIOR = "Warrior", PALADIN = "Paladin", HUNTER = "Hunter", ROGUE = "Rogue", PRIEST = "Priest",
+  DEATHKNIGHT = "DeathKnight", SHAMAN = "Shaman", MAGE = "Mage", WARLOCK = "Warlock", DRUID = "Druid",
+}
+local function applyGlyphBackground(f)
+  if not f then return false end
+  local _, classFile = UnitClass("player")
+  local file = classFile and GLYPH_BG_FILE[classFile]
+  if not file then return false end   -- unsupported class -> caller keeps the per-pane spec paintings
+  if not f.glyphBg then
+    local FR = T.FRAME or {}
+    local tx = f:CreateTexture(nil, "BORDER")
+    tx:SetPoint("TOPLEFT",     f, "TOPLEFT",     (FR.CHROME_L or 0), -(FR.CHROME_T or 0))
+    tx:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -(FR.CHROME_R or 0), (FR.CHROME_B or 0) + (FR.BOTTOMBAR_H or 0))
+    tx:SetTexCoord(0, 1, 0, 1)
+    f.glyphBg = tx
+  end
+  f.glyphBg:SetTexture(GLYPH_BG_PATH .. file)
+  return true
+end
+
 function T.GlyphsApplyPaneVisibility()
   local f = T.frame
   local r = root or layoutRoot()
@@ -1075,6 +1124,14 @@ function T.GlyphsApplyPaneVisibility()
   if T._glyphActive then
     if f then
       if f.bg then f.bg:Hide() end
+      if f.petBg then f.petBg:Hide() end   -- glyph view: talent/pet paintings hidden
+      -- Single class Artifact painting for the whole Glyphs page (replaces the per-pane spec art,
+      -- incl. the two side-by-side backgrounds under dual spec).
+      local hasArt = applyGlyphBackground(f)
+      if f.glyphBg then if hasArt then f.glyphBg:Show() else f.glyphBg:Hide() end end
+      if hasArt then
+        for _, pane in pairs(panes) do if pane and pane.bg then pane.bg:Hide() end end
+      end
       if f.trees then
         for _, tree in ipairs(f.trees) do
           if tree then tree:Hide() end
@@ -1097,8 +1154,13 @@ function T.GlyphsApplyPaneVisibility()
     end
     r:Hide()
     if f then
-      if f.bg then f.bg:Show() end
-      if f._loBtn then f._loBtn:Show() end
+      if f.glyphBg then f.glyphBg:Hide() end   -- leaving glyphs: drop the class Artifact painting
+      -- Defer the talent background to the current view: pet view keeps the pet art (f.petBg) and
+      -- hides the class painting (f.bg); Populate owns re-selecting the right one on its next pass.
+      local petView = T.PetViewActive and T.PetViewActive()
+      if f.bg then if petView then f.bg:Hide() else f.bg:Show() end end
+      if f.petBg then if petView then f.petBg:Show() else f.petBg:Hide() end end
+      if f._loBtn and not petView then f._loBtn:Show() end   -- loadout btn is player-only
       if f.trees then
         for _, tree in ipairs(f.trees) do
           if tree then tree:Show() end
