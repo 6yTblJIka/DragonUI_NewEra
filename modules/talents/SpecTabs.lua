@@ -96,6 +96,7 @@ end
 
 local TAB_NAMES = { "NE_TalentSpecTab1", "NE_TalentSpecTab2" }
 local GLYPH_TAB_NAME = "NE_TalentSpecTabGlyphs"
+local PET_TAB_NAME   = "NE_TalentSpecTabPet"
 
 local function buildTab(g)
   local f = T.frame
@@ -110,6 +111,7 @@ local function buildTab(g)
   tab:SetScript("OnClick", function(self)
     if PlaySound then pcall(PlaySound, "igCharacterInfoTab") end
     T._viewGroup = self:GetID()
+    T._petView = false                       -- a player-spec tab leaves pet view
     if T.GlyphsSetActive then T.GlyphsSetActive(false) end
     if T.GlyphsApplyPaneVisibility then T.GlyphsApplyPaneVisibility() end
     if T.RefreshSpecTabs then T.RefreshSpecTabs() end
@@ -132,10 +134,36 @@ local function buildGlyphTab()
   end
   tab:SetScript("OnClick", function()
     if PlaySound then pcall(PlaySound, "igCharacterInfoTab") end
+    T._petView = false                       -- glyphs leaves pet view
     if T.GlyphsSetActive then T.GlyphsSetActive(true) end
     if T.GlyphsRefresh then T.GlyphsRefresh() end
     if T.GlyphsApplyPaneVisibility then T.GlyphsApplyPaneVisibility() end
     if T.RefreshSpecTabs then T.RefreshSpecTabs() end
+  end)
+  if not tab._nePlain and NE.tabs and NE.tabs.ReskinClassicTab then
+    pcall(NE.tabs.ReskinClassicTab, name, {})
+  end
+  return tab
+end
+
+-- Pet-talents tab: only present for a hunter with a talented pet out. Switches the window into pet
+-- view (the single Ferocity/Tenacity/Cunning tree), leaving glyphs/player-spec views.
+local function buildPetTab()
+  local f = T.frame
+  local name = PET_TAB_NAME
+  local tab = _G[name]
+  if tab then return tab end
+  local ok, t = pcall(CreateFrame, "Button", name, f, "CharacterFrameTabButtonTemplate")
+  if ok and t then tab = t else
+    tab = CreateFrame("Button", name, f, "UIPanelButtonTemplate"); tab._nePlain = true
+  end
+  tab:SetScript("OnClick", function()
+    if PlaySound then pcall(PlaySound, "igCharacterInfoTab") end
+    if T.SetPetView then T.SetPetView(true) else T._petView = true end
+    if T.GlyphsSetActive then T.GlyphsSetActive(false) end
+    if T.GlyphsApplyPaneVisibility then T.GlyphsApplyPaneVisibility() end
+    if T.RefreshSpecTabs then T.RefreshSpecTabs() end
+    if T.Refresh then T.Refresh() end
   end)
   if not tab._nePlain and NE.tabs and NE.tabs.ReskinClassicTab then
     pcall(NE.tabs.ReskinClassicTab, name, {})
@@ -185,6 +213,11 @@ function T.RefreshSpecTabs()
   local hasGlyph = (type(T.GlyphsSetActive) == "function")
   local viewG = T._viewGroup or T._activeGroup or 1
   local glyphActive = T.GlyphsIsActive and T.GlyphsIsActive() or false
+  local petAvail    = T.PetHasTalents and T.PetHasTalents() or false
+  local petActive   = T.PetViewActive and T.PetViewActive() or false
+  -- A player-talents tab must exist whenever the Pet tab does, so there's always a way back to the
+  -- character's own talents (even single-spec with no glyph module).
+  local needTalentsTab = hasGlyph or petAvail
   local tabsToSize = {}
 
   if num >= 2 then
@@ -198,7 +231,7 @@ function T.RefreshSpecTabs()
   else
     local tab = buildTab(1)
     local txt = _G[TAB_NAMES[1] .. "Text"]
-    if hasGlyph then
+    if needTalentsTab then
       if txt then txt:SetText("Talents") elseif tab.SetText then tab:SetText("Talents") end
       tab:Show()
       tabsToSize[#tabsToSize + 1] = TAB_NAMES[1]
@@ -211,9 +244,16 @@ function T.RefreshSpecTabs()
     if t2 then t2:Hide() end
   end
 
-  if not hasGlyph and num < 2 then
-    local t1 = _G[TAB_NAMES[1]]
-    if t1 then t1:Hide() end
+  -- Pet tab (between the player-spec tabs and Glyphs). Only for a hunter with a talented pet out.
+  if petAvail then
+    local ptab = buildPetTab()
+    local ptxt = _G[PET_TAB_NAME .. "Text"]
+    if ptxt then ptxt:SetText("Pet") elseif ptab.SetText then ptab:SetText("Pet") end
+    ptab:Show()
+    tabsToSize[#tabsToSize + 1] = PET_TAB_NAME
+  else
+    local ptab = _G[PET_TAB_NAME]
+    if ptab then ptab:Hide() end
   end
 
   if hasGlyph then
@@ -237,19 +277,24 @@ function T.RefreshSpecTabs()
     NE.tabs.SizeAndAnchorTabs(f, tabsToSize, { startX = 14, startY = 0, parentPoint = "BOTTOMLEFT" })
   end
 
+  -- A player-spec tab is selected only when neither glyphs nor pet view owns the window.
+  local specTurn = (not glyphActive) and (not petActive)
   if num >= 2 then
-    for g = 1, 2 do setTabArt(_G[TAB_NAMES[g]], (not glyphActive) and (g == viewG)) end
-    if glyphActive then
-      if T._specCog then T._specCog:Hide() end
+    for g = 1, 2 do setTabArt(_G[TAB_NAMES[g]], specTurn and (g == viewG)) end
+    if glyphActive or petActive then
+      if T._specCog then T._specCog:Hide() end   -- rename cog is a player-spec affordance
     else
       buildCog():Show()   -- anchored top-right inside the window (set in buildCog)
     end
   else
     if T._specCog then T._specCog:Hide() end
     local t1 = _G[TAB_NAMES[1]]
-    if t1 then setTabArt(t1, not glyphActive) end
+    if t1 then setTabArt(t1, specTurn) end
   end
 
+  if petAvail then
+    setTabArt(_G[PET_TAB_NAME], petActive)
+  end
   if hasGlyph then
     local gtab = _G[GLYPH_TAB_NAME]
     setTabArt(gtab, glyphActive)

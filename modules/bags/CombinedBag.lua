@@ -98,6 +98,12 @@ local KEYS_LABEL_H = 15   -- height reserved for the "Keys" label above the key 
 if CB._showKeys == nil then CB._showKeys = false end
 function CB.ShowKeys() return CB._showKeys and true or false end
 
+-- Opt-in: split specialty bags (quiver, ammo pouch, soul bag, profession bags) into their OWN labeled
+-- sections below the general grid — each with an UPPERCASE header (QUIVER, MINING BAG, …), mirroring
+-- the keyring row. OFF by default (the general grid then just clusters specialty items after general).
+if CB._separateBags == nil then CB._separateBags = false end
+function CB.SeparateBags() return CB._separateBags and true or false end
+
 -- Player's held bags grouped by TYPE: general bags (family 0, incl. the backpack) first, then
 -- specialty bags (quiver, soul, profession, etc.) grouped by family. Drives both the grid display
 -- order (items cluster by bag type) and the sort target assignment. bagFamily from
@@ -525,8 +531,12 @@ local function buildChrome()
   grid = G.New{
     host          = frame,
     containers    = function()
+      -- When "separate specialty bags" is on, the MAIN grid holds only general bags (family 0); the
+      -- specialty bags each get their own labeled section (see the spec sections in refresh()).
       local t = {}
-      for _, bd in ipairs(orderedBags()) do t[#t + 1] = bd.bag end
+      for _, bd in ipairs(orderedBags()) do
+        if (not CB.SeparateBags()) or bd.family == 0 then t[#t + 1] = bd.bag end
+      end
       return t
     end,
     columns       = COLUMNS,
@@ -568,7 +578,7 @@ local function buildChrome()
 
   -- "Keys" label above the keyring row (shown only when the row has slots and the option is on).
   local keysLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  keysLabel:SetText(NE.L["Keys"])
+  keysLabel:SetText(string.upper(NE.L["Keys"] or "Keys"))   -- UPPERCASE, matching the specialty-bag headers
   keysLabel:SetTextColor(1, 0.82, 0)
   keysLabel:Hide()
   frame._keysLabel = keysLabel
@@ -583,12 +593,23 @@ local function buildChrome()
   -- No opaque fill: during a sort we HIDE the item buttons/slots directly (see SortBags), so the bag's
   -- own marble background shows through with just the spinner + label floating over it.
 
+  -- Center zone: spans [bottom of the search bar .. the currency divider], NOT the whole cover (which
+  -- also overlays the money band). Anchoring the spinner/label to THIS zone's center keeps them
+  -- centered in that band for any row count (2 rows or 18) — the top is pinned to the search bar's
+  -- bottom edge and the bottom to the divider (a fixed BAND_H + BAND_BOTTOM_GAP + 3 above the frame
+  -- bottom), so the midpoint tracks the real height difference instead of drifting low.
+  local centerZone = CreateFrame("Frame", nil, cover)
+  centerZone:SetPoint("LEFT",   cover,  "LEFT",   0, 0)
+  centerZone:SetPoint("RIGHT",  cover,  "RIGHT",  0, 0)
+  centerZone:SetPoint("TOP",    search, "BOTTOM", 0, 0)                              -- top = bottom of the search bar
+  centerZone:SetPoint("BOTTOM", frame,  "BOTTOM", 0, BAND_H + BAND_BOTTOM_GAP + 3)   -- bottom = currency divider
+
   -- Retail-style loading spinner (Stream* art ported from ezCollections): static gold background +
   -- frame, with a gold circle + spark that rotate continuously via a looping Rotation animation.
   local TEX = "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Common\\"
   local spinner = CreateFrame("Frame", nil, cover)
   spinner:SetSize(48, 48)
-  spinner:SetPoint("CENTER", cover, "CENTER", 0, 12)
+  spinner:SetPoint("CENTER", centerZone, "CENTER", 0, 12)
   local sbg = spinner:CreateTexture(nil, "BACKGROUND")
   sbg:SetAllPoints(); sbg:SetTexture(TEX .. "StreamBackground.tga"); sbg:SetVertexColor(1, 0.82, 0)
   local sframe = spinner:CreateTexture(nil, "ARTWORK")
@@ -650,6 +671,69 @@ function CB.SlotMatches(bagID, slot, text)
   return name:lower():find(text:lower(), 1, true) ~= nil
 end
 
+-- ----------------------------------------------------------------------------
+-- Specialty-bag sections ("separate specialty bags" option). One labeled section per bag family the
+-- player carries (quiver, ammo pouch, soul bag, herb/mining/… profession bags), stacked below the
+-- general grid, mirroring the keyring row. Grids are created lazily and cached per family.
+-- ----------------------------------------------------------------------------
+-- UPPERCASE fallback names per bag family bit (used only if the bag's localized subtype isn't cached).
+local FAMILY_NAME = {
+  [1]    = "QUIVER",            [2]   = "AMMO POUCH",      [4]   = "SOUL BAG",
+  [8]    = "LEATHERWORKING BAG", [16] = "INSCRIPTION BAG", [32]  = "HERB BAG",
+  [64]   = "ENCHANTING BAG",    [128] = "ENGINEERING BAG", [512] = "GEM BAG",
+  [1024] = "MINING BAG",
+}
+-- Ordered list of the specialty families the player currently has a bag for.
+local function activeSpecFamilies()
+  local seen, list = {}, {}
+  for _, bd in ipairs(orderedBags()) do
+    if bd.family ~= 0 and not seen[bd.family] then seen[bd.family] = true; list[#list + 1] = bd.family end
+  end
+  table.sort(list)
+  return list
+end
+-- Section header text: the bag's own localized subtype (e.g. "Mining Bag"), UPPERCASED; static fallback.
+local function familyLabel(family)
+  if ContainerIDToInventoryID and GetInventoryItemLink and GetItemInfo then
+    for _, bd in ipairs(orderedBags()) do
+      if bd.family == family then
+        local link = GetInventoryItemLink("player", ContainerIDToInventoryID(bd.bag))
+        local sub = link and select(7, GetItemInfo(link))
+        if sub and sub ~= "" then return string.upper(sub) end
+      end
+    end
+  end
+  return FAMILY_NAME[family] or "OTHER"
+end
+-- Lazily create + cache a { grid, label } section for a family. The grid holds that family's bags only
+-- while "separate specialty bags" is on (else its container list is empty → a no-op row).
+local specSections = {}
+local function getSpecSection(family)
+  local sec = specSections[family]
+  if sec then return sec end
+  local g = G.New{
+    host       = frame,
+    containers = function()
+      if not CB.SeparateBags() then return {} end
+      local t = {}
+      for _, bd in ipairs(orderedBags()) do
+        if bd.family == family then t[#t + 1] = bd.bag end
+      end
+      return t
+    end,
+    columns    = COLUMNS, itemSize = ITEM_SIZE, spacingX = ITEM_SPACING_X, spacingY = ITEM_SPACING_Y,
+    originX    = LEFT_PADDING, originY = -TOP_HEADER, direction = "TLBR",
+    namePrefix = "NE_CombinedSpec" .. tostring(family),
+    frameLevel = function() return (frame:GetFrameLevel() or 1) + 5 end,
+  }
+  local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  label:SetTextColor(1, 0.82, 0)
+  label:Hide()
+  sec = { grid = g, label = label }
+  specSections[family] = sec
+  return sec
+end
+
 local function refresh()
   if not frame or not frame:IsShown() or not grid then return end
   if CB._sorting then return end   -- frozen under the sort cover; one repaint runs when the sort ends
@@ -671,12 +755,52 @@ local function refresh()
   contentW = contentW or (COLUMNS * ITEM_SIZE + (COLUMNS - 1) * ITEM_SPACING_X)
   contentH = contentH or 0
 
-  -- Keyring row (opt-in): sit it just under the last item row, with a "Keys" label above it. keyGrid's
+  -- Specialty-bag sections (opt-in): stack a labeled grid per bag family below the general grid.
+  -- flowH tracks the running height below the header; maxW the widest section (drives window width).
+  local flowH, maxW = contentH, contentW
+  local activeFam = {}
+  if CB.SeparateBags() then
+    for _, family in ipairs(activeSpecFamilies()) do
+      activeFam[family] = true
+      local sec = getSpecSection(family)
+      local topY = -(TOP_HEADER + flowH + KEYS_TOP_GAP)
+      sec.grid.originY = topY - KEYS_LABEL_H
+      local _, rows, w, h = sec.grid:Refresh()
+      if NE.bagskin and sec.grid.ForEachButton then
+        sec.grid:ForEachButton(function(b)
+          NE.bagskin.SkinButton(b, ITEM_SIZE)
+          NE.bagskin.ApplyQuality(b, b._bagID, b._slotID)
+          NE.bagskin.ApplyUsableTint(b, b._bagID, b._slotID, CB._redUnusable)
+          NE.bagskin.SetSearchDim(b, searching and not CB.SlotMatches(b._bagID, b._slotID, text))
+        end)
+      end
+      if (rows or 0) > 0 then
+        sec.label:SetText(familyLabel(family))
+        sec.label:ClearAllPoints()
+        sec.label:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT_PADDING, topY)
+        sec.label:Show()
+        flowH = flowH + KEYS_TOP_GAP + KEYS_LABEL_H + (h or 0)
+        maxW  = math.max(maxW, w or 0)
+      else
+        sec.label:Hide()
+      end
+    end
+  end
+  -- Hide any cached section whose family is no longer active (or when the option is off) — its empty
+  -- container list makes the Refresh hide the slot buttons.
+  for family, sec in pairs(specSections) do
+    if not activeFam[family] then
+      sec.label:Hide()
+      sec.grid:Refresh()
+    end
+  end
+
+  -- Keyring row (opt-in): sit it just under the last section, with a "Keys" label above it. keyGrid's
   -- container list is empty when the option is off, so this is a no-op (0 rows) then. originY is set
-  -- LIVE each refresh so the row tracks the main grid's height.
+  -- LIVE each refresh so the row tracks the grid stack's height.
   local keysSectionH = 0
   if keyGrid then
-    local keysTopY = -(TOP_HEADER + contentH + KEYS_TOP_GAP)
+    local keysTopY = -(TOP_HEADER + flowH + KEYS_TOP_GAP)
     keyGrid.originY = keysTopY - KEYS_LABEL_H
     local _, keyRows, _, keyH = keyGrid:Refresh()
     if NE.bagskin and keyGrid.ForEachButton then
@@ -702,7 +826,7 @@ local function refresh()
   -- Repopulate the currency pills, then reserve room below the grid (+ keys section) for the divider +
   -- money band (BAND_RESERVE = top gap + band height + bottom gap) so the bottom breathes like retail.
   updateMoneyBand(frame)
-  frame:SetSize(contentW + PADDING_WIDTH, contentH + TOP_HEADER + keysSectionH + BAND_RESERVE)
+  frame:SetSize(maxW + PADDING_WIDTH, flowH + TOP_HEADER + keysSectionH + BAND_RESERVE)
 end
 CB.Refresh = refresh
 
@@ -982,9 +1106,11 @@ end
 -- it can (skipping locked items). No re-sorting — just cheap itemID compares. Returns the count of
 -- slots not yet matching, so the driver knows when the bag has reached the planned layout.
 local function sortPassFromPlan(groups)
-  if not groups then return 0 end
+  if not groups then return 0, 0 end
   if ClearCursor then ClearCursor() end
   local remaining = 0
+  local moved = 0            -- swaps actually issued this pass (drives the "nothing moved" convergence)
+  local locked = 0           -- slots waiting on an in-flight (locked) item — NOT yet settled
   for _, g in ipairs(groups) do
     local slots, want = g.slots, g.want
     for i = 1, #slots do
@@ -998,6 +1124,7 @@ local function sortPassFromPlan(groups)
       if curID ~= wantID or curCount ~= wantCount then
         if ci and ci.isLocked then
           remaining = remaining + 1                       -- can't move yet; retry next pass
+          locked = locked + 1                             -- in-flight; a quiet pass here isn't convergence
         elseif wantID then
           -- Find the best forward stack of the wanted item: an exact stack-size match if possible,
           -- otherwise the fullest available (earlier slots want the fuller stacks).
@@ -1017,6 +1144,7 @@ local function sortPassFromPlan(groups)
               PickupContainerItem(slots[i].bag, slots[i].slot)   -- drop displaced item into slots[i]'s old slot
             end
             remaining = remaining + 1   -- swapped; may need another pass to fully settle the order
+            moved = moved + 1           -- something actually moved this pass
           else
             remaining = remaining + 1
           end
@@ -1025,13 +1153,17 @@ local function sortPassFromPlan(groups)
     end
   end
   if ClearCursor then ClearCursor() end
-  return remaining
+  return remaining, moved, locked
 end
 
--- Iteration driver: run a pass, let the moved items settle, run again — until nothing is left to move
--- (fully sorted) or 20 passes. Client-predicted moves lock items for a round-trip, so a big reorder
--- needs several passes; this makes ONE click converge instead of many.
-local SORT_MAX_ITERS  = 20
+-- Iteration driver: run a pass, let the moved items settle, run again. The positioning phase converges
+-- on STABILITY — it stops once two consecutive passes move NOTHING (or the bag is fully sorted), instead
+-- of a fixed pass count, so a small bag stops early and a huge one keeps going until it settles.
+-- Client-predicted moves lock items for a round-trip, so a big reorder needs several passes; this makes
+-- ONE click converge instead of many. SORT_MAX_ITERS is now only a safety guard against an item the
+-- server perpetually refuses to move (which would otherwise never register as "stable").
+local SORT_STABLE_PASSES = 2    -- stop after this many consecutive no-move passes
+local SORT_MAX_ITERS  = 50      -- hard safety cap (guards against a never-settling move)
 local MERGE_MAX_ITERS = 20
 local ROUTE_MAX_ITERS = 20
 
@@ -1075,17 +1207,26 @@ function CB._sortStep()
       return
     end
     -- Items now in the right bags → plan the layout on the routed bag and move to positioning.
-    CB._sortPlan  = buildSortPlan()
-    CB._sortPhase = "position"
-    CB._sortIter  = 0
+    CB._sortPlan   = buildSortPlan()
+    CB._sortPhase  = "position"
+    CB._sortIter   = 0
+    CB._sortStable = 0
     if C_Timer and C_Timer.After then C_Timer.After(0.25, CB._sortStep) else finishSort() end
     return
   end
 
-  -- PHASE 2: positioning.
+  -- PHASE 2: positioning. Converge on stability — stop after SORT_STABLE_PASSES consecutive passes that
+  -- move nothing (or once the bag exactly matches the plan). The hard cap is only a runaway guard.
   CB._sortIter = (CB._sortIter or 0) + 1
-  local remaining = sortPassFromPlan(CB._sortPlan)   -- moves items toward the CACHED plan; no repaint
-  if remaining == 0 or CB._sortIter >= SORT_MAX_ITERS then
+  local remaining, moved, locked = sortPassFromPlan(CB._sortPlan)   -- moves items toward the CACHED plan; no repaint
+  -- A pass is "quiet" only if it moved nothing AND isn't still waiting on any in-flight (locked) item —
+  -- so a settle-delay pass on a laggy server doesn't get mistaken for convergence.
+  if (moved or 0) > 0 or (locked or 0) > 0 then
+    CB._sortStable = 0                                   -- moved, or still settling → reset the streak
+  else
+    CB._sortStable = (CB._sortStable or 0) + 1           -- a genuinely quiet pass → count toward convergence
+  end
+  if remaining == 0 or CB._sortStable >= SORT_STABLE_PASSES or CB._sortIter >= SORT_MAX_ITERS then
     finishSort()
     return
   end
@@ -1111,6 +1252,11 @@ function CB.SortBags()
     -- they show through the "Sorting…" cover.
     if keyGrid and keyGrid.ForEachButton then keyGrid:ForEachButton(function(b) b:Hide() end) end
     if frame._keysLabel then frame._keysLabel:Hide() end
+    -- Same for every separated specialty-bag section (grid slots + header label).
+    for _, sec in pairs(specSections) do
+      if sec.grid and sec.grid.ForEachButton then sec.grid:ForEachButton(function(b) b:Hide() end) end
+      if sec.label then sec.label:Hide() end
+    end
     if frame.sortCover then
       if frame.sortCover.label then frame.sortCover.label:SetText(NE.L["Sorting…"]) end
       frame.sortCover:Raise(); frame.sortCover:Show()
@@ -1419,6 +1565,8 @@ function CB.OpenMenu(anchor)
       func = function() CB._redUnusable = not CB._redUnusable; CB.SaveSortPrefs(); CB.Refresh() end },
     { text = NE.L["Show keyring row"], checked = CB._showKeys and true or false,
       func = function() CB._showKeys = not CB._showKeys; CB.SaveSortPrefs(); CB.Refresh() end },
+    { text = NE.L["Separate specialty bags"], checked = CB._separateBags and true or false,
+      func = function() CB._separateBags = not CB._separateBags; CB.SaveSortPrefs(); CB.Refresh() end },
     { text = NE.L["Auto-empty old bag when swapping"], checked = CB._autoEmptyBag and true or false,
       func = function() CB._autoEmptyBag = not CB._autoEmptyBag; CB.SaveSortPrefs() end },
     { text = NE.L["Merchant"], isTitle = true, notCheckable = true },
@@ -1439,6 +1587,7 @@ function CB.SaveSortPrefs()
   NE.db.combinedbag.autoSellJunk = CB._autoSellJunk and true or false
   NE.db.combinedbag.autoEmptyBag = CB._autoEmptyBag and true or false
   NE.db.combinedbag.showKeys     = CB._showKeys and true or false
+  NE.db.combinedbag.separateBags = CB._separateBags and true or false
 end
 function CB.LoadSortPrefs()
   local c = NE.db and NE.db.combinedbag
@@ -1449,6 +1598,7 @@ function CB.LoadSortPrefs()
   if c.autoSellJunk ~= nil then CB._autoSellJunk = c.autoSellJunk and true or false end
   if c.autoEmptyBag ~= nil then CB._autoEmptyBag = c.autoEmptyBag and true or false end
   if c.showKeys ~= nil then CB._showKeys = c.showKeys and true or false end
+  if c.separateBags ~= nil then CB._separateBags = c.separateBags and true or false end
 end
 
 -- ----------------------------------------------------------------------------

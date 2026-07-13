@@ -31,7 +31,25 @@ local NE = DragonUI_NewEra
 local T = NE.talents or {}
 NE.talents = T
 
-local PER_TIER = 5   -- tier t needs (t-1)*5 points spent in that tree (WotLK == vanilla rule)
+local PER_TIER     = 5   -- tier t needs (t-1)*5 points spent in that tree (WotLK == vanilla rule)
+local PET_PER_TIER = 3   -- PET talents gate every 3 points/tier (not 5) — the WotLK pet rule
+
+-- Pet talents exist ONLY for hunter pets (Ferocity / Tenacity / Cunning); GetPetTalentTree returns
+-- nil for warlock/quest pets or no pet. This is the gate for showing the Pet tab + rendering it.
+local function petHasTalents()
+  if not GetPetTalentTree then return false end
+  local ok, tree = pcall(GetPetTalentTree)
+  return (ok and tree ~= nil and tree ~= "") and true or false
+end
+T.PetHasTalents = petHasTalents
+
+-- True when the window is currently showing the PET talent view (Pet tab selected AND a talented pet
+-- is out). Consumed by SpecTabs (tab art), Glyphs (pane visibility) and Populate.
+function T.PetViewActive() return (T._petView and petHasTalents()) and true or false end
+function T.SetPetView(on)
+  T._petView = on and true or false
+  if T._petView and T.GlyphsSetActive then T.GlyphsSetActive(false) end
+end
 
 -- Edge tint: yellow (prereq satisfied + invested) vs dim gray (not yet active).
 local EDGE_ACTIVE   = { 1.0, 0.82, 0.0,  0.95 }
@@ -55,10 +73,10 @@ end
 -- 3.3.5a: name, iconTexture, tier, column, rank, maxRank, isExceptional, meetsPrereq,
 --         previewRank, meetsPreviewPrereq. NO talentID exists (keyed on tab/index).
 -- ----------------------------------------------------------------------------
-local function talentInfo(tab, i, group)
+local function talentInfo(tab, i, group, isPet)
   if not GetTalentInfo then return nil end
   local name, icon, tier, column, rank, maxRank, isExceptional,
-        meetsPrereq, previewRank, meetsPreviewPrereq = GetTalentInfo(tab, i, false, false, group)
+        meetsPrereq, previewRank, meetsPreviewPrereq = GetTalentInfo(tab, i, false, isPet or false, group)
   if not name then return nil end
   return {
     name               = name,
@@ -85,44 +103,45 @@ end
 
 -- VERIFY: arg lists for these preview accessors. The first form matches the NewEra/stock 3.3.5a
 -- Blizzard_TalentUI.lua usage (isInspect=false, group). Fall back to UnitCharacterPoints if absent.
-local function unspentPoints(group)
+local function unspentPoints(group, isPet)
   if GetUnspentTalentPoints then
-    local ok, v = pcall(GetUnspentTalentPoints, false, false, group)   -- VERIFY arg list
+    local ok, v = pcall(GetUnspentTalentPoints, false, isPet or false, group)   -- VERIFY arg list
     if ok and v then return v end
   end
-  if UnitCharacterPoints then return UnitCharacterPoints("player") or 0 end   -- FALLBACK
+  if not isPet and UnitCharacterPoints then return UnitCharacterPoints("player") or 0 end   -- FALLBACK
   return 0
 end
 
-local function previewSpent(group)
+local function previewSpent(group, isPet)
   if GetGroupPreviewTalentPointsSpent then
-    local ok, v = pcall(GetGroupPreviewTalentPointsSpent, false, group)   -- VERIFY arg list
+    local ok, v = pcall(GetGroupPreviewTalentPointsSpent, isPet or false, group)   -- VERIFY arg list
     if ok and v then return v end
   end
   return 0
 end
 
-local function discardPreview(group)
+local function discardPreview(group, isPet)
   if InCombatLockdown and InCombatLockdown() then return end
+  isPet = isPet or false
   -- Native clear first (3.3.5a is ResetPreviewTalentPoints(); the group variant is tried too, both
   -- guarded — whichever exists runs). These were the unreliable part, so we don't trust them alone.
   if ResetPreviewTalentPoints then pcall(ResetPreviewTalentPoints) end
   if ResetGroupPreviewTalentPoints then
-    pcall(ResetGroupPreviewTalentPoints, group)
-    pcall(ResetGroupPreviewTalentPoints, false, group)
+    pcall(ResetGroupPreviewTalentPoints, isPet, group)
+    pcall(ResetGroupPreviewTalentPoints, group)   -- legacy single-arg form (player)
   end
   -- Guaranteed fallback: walk every talent and subtract any STILL-staged points back to its live
   -- rank with the (now-verified) signed AddPreviewTalentPoints. Reverse order (deep tiers first) so
   -- a dependent is removed before its prerequisite; two passes settle any ordering rejections.
   if not (AddPreviewTalentPoints and GetTalentInfo and GetNumTalentTabs) then return end
   for _pass = 1, 2 do
-    for t = 1, (GetNumTalentTabs(false, false) or 0) do
-      local n = (GetNumTalents and GetNumTalents(t, false, false)) or 0
+    for t = 1, (GetNumTalentTabs(false, isPet) or 0) do
+      local n = (GetNumTalents and GetNumTalents(t, false, isPet)) or 0
       for i = n, 1, -1 do
-        local info = talentInfo(t, i, group)
+        local info = talentInfo(t, i, group, isPet)
         if info then
           local staged = (info.previewRank or 0) - (info.rank or 0)
-          if staged > 0 then pcall(AddPreviewTalentPoints, t, i, -staged) end
+          if staged > 0 then pcall(AddPreviewTalentPoints, t, i, -staged, isPet, group) end
         end
       end
     end
@@ -137,11 +156,12 @@ T.DiscardPreview = discardPreview   -- exposed for Loadouts (stage-a-saved-build
 --         red (preview removed below live rank — staged refund).
 -- Mirrors NewEra computeState with retail node semantics, adapted to 3.3.5a fields.
 -- ----------------------------------------------------------------------------
-local function computeState(info, tabPointsSpent, preview, available)
+local function computeState(info, tabPointsSpent, preview, available, perTier)
+  perTier = perTier or PER_TIER
   local liveRank    = info.rank or 0
   local displayRank = (preview and info.previewRank) or liveRank
   local meets       = (preview and info.meetsPreviewPrereq) or info.meetsPrereq
-  local tierUnlocked= ((info.tier or 1) - 1) * PER_TIER <= tabPointsSpent
+  local tierUnlocked= ((info.tier or 1) - 1) * perTier <= tabPointsSpent
   local forceDesat  = (available <= 0) and (displayRank == 0)
   local colored     = meets and tierUnlocked and not forceDesat
   local state
@@ -165,18 +185,27 @@ end
 -- ----------------------------------------------------------------------------
 local function nodeLeftClick(self)
   if not AddPreviewTalentPoints then return end
-  -- 3.3.5a: AddPreviewTalentPoints(tabIndex, talentIndex, points) — the 3rd arg is the SIGNED point
-  -- delta, NOT the talent group. (Passing the group here was the "+2 on spec 2" bug.)
-  pcall(AddPreviewTalentPoints, self._tab, self._index, 1)   -- +1
-  -- PREVIEW_TALENT_POINTS_CHANGED fires -> T.Refresh re-renders.
+  -- 3.3.5a: AddPreviewTalentPoints(tabIndex, talentIndex, points, isPet, talentGroup) — the 3rd arg
+  -- is the SIGNED point delta. (Passing the group as the 3rd arg was the "+2 on spec 2" bug.) Pet
+  -- nodes MUST pass isPet=true + the active group; player keeps the proven no-extra-args call.
+  if self._isPet then
+    pcall(AddPreviewTalentPoints, self._tab, self._index, 1, true, T._activeGroup or 1)   -- +1 (pet)
+  else
+    pcall(AddPreviewTalentPoints, self._tab, self._index, 1)   -- +1 (player)
+  end
+  -- PREVIEW_TALENT_POINTS_CHANGED (or PREVIEW_PET_TALENT_POINTS_CHANGED) fires -> T.Refresh re-renders.
 end
 
 local function nodeRightClick(self)
   if not AddPreviewTalentPoints then return end
   -- 3.3.5a has a NATIVE decrement: a negative delta removes one staged point. The core refuses if
   -- it would orphan a dependent talent (correct behavior), so no manual rebuild is needed.
-  pcall(AddPreviewTalentPoints, self._tab, self._index, -1)   -- -1
-  -- PREVIEW_TALENT_POINTS_CHANGED fires -> T.Refresh re-renders.
+  if self._isPet then
+    pcall(AddPreviewTalentPoints, self._tab, self._index, -1, true, T._activeGroup or 1)   -- -1 (pet)
+  else
+    pcall(AddPreviewTalentPoints, self._tab, self._index, -1)   -- -1 (player)
+  end
+  -- PREVIEW_TALENT_POINTS_CHANGED (or PREVIEW_PET_TALENT_POINTS_CHANGED) fires -> T.Refresh re-renders.
 end
 
 local function nodeTooltip(self)
@@ -185,11 +214,12 @@ local function nodeTooltip(self)
   -- The 6th arg (preview) makes the tooltip show the PENDING previewed rank/effects rather than only
   -- the learned rank — so spending points before Apply is reflected in the tooltip.
   if self._tab and self._index and GameTooltip.SetTalent then
-    local group = T._viewGroup or T._activeGroup or 1
-    local ok = pcall(GameTooltip.SetTalent, GameTooltip, self._tab, self._index, false, false, group, previewOn())
+    local isPet = self._isPet or false
+    local group = isPet and (T._activeGroup or 1) or (T._viewGroup or T._activeGroup or 1)
+    local ok = pcall(GameTooltip.SetTalent, GameTooltip, self._tab, self._index, false, isPet, group, previewOn())
     if not ok then
       -- Fall back to the plain form if a client rejects the preview arg (keeps the tooltip working).
-      ok = pcall(GameTooltip.SetTalent, GameTooltip, self._tab, self._index, false, false, group)
+      ok = pcall(GameTooltip.SetTalent, GameTooltip, self._tab, self._index, false, isPet, group)
     end
     if ok then
       GameTooltip:Show()
@@ -209,7 +239,8 @@ local function wireNode(n)
   n:SetScript("OnClick", function(self, btn)
     if InCombatLockdown and InCombatLockdown() then return end
     -- Only the ACTIVE spec is editable; the other spec is view-only (must Activate to change it).
-    if (T._viewGroup or 1) ~= (T._activeGroup or 1) then return end
+    -- Pet talents are always editable (the pet has a single live build, no view-only spec).
+    if not self._isPet and (T._viewGroup or 1) ~= (T._activeGroup or 1) then return end
     if btn == "LeftButton" then nodeLeftClick(self)
     elseif btn == "RightButton" then nodeRightClick(self) end
     nodeTooltip(self)   -- re-show so the tooltip reflects the just-changed previewed rank immediately
@@ -374,7 +405,8 @@ StaticPopupDialogs["NE_TALENTS_LEARN"] = {
   text = CONFIRM_LEARN_PREVIEW_TALENTS or "Learn the selected talents? Spent points cannot be refunded without a respec.",
   button1 = YES, button2 = NO,
   OnAccept = function()
-    if LearnPreviewTalents then pcall(LearnPreviewTalents) end   -- 3.3.5a: NO arg
+    -- 3.3.5a: LearnPreviewTalents(isPet). Commit whichever view is active (pet build vs player spec).
+    if LearnPreviewTalents then pcall(LearnPreviewTalents, T.PetViewActive and T.PetViewActive() or false) end
     playSound("apply")
   end,
   hideOnEscape = 1, timeout = 0, exclusive = 1, whileDead = 1,
@@ -409,7 +441,7 @@ local function buildBottomBar(f)
   reset:SetText(RESET or "Reset")
   reset:SetScript("OnClick", function()
     if InCombatLockdown and InCombatLockdown() then return end
-    discardPreview(T._activeGroup or 1)
+    discardPreview(T._activeGroup or 1, T.PetViewActive and T.PetViewActive() or false)
     if T.Refresh then T.Refresh() end
   end)
   f.reset = reset
@@ -442,6 +474,70 @@ local function buildBottomBar(f)
 end
 
 -- ----------------------------------------------------------------------------
+-- Pet talent-tree background. Player specs use DragonUI's atlas paintings (T.SetBackground); pets
+-- have no such art, so we assemble the pet's STOCK 4-quadrant tree background (Ferocity / Tenacity /
+-- Cunning) — the same Interface\TalentFrame\HunterPet*-{TopLeft,...} pieces the default UI uses. It
+-- sits as a centered square behind the single centered pet tree (dimmed so nodes stay readable).
+-- The stock 3.3.5a pet backgrounds are a tiny asymmetric 320x384 4-piece set that warps badly when
+-- stretched, so we ship full-window pet paintings (2048x1024, aspect ~2.0 — matching this window's
+-- content area) sourced from the TalentArt addon's Classic pack. `bgName` is the `background` field
+-- from GetTalentTabInfo ("HunterPetFerocity" etc.), which we map to the bundled file. A single texture
+-- filling the same content rect as the class painting (f.bg) — no piecing, no warp.
+local PET_BG_PATH = "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\"
+local PET_BG_FILE = {
+  HunterPetFerocity = "Pet_Ferocity",
+  HunterPetTenacity = "Pet_Tenacity",
+  HunterPetCunning  = "Pet_Cunning",
+}
+local function applyPetBackground(f, bgName)
+  if not f then return end
+  if not f.petBg then
+    -- BORDER texture on the frame (like f.bg): the tree frames are children at a higher frame level,
+    -- so the pet nodes always draw above this. Fill the SAME content rect the class painting uses.
+    local tx = f:CreateTexture(nil, "BORDER")
+    tx:SetPoint("TOPLEFT",     f, "TOPLEFT",     (T.FRAME.CHROME_L or 0), -(T.FRAME.CHROME_T or 0))
+    tx:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -(T.FRAME.CHROME_R or 0),
+      (T.FRAME.CHROME_B or 0) + (T.FRAME.BOTTOMBAR_H or 0))
+    tx:SetTexCoord(0, 1, 0, 1)
+    f.petBg = tx
+  end
+  local file = bgName and PET_BG_FILE[bgName]
+  if file then f.petBg:SetTexture(PET_BG_PATH .. file) end
+  if f.bg then f.bg:Hide() end
+  f.petBg:Show()
+end
+
+-- Pet portrait. SetPortraitTexture snapshots the unit's portrait (natively circular on 3.3.5a — an
+-- icon path via GetPetIcon would render as a SQUARE). The snapshot comes back BLACK if the pet model
+-- isn't cached yet, so (re)apply now, next frame, shortly after, and on UNIT_PORTRAIT_UPDATE / UNIT_PET
+-- — the same watcher pattern PanelChrome uses for the player portrait.
+local function refreshPetPortrait(f)
+  local p = f and f.portrait
+  if not (p and SetPortraitTexture) then return end
+  if not (T.PetViewActive and T.PetViewActive()) then return end   -- don't clobber the class icon in player view
+  if UnitExists and not UnitExists("pet") then return end
+  p:SetTexCoord(0, 1, 0, 1)                                        -- clear any leftover class-icon crop
+  pcall(SetPortraitTexture, p, "pet")
+end
+local function ensurePetPortrait(f)
+  refreshPetPortrait(f)
+  if C_Timer and C_Timer.After then
+    C_Timer.After(0,   function() refreshPetPortrait(f) end)
+    C_Timer.After(0.3, function() refreshPetPortrait(f) end)   -- model snapshot can lag a few frames
+  end
+  if not f._nePetPortraitWatcher then
+    local w = CreateFrame("Frame", nil, f)
+    w:RegisterEvent("UNIT_PORTRAIT_UPDATE")
+    w:RegisterEvent("UNIT_PET")
+    w:SetScript("OnEvent", function(_, _, unit)
+      if unit == nil or unit == "pet" or unit == "player" then refreshPetPortrait(f) end
+    end)
+    f._nePetPortraitWatcher = w
+  end
+end
+T._ApplyPetBackground = applyPetBackground   -- exposed so Glyphs pane-visibility can keep bg state consistent
+
+-- ----------------------------------------------------------------------------
 -- T.Populate — FULL (re)build of all three trees from live data. The active OnShow path the
 -- scaffold calls (`if T.Populate then T.Populate() end`).
 -- ----------------------------------------------------------------------------
@@ -451,6 +547,12 @@ function T.Populate()
   buildBottomBar(f)
   ensureFlowDriver(f)   -- marching-pip animation for the dependency connectors
 
+  -- The Pet tab drops us into PET-talent view. Only valid while a talented (hunter) pet is out —
+  -- if the pet was dismissed since the tab was picked, fall back to the player view automatically.
+  if T._petView and not petHasTalents() then T._petView = false end
+  local isPet   = T._petView and true or false
+  local perTier = isPet and PET_PER_TIER or PER_TIER
+
   -- Dual-spec: _activeGroup = the live spec; _viewGroup = the spec being DISPLAYED (the user can
   -- view the other spec via the side tabs). Snap the view to active on first open and whenever the
   -- active group actually changes (a real spec switch); otherwise preserve the user's chosen view.
@@ -459,20 +561,58 @@ function T.Populate()
   T._activeGroup, T._lastActive = active, active
   local numGroups = (GetNumTalentGroups and (GetNumTalentGroups() or 1)) or 1   -- VERIFY: GetNumTalentGroups on 3.3.5a
   if numGroups < 2 then T._viewGroup = active end
-  local group    = T._viewGroup
-  local editable = (group == active)            -- only the active spec can be edited
-  local viewChanged = (T._lastViewGroup ~= group)   -- suppress spend-flash on a view/spec switch
-  T._lastViewGroup = group
+  -- Pet talents are a single live build (no view-only spec), so pet view uses the ACTIVE group and is
+  -- ALWAYS editable; the player-spec dual-view logic only applies when not in pet view.
+  local group    = isPet and active or T._viewGroup
+  local editable = isPet or (group == active)   -- only the active player spec (or the pet) is editable
+  local viewChanged = (T._lastViewGroup ~= group) or (T._lastPetView ~= isPet)   -- suppress spend-flash on a view switch
+  T._lastViewGroup, T._lastPetView = group, isPet
   T._group = group                              -- back-compat alias (some helpers still read it)
   local preview = previewOn() and editable      -- preview math only applies to the editable spec
-  local numTabs = (GetNumTalentTabs and GetNumTalentTabs(false, false)) or 0
+  local numTabs = (GetNumTalentTabs and GetNumTalentTabs(false, isPet)) or 0
+
+  -- Tree placement: player view = 3 trees side by side (their build-time anchors); pet view = the
+  -- single pet tree centered in the window. Capture each tree's default anchor once, then swap.
+  for i = 1, 3 do
+    local tf = f.trees[i]
+    if tf and not tf._defPoint then tf._defPoint = { tf:GetPoint() } end
+  end
+  if isPet and numTabs <= 1 then
+    local tf = f.trees[1]
+    local dp = tf._defPoint
+    local treeW = (T.LAYOUT and T.LAYOUT.TREE_W) or tf:GetWidth() or 0
+    tf:ClearAllPoints()
+    tf:SetPoint("TOPLEFT", f, "TOPLEFT", (T.FRAME.W - treeW) / 2, dp and dp[5] or -64)
+  else
+    for i = 1, 3 do
+      local tf = f.trees[i]
+      local dp = tf and tf._defPoint
+      if dp then tf:ClearAllPoints(); tf:SetPoint(unpack(dp)) end
+    end
+  end
+
+  -- Vertical centering: player trees fill all 11 tiers, but a pet tree is shallower (a few tiers), so
+  -- top-anchored nodes leave a big empty band below. Pre-scan the pet tree's deepest tier and push the
+  -- whole grid (header + nodes + edges) DOWN by half the unused height so it sits centered.
+  T._nodeYShift = 0
+  if isPet then
+    local layTiers = (T.LAYOUT and T.LAYOUT.TIERS) or 11
+    local pitchY   = (T.LAYOUT and T.LAYOUT.PITCH_Y) or 44
+    local maxTier, nt = 1, (GetNumTalents and GetNumTalents(1, false, true)) or 0
+    for i = 1, nt do
+      local info = talentInfo(1, i, group, true)
+      if info and info.tier and info.tier > maxTier then maxTier = info.tier end
+    end
+    T._nodeYShift = math.max(0, layTiers - maxTier) * pitchY / 2
+  end
 
   -- points available to spend (drives forceDesaturated). previewSpent counted across the group.
-  local unspent       = unspentPoints(group)
-  local previewSpentAll = preview and previewSpent(group) or 0
+  local unspent       = unspentPoints(group, isPet)
+  local previewSpentAll = preview and previewSpent(group, isPet) or 0
   local available     = unspent - previewSpentAll
 
   local domIcon, domSpent, domTab = nil, -1, 1   -- dominant spec (most points) -> portrait + bg
+  local petBgName                                -- pet tree background ("HunterPetFerocity" etc.)
 
   for tabIdx = 1, 3 do
     local tf = f.trees[tabIdx]
@@ -484,7 +624,8 @@ function T.Populate()
     if tabIdx <= numTabs then
       -- GetTalentTabInfo -> name, iconTexture, pointsSpent, background, previewPointsSpent.
       -- Pass the VIEWED group so header counts match the spec on screen (not always the active one).
-      local name, icon, spent, _bg, prevSpent = GetTalentTabInfo(tabIdx, false, false, group)
+      local name, icon, spent, _bg, prevSpent = GetTalentTabInfo(tabIdx, false, isPet, group)
+      if isPet and _bg then petBgName = _bg end   -- pet tree background piece stem
       local tabPointsSpent = (spent or 0) + (preview and (prevSpent or 0) or 0)
       tf.headerName:SetText(string.upper(name or ("Tree " .. tabIdx)))   -- retail CAPS
       tf.headerPts:SetText(tostring(tabPointsSpent))
@@ -497,11 +638,11 @@ function T.Populate()
       tf.headerName:ClearAllPoints()
       tf.headerName:SetPoint("LEFT", tf, "TOPLEFT",
         (tf:GetWidth() - (nameW + 8 + ptsW)) / 2,
-        (T.LAYOUT and T.LAYOUT.HEADER_CENTER_Y) or -13)
+        (T.LAYOUT and T.LAYOUT.HEADER_CENTER_Y) or -13)   -- title/points stay at the standard top spot (pet nodes center below, not this)
 
       if (spent or 0) > domSpent then domSpent = (spent or 0); domIcon = icon; domTab = tabIdx end
 
-      local numTalents = (GetNumTalents and GetNumTalents(tabIdx, false, false)) or 0
+      local numTalents = (GetNumTalents and GetNumTalents(tabIdx, false, isPet)) or 0
       local byCell, infos = {}, {}
 
       -- pass 0: collect every talent's info + occupied cells, then build this tab's per-tier CENTERED
@@ -509,7 +650,7 @@ function T.Populate()
       -- tiers with <COLS talents are packed and centered.
       local occupied = {}
       for i = 1, numTalents do
-        local info = talentInfo(tabIdx, i, group)
+        local info = talentInfo(tabIdx, i, group, isPet)
         if info and info.tier and info.column then
           infos[i] = info
           occupied[#occupied + 1] = { tier = info.tier, column = info.column }
@@ -524,9 +665,10 @@ function T.Populate()
           local shape = T.ResolveShape(info)
           -- Inactive spec: pass available=0 so computeState's forceDesat path suppresses the GREEN
           -- "selectable" state — you can't spend into a non-active spec, so no green prompts there.
-          local state, displayRank = computeState(info, tabPointsSpent, preview, (editable and available) or 0)
+          local state, displayRank = computeState(info, tabPointsSpent, preview, (editable and available) or 0, perTier)
           local node = tf:AcquireNode(i); used[i] = true
           node._tab, node._index, node._talentID = tabIdx, i, nil
+          node._isPet = isPet
           node._tipName = info.name
           local rankText = (info.maxRank and info.maxRank > 0)
             and (tostring(displayRank) .. "/" .. tostring(info.maxRank)) or ""
@@ -569,7 +711,7 @@ function T.Populate()
         local info = infos[i]
         if info and GetTalentPrereqs then
           -- 3.3.5a: tier, column, isLearnable, isPreviewLearnable (AT MOST ONE prereq -> loop runs once)
-          local pre = { GetTalentPrereqs(tabIdx, i, false, false, group) }
+          local pre = { GetTalentPrereqs(tabIdx, i, false, isPet, group) }
           for p = 1, #pre, 4 do
             local ptier, pcol = pre[p], pre[p + 1]
             local srcInfo = ptier and pcol and byCell[ptier * 10 + pcol]
@@ -598,20 +740,32 @@ function T.Populate()
     tf:HideUnusedGates()
   end
 
-  -- portrait = player CLASS icon (UI-Classes-Circles + CLASS_ICON_TCOORDS); spec icon fallback.
+  -- portrait: pet view = the pet's live portrait (circular, via the watcher above); player view = the
+  -- class icon (spec-icon fallback).
   if f.portrait then
-    local _, classFile = UnitClass("player")
-    local c = classFile and CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[classFile]
-    if c then
-      f.portrait:SetTexture("Interface\\TargetingFrame\\UI-Classes-Circles")
-      f.portrait:SetTexCoord(c[1], c[2], c[3], c[4])
-    elseif domIcon then
-      f.portrait:SetTexCoord(0, 1, 0, 1); f.portrait:SetTexture(domIcon)
+    if isPet then
+      ensurePetPortrait(f)
+    else
+      local _, classFile = UnitClass("player")
+      local c = classFile and CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[classFile]
+      if c then
+        f.portrait:SetTexture("Interface\\TargetingFrame\\UI-Classes-Circles")
+        f.portrait:SetTexCoord(c[1], c[2], c[3], c[4])
+      elseif domIcon then
+        f.portrait:SetTexCoord(0, 1, 0, 1); f.portrait:SetTexture(domIcon)
+      end
     end
   end
 
-  -- window background = dominant spec's themed art (lowest tab wins ties)
-  if T.SetBackground then T.SetBackground(domTab) end
+  -- window background: pet view = the bundled full-window pet painting (Ferocity/Tenacity/Cunning);
+  -- player view = the dominant spec's themed DragonUI painting (lowest tab wins ties).
+  if isPet then
+    applyPetBackground(f, petBgName)
+  else
+    if f.petBg then f.petBg:Hide() end
+    if f.bg then f.bg:Show() end
+    if T.SetBackground then T.SetBackground(domTab) end
+  end
 
   -- points readout + bottom-bar enable state
   if f.pointsText then
@@ -640,6 +794,8 @@ function T.Populate()
       f.activate:Show()
     end
   end
+  -- The "save build" loadout button is a PLAYER-talent feature; hide it in pet view.
+  if f._loBtn then if isPet then f._loBtn:Hide() else f._loBtn:Show() end end
 
   -- Refresh the dual-spec side tabs (no-op if <2 specs or the module isn't loaded).
   if T.RefreshSpecTabs then T.RefreshSpecTabs() end
@@ -673,17 +829,23 @@ boot:SetScript("OnEvent", function()
     if T.Populate then T.Populate() end
   end)
   f:HookScript("OnHide", function()
-    discardPreview(T._activeGroup or 1)
+    -- Discard staged preview for BOTH the player spec and (if applicable) the pet — either could be
+    -- staged depending on which tab was last edited.
+    discardPreview(T._activeGroup or 1, false)
+    if petHasTalents() then discardPreview(T._activeGroup or 1, true) end
     if SetCVar and T._savedPreviewCVar then pcall(SetCVar, "previewTalents", T._savedPreviewCVar) end
   end)
 
-  -- Live refresh. All these events exist on 3.3.5a.
+  -- Live refresh. All these events exist on 3.3.5a. PET_TALENT_UPDATE / UNIT_PET / PREVIEW_PET_TALENT_
+  -- POINTS_CHANGED keep the Pet tab + pet tree in sync as the pet is summoned/dismissed/edited.
   local ev = CreateFrame("Frame")
   for _, e in ipairs({
     "PLAYER_TALENT_UPDATE", "CHARACTER_POINTS_CHANGED", "PREVIEW_TALENT_POINTS_CHANGED",
     "PLAYER_LEVEL_UP", "ACTIVE_TALENT_GROUP_CHANGED",
+    "PET_TALENT_UPDATE", "PREVIEW_PET_TALENT_POINTS_CHANGED", "UNIT_PET",
   }) do pcall(function() ev:RegisterEvent(e) end) end
-  ev:SetScript("OnEvent", function(_, event)
+  ev:SetScript("OnEvent", function(_, event, arg1)
+    if event == "UNIT_PET" and arg1 ~= "player" then return end   -- only our own pet changing matters
     if event == "ACTIVE_TALENT_GROUP_CHANGED" then playSound("spec") end   -- successful spec switch
     T.Refresh()
   end)
