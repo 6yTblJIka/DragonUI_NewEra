@@ -69,6 +69,28 @@ local SKILLBAR_PREWARM_ATLASES = {
   "skillbar_fill_flipbook_skinning",
 }
 
+-- Right-panel recipe parchment sheets (SetProfession() picks one of these per-kit files the
+-- first time that profession is opened). Each is its own standalone BLP -- unlike the skillbar
+-- flipbooks above, none of them share a file with anything already prewarmed, so the FIRST
+-- profession a player opens in a session can render its parchment as a black frame / stale art
+-- while the BLP streams in from disk. Prewarm every kit file up front the same way.
+local RECIPE_BG_PREWARM_FILES = {
+  4659666,  -- generic fallback
+  4625450,  -- alchemy
+  4625448,  -- blacksmithing
+  4723320,  -- enchanting
+  4722478,  -- engineering
+  4723159,  -- herbalism
+  4723154,  -- leatherworking
+  4723189,  -- mining
+  4723308,  -- skinning
+  4627497,  -- tailoring
+  4671747,  -- cooking
+  4723316,  -- fishing
+  4723119,  -- inscription
+  4723112,  -- jewelcrafting
+}
+
 local FRAME_NAME = "NE_ProfessionsCraftingFrame"
 local MODULE     = "Professions"
 
@@ -302,6 +324,25 @@ local function prewarmSkillBarAtlases()
       previous = tex
     else
       tex:Hide()
+    end
+  end
+
+  -- Also force each per-profession recipe-parchment BLP GPU-resident (see
+  -- RECIPE_BG_PREWARM_FILES comment): whole-file SetTexture, same shown frame.
+  for _, fdid in ipairs(RECIPE_BG_PREWARM_FILES) do
+    local path = NE.tex and NE.tex.localFiles and NE.tex.localFiles[fdid]
+    if path then
+      local tex = pw:CreateTexture(nil, "BACKGROUND")
+      tex:SetSize(1, 1)
+      if previous then
+        tex:SetPoint("LEFT", previous, "RIGHT", 0, 0)
+      else
+        tex:SetPoint("LEFT", pw, "LEFT", 0, 0)
+      end
+      tex:SetTexture(path)
+      tex:SetAlpha(0.01)
+      tex:Show()
+      previous = tex
     end
   end
 
