@@ -504,6 +504,7 @@ local function clickStockGlyphSocket(button, mouseButton)
   local info = button and button._glyphInfo
   if not (info and info.socket and button._activePane) then return end
 
+  -- 1. GESTURE: Shift-Right-Click to remove an equipped glyph
   if mouseButton == "RightButton" and type(_G.IsShiftKeyDown) == "function" and _G.IsShiftKeyDown() then
     if button._hasGlyph and type(_G.StaticPopup_Show) == "function" then
       _G.StaticPopup_Show("NE_GLYPH_REMOVE_CONFIRM", nil, nil, { button = button })
@@ -511,17 +512,27 @@ local function clickStockGlyphSocket(button, mouseButton)
     return
   end
 
+  -- 2. GESTURE: Left-Click with a glyph on the cursor to apply it directly
+  if mouseButton == "LeftButton" and CursorHasGlyph and CursorHasGlyph() then
+    if PlaceGlyphInSocket then
+      -- Bypasses the secure frame click layer entirely
+      pcall(PlaceGlyphInSocket, info.socket)
+    end
+    return
+  end
+
+  -- 3. FALLBACK: Normal click interactions route safely through a pcall guard
   local stock = getStockGlyphSocket(button)
   if not stock then return end
 
   if stock.Click then
-    stock:Click(mouseButton or "LeftButton")
+    pcall(stock.Click, stock, mouseButton or "LeftButton")
     return
   end
 
   local onClick = stock.GetScript and stock:GetScript("OnClick")
   if type(onClick) == "function" then
-    onClick(stock, mouseButton or "LeftButton")
+    pcall(onClick, stock, mouseButton or "LeftButton")
     return
   end
 end
@@ -1081,8 +1092,11 @@ end
 
 local function ensurePanes()
   if not layoutRoot() then return nil end
-  local currentGroup = T._viewGroup or (GetActiveTalentGroup and GetActiveTalentGroup()) or 1
+  
+  -- Force calculation to strictly use the currently active spec group
+  local currentGroup = (GetActiveTalentGroup and GetActiveTalentGroup()) or 1
   buildPane(currentGroup)
+  
   return root
 end
 
@@ -1148,7 +1162,8 @@ function T.GlyphsApplyPaneVisibility()
       if f.activate then f.activate:Hide() end
     end
 
-    local currentGroup = T._viewGroup or (GetActiveTalentGroup and GetActiveTalentGroup()) or 1
+    -- Force the visibility allocation to match the currently active spec group
+    local currentGroup = (GetActiveTalentGroup and GetActiveTalentGroup()) or 1
     for g, pane in pairs(panes) do
       if pane then
         if g == currentGroup then
@@ -1199,7 +1214,7 @@ function T.GlyphsRefresh()
   if rootWidth <= 0 or rootHeight <= 0 then return end
 
   local activeGroup = (GetActiveTalentGroup and GetActiveTalentGroup()) or 1
-  local currentGroup = T._viewGroup or activeGroup or 1
+  local currentGroup = activeGroup -- Locks text scanning and ring display directly to active spec
 
   local pane = panes[currentGroup]
   if pane then
