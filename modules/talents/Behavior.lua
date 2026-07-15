@@ -29,6 +29,14 @@
 
 local NE = DragonUI_NewEra
 local T = NE.talents or {}
+
+-- Triumvirate-only realm gate. Triumvirate ships a custom native dual-spec-unlock UI (gold cost +
+-- a 3rd/4th spec tier) that other servers (Turtle WoW, Project Epoch, stock 3.3.5a) don't have; any
+-- code that assumes it exists must be gated behind this so it doesn't run on a realm without it.
+local function IsTriumvirate()
+  return (GetRealmName and GetRealmName() or "") == "Triumvirate"
+end
+T.IsTriumvirate = IsTriumvirate
 NE.talents = T
 
 local PER_TIER     = 5   -- tier t needs (t-1)*5 points spent in that tree (WotLK == vanilla rule)
@@ -388,16 +396,19 @@ local function buildBottomBar(f)
   activate:SetText("Activate")
   activate:SetScript("OnClick", function()
     if InCombatLockdown and InCombatLockdown() then return end
-    
-    local unlockBtn = _G["TriumvirateSpecActivateButton"]
-    local nativeNumGroups = (GetNumTalentGroups and GetNumTalentGroups()) or 2
-    local isLocked = (unlockBtn and unlockBtn:IsShown()) or ((T._viewGroup or 1) > nativeNumGroups)
 
-    if isLocked then
-      if unlockBtn and unlockBtn.Click then unlockBtn:Click() end
-    else
-      if SetActiveTalentGroup and T._viewGroup then pcall(SetActiveTalentGroup, T._viewGroup) end
+    if IsTriumvirate() then
+      local unlockBtn = _G["TriumvirateSpecActivateButton"]
+      local nativeNumGroups = (GetNumTalentGroups and GetNumTalentGroups()) or 2
+      local isLocked = (unlockBtn and unlockBtn:IsShown()) or ((T._viewGroup or 1) > nativeNumGroups)
+
+      if isLocked then
+        if unlockBtn and unlockBtn.Click then unlockBtn:Click() end
+        return
+      end
     end
+
+    if SetActiveTalentGroup and T._viewGroup then pcall(SetActiveTalentGroup, T._viewGroup) end
   end)
   activate:Hide()
   f.activate = activate
@@ -675,41 +686,50 @@ function T.Populate()
     if f.activate then
       f.activate:Show()
 
-      -- ---- Triumvirate Gold & Lock Verification ---------------------------------------
-      local unlockBtn = _G["TriumvirateSpecActivateButton"]
-      local nativeNumGroups = (GetNumTalentGroups and GetNumTalentGroups()) or 2
-      local isLocked = (unlockBtn and unlockBtn:IsShown()) or (group > nativeNumGroups)
+      if IsTriumvirate() then
+        -- ---- Triumvirate Gold & Lock Verification ---------------------------------------
+        local unlockBtn = _G["TriumvirateSpecActivateButton"]
+        local nativeNumGroups = (GetNumTalentGroups and GetNumTalentGroups()) or 2
+        local isLocked = (unlockBtn and unlockBtn:IsShown()) or (group > nativeNumGroups)
 
-      local goldCost = 0
-      if group == 2 then goldCost = 1
-      elseif group == 3 then goldCost = 2000
-      elseif group == 4 then goldCost = 5000 end
+        local goldCost = 0
+        if group == 2 then goldCost = 1
+        elseif group == 3 then goldCost = 2000
+        elseif group == 4 then goldCost = 5000 end
 
-      local unlockCost  = goldCost * 100 * 100
-      local playerMoney = GetMoney() or 0
+        local unlockCost  = goldCost * 100 * 100
+        local playerMoney = GetMoney() or 0
 
-      if isLocked then
-        if playerMoney < unlockCost then
-          f.activate:SetText("Locked")
-          f.activate:Disable()
-          if f.activate.SetAlpha then f.activate:SetAlpha(0.25) end
-          local btnText = f.activate:GetFontString()
-          if btnText then btnText:SetTextColor(0.4, 0.4, 0.4) end
+        if isLocked then
+          if playerMoney < unlockCost then
+            f.activate:SetText("Locked")
+            f.activate:Disable()
+            if f.activate.SetAlpha then f.activate:SetAlpha(0.25) end
+            local btnText = f.activate:GetFontString()
+            if btnText then btnText:SetTextColor(0.4, 0.4, 0.4) end
+          else
+            f.activate:SetText("Unlock Spec")
+            f.activate:Enable()
+            if f.activate.SetAlpha then f.activate:SetAlpha(1.0) end
+            local btnText = f.activate:GetFontString()
+            if btnText then btnText:SetTextColor(1, 0.82, 0) end
+          end
         else
-          f.activate:SetText("Unlock Spec")
+          f.activate:SetText("Activate")
           f.activate:Enable()
           if f.activate.SetAlpha then f.activate:SetAlpha(1.0) end
           local btnText = f.activate:GetFontString()
-          if btnText then btnText:SetTextColor(1, 0.82, 0) end
+          if btnText then btnText:SetTextColor(1, 1, 1) end
         end
+        -- ---------------------------------------------------------------------------------
       else
+        -- Non-Triumvirate realms: plain Activate, no gold-unlock system to check against.
         f.activate:SetText("Activate")
         f.activate:Enable()
         if f.activate.SetAlpha then f.activate:SetAlpha(1.0) end
         local btnText = f.activate:GetFontString()
         if btnText then btnText:SetTextColor(1, 1, 1) end
       end
-      -- ---------------------------------------------------------------------------------
     end
   end
 

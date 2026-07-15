@@ -96,6 +96,18 @@ local function setGlyphLabelNamesEnabled(enabled)
   NE.db.talentGlyphSlotNames = enabled and true or false
 end
 
+-- Gearbox option: show the "ACTIVE EFFECTS" description list alongside the glyph sockets, or hide
+-- it and let the sockets use the full width (just the glyphs, no effect text). Defaults to shown,
+-- matching the original behavior before this option existed.
+local function glyphShowEffectsEnabled()
+  if not NE.db or NE.db.talentGlyphShowEffects == nil then return true end
+  return NE.db.talentGlyphShowEffects and true or false
+end
+local function setGlyphShowEffectsEnabled(enabled)
+  if not NE.db then return end
+  NE.db.talentGlyphShowEffects = enabled and true or false
+end
+
 local function trimGlyphPrefix(name)
   if type(name) ~= "string" then return nil end
   local trimmed = name:gsub("^Glyph%s+[Oo]f%s+", "")
@@ -674,6 +686,18 @@ local function ensureGlyphOptionsMenu(anchor)
       if T.GlyphsRefresh then T.GlyphsRefresh() end
     end
     UIDropDownMenu_AddButton(info, level)
+
+    local infoEffects = UIDropDownMenu_CreateInfo()
+    infoEffects.text = "Show glyph effects"
+    infoEffects.checked = glyphShowEffectsEnabled()
+    infoEffects.keepShownOnClick = true
+    infoEffects.isNotRadio = true
+    infoEffects.func = function()
+      setGlyphShowEffectsEnabled(not glyphShowEffectsEnabled())
+      if T.GlyphsApplyPaneVisibility then T.GlyphsApplyPaneVisibility() end
+      if T.GlyphsRefresh then T.GlyphsRefresh() end
+    end
+    UIDropDownMenu_AddButton(infoEffects, level)
   end)
   glyphOptionsMenu = menu
   return glyphOptionsMenu
@@ -712,7 +736,7 @@ local function buildGlyphCog(parent)
   cog:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
     GameTooltip:SetText("Glyph options", 1, 1, 1)
-    GameTooltip:AddLine("Toggle slot name labels.", 0.85, 0.85, 0.85, true)
+    GameTooltip:AddLine("Toggle slot name labels and the active-effects list.", 0.85, 0.85, 0.85, true)
     GameTooltip:Show()
   end)
   cog:SetScript("OnLeave", function()
@@ -1139,7 +1163,9 @@ function T.GlyphsApplyPaneVisibility()
   if not r then return end
 
   if T._glyphActive then
-    if root.listFrame then root.listFrame:Show() end
+    if root.listFrame then
+      if glyphShowEffectsEnabled() then root.listFrame:Show() else root.listFrame:Hide() end
+    end
     if f then
       if f.bg then f.bg:Hide() end
       if f.petBg then f.petBg:Hide() end
@@ -1216,13 +1242,20 @@ function T.GlyphsRefresh()
   local activeGroup = (GetActiveTalentGroup and GetActiveTalentGroup()) or 1
   local currentGroup = activeGroup -- Locks text scanning and ring display directly to active spec
 
+  local showEffects = glyphShowEffectsEnabled()
+
   local pane = panes[currentGroup]
   if pane then
-    layoutPane(pane, 1, 2, rootWidth, rootHeight)
+    layoutPane(pane, 1, showEffects and 2 or 1, rootWidth, rootHeight)
     updatePane(pane, currentGroup, activeGroup)
   end
 
   if root.listFrame then
+    if not showEffects then
+      root.listFrame:Hide()
+      for _, line in pairs(root.listFrame.lines) do line:SetText(""); line:Hide() end
+    else
+    root.listFrame:Show()
     local paneW = math.floor(rootWidth / 2)
     root.listFrame:SetSize(paneW, rootHeight)
     root.listFrame:ClearAllPoints()
@@ -1330,6 +1363,7 @@ function T.GlyphsRefresh()
         end
       end
     end
+  end
   end
 
   for g, p in pairs(panes) do
