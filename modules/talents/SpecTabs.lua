@@ -13,6 +13,13 @@ local NE = DragonUI_NewEra
 local T  = NE.talents or {}
 NE.talents = T
 
+-- Triumvirate-only realm gate (mirrors Behavior.lua's; reuses T.IsTriumvirate if it's already set,
+-- so this still works regardless of file load order).
+local function IsTriumvirate()
+  if T.IsTriumvirate then return T.IsTriumvirate() end
+  return (GetRealmName and GetRealmName() or "") == "Triumvirate"
+end
+
 local MAX_NAME = 16
 
 -- ---- per-character custom names: NE.db.talentSpecNames[charKey][group] = "name" -------------------
@@ -124,9 +131,11 @@ local function buildTab(g)
     if T.GlyphsApplyPaneVisibility then T.GlyphsApplyPaneVisibility() end
   
     -- TRIUMVIRATE COMPATIBILITY: Pass the click to the server's hidden native tab
-    local triumvirateTab = _G["TriumvirateSpecTab" .. id]
-    if triumvirateTab and triumvirateTab.Click then
-      triumvirateTab:Click()
+    if IsTriumvirate() then
+      local triumvirateTab = _G["TriumvirateSpecTab" .. id]
+      if triumvirateTab and triumvirateTab.Click then
+        triumvirateTab:Click()
+      end
     end
 
     if T.RefreshSpecTabs then T.RefreshSpecTabs() end
@@ -225,8 +234,10 @@ function T.RefreshSpecTabs()
   local f = T.frame
   if not f then return end
   
-  -- Force this to 4 since Triumvirate bypasses the default Blizzard limit
-  local num = 4 
+  -- Triumvirate bypasses the default Blizzard 2-spec limit (up to 4 specs). Everywhere else, respect
+  -- the real GetNumTalentGroups() so we don't show unlock tabs for specs the server doesn't support.
+  local num = IsTriumvirate() and 4
+    or ((GetNumTalentGroups and (GetNumTalentGroups() or 1)) or 1)
   
   local hasGlyph = (type(T.GlyphsSetActive) == "function")
   local viewG = T._viewGroup or T._activeGroup or 1
@@ -323,4 +334,3 @@ function T.RefreshSpecTabs()
     setTabArt(gtab, glyphActive)
   end
 end
-
