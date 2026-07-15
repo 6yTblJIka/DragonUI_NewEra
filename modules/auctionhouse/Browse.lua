@@ -7,6 +7,32 @@ if not NE then return end
 NE.ah = NE.ah or {}
 local AH = NE.ah
 
+-- Keep alwaysShow custom Faux bars visually in sync with the actual row overflow state.
+-- Track/arrows stay visible; thumb only shows when the list can truly scroll.
+local function syncAlwaysShowFauxBar(scroll, totalRows, visibleRows)
+  if not scroll then return end
+  local bar = scroll._neCustomBar
+  if not (bar and bar._alwaysShow) then return end
+
+  local canScroll = (totalRows or 0) > (visibleRows or 0)
+  bar:Show()
+  if bar._upBtn then bar._upBtn:Show() end
+  if bar._downBtn then bar._downBtn:Show() end
+  if bar._thumb then
+    if canScroll then bar._thumb:Show() else bar._thumb:Hide() end
+  end
+
+  -- Clamp the hidden Faux slider when unscrollable so stale values cannot keep the thumb active.
+  if not canScroll then
+    local sliderName = scroll.GetName and scroll:GetName()
+    local slider = (sliderName and _G[sliderName .. "ScrollBar"]) or scroll.ScrollBar or scroll.scrollBar
+    if slider then
+      if slider.SetMinMaxValues then slider:SetMinMaxValues(0, 0) end
+      if slider.SetValue then slider:SetValue(0) end
+    end
+  end
+end
+
 -- Aggregate browse row click drills into a per-item detail page (all individual auctions of that
 -- item); the detail page's Bid/Buyout buttons act on the selected listing via these two confirms.
 StaticPopupDialogs["NE_AH_BROWSE_BID"] = {
@@ -289,8 +315,15 @@ local function buildCategoryList(parent)
 
   local function refreshRows()
     flat = flatten()
-    setOffset(currentOffset)
     local offset = getOffset()
+    local m = maxOffset()
+    if offset < 0 then offset = 0 end
+    if offset > m then
+      offset = m
+      setOffset(offset)
+    else
+      currentOffset = offset
+    end
 
     for i = 1, VISIBLE_ROWS do
       local info = flat[i + offset]
@@ -390,6 +423,7 @@ local function buildCategoryList(parent)
     if list.Scroll and FauxScrollFrame_Update then
       FauxScrollFrame_Update(list.Scroll, #flat, VISIBLE_ROWS, ROW_H + ROW_GAP)
     end
+    syncAlwaysShowFauxBar(list.Scroll, #flat, VISIBLE_ROWS)
   end
 
   -- FauxScrollFrameTemplate's handlers (FauxScrollFrame_Update etc., FrameXML/UIPanelTemplates.lua)
@@ -1039,6 +1073,7 @@ function AH.BuildBrowsePane(parent)
     local drawCount = #displayRows
     local visibleRows = resultsVisibleRows()
     fsUpdate(scroll, drawCount, visibleRows, ROW_H + 1)
+    syncAlwaysShowFauxBar(scroll, drawCount, visibleRows)
     local offset = fsGetOffset(scroll)
     local maxOffset = drawCount - visibleRows
     if maxOffset < 0 then maxOffset = 0 end
@@ -1648,6 +1683,7 @@ function AH.BuildBrowsePane(parent)
     if FauxScrollFrame_Update then
       FauxScrollFrame_Update(detailScroll, drawCount, visibleRows, DETAIL_ROW_H + 1)
     end
+    syncAlwaysShowFauxBar(detailScroll, drawCount, visibleRows)
     local offset = (FauxScrollFrame_GetOffset and FauxScrollFrame_GetOffset(detailScroll)) or 0
 
     if drawCount > 0 then

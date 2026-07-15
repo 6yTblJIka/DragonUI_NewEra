@@ -15,6 +15,30 @@ if not NE then return end
 NE.ah = NE.ah or {}
 local AH = NE.ah
 
+-- Keep alwaysShow custom Faux bars visually in sync with real overflow state.
+local function syncAlwaysShowFauxBar(scroll, totalRows, visibleRows)
+  if not scroll then return end
+  local bar = scroll._neCustomBar
+  if not (bar and bar._alwaysShow) then return end
+
+  local canScroll = (totalRows or 0) > (visibleRows or 0)
+  bar:Show()
+  if bar._upBtn then bar._upBtn:Show() end
+  if bar._downBtn then bar._downBtn:Show() end
+  if bar._thumb then
+    if canScroll then bar._thumb:Show() else bar._thumb:Hide() end
+  end
+
+  if not canScroll then
+    local sliderName = scroll.GetName and scroll:GetName()
+    local slider = (sliderName and _G[sliderName .. "ScrollBar"]) or scroll.ScrollBar or scroll.scrollBar
+    if slider then
+      if slider.SetMinMaxValues then slider:SetMinMaxValues(0, 0) end
+      if slider.SetValue then slider:SetValue(0) end
+    end
+  end
+end
+
 local function moneyText(copper)
   if not copper or copper <= 0 then return "-" end
   if GetCoinTextureString then
@@ -388,6 +412,7 @@ function AH.BuildAuctionsPane(parent)
   refreshSummaryRows = function()
     local total = #summaryEntries
     if FauxScrollFrame_Update then FauxScrollFrame_Update(summaryScroll, total, SUM_VISIBLE_ROWS, SUM_ROW_H) end
+    syncAlwaysShowFauxBar(summaryScroll, total, SUM_VISIBLE_ROWS)
     local offset = (FauxScrollFrame_GetOffset and FauxScrollFrame_GetOffset(summaryScroll)) or 0
 
     for i = 1, SUM_VISIBLE_ROWS do
@@ -564,6 +589,7 @@ function AH.BuildAuctionsPane(parent)
     local list = filteredRows()
     local total = #list
     fsUpdate(scroll, total, VISIBLE_ROWS, ROW_H + 1)
+    syncAlwaysShowFauxBar(scroll, total, VISIBLE_ROWS)
     local offset = fsGetOffset(scroll)
     local maxOffset = total - VISIBLE_ROWS
     if maxOffset < 0 then maxOffset = 0 end
