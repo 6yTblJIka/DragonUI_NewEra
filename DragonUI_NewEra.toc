@@ -113,5 +113,14 @@ modules\professions\Window.lua
 modules\professions\RecipeList.lua
 modules\professions\Crafting.lua
 
+# --- Auction House (visual shell + optional Auctionator embedded tabs) ---
+modules\auctionhouse\Assets.lua
+modules\auctionhouse\Browse.lua
+modules\auctionhouse\Sell.lua
+modules\auctionhouse\Auctions.lua
+modules\auctionhouse\TabBridge.lua
+modules\auctionhouse\Window.lua
+modules\auctionhouse\AuctionatorEmbed.lua
+
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---
 core\_HelloDemo.lua

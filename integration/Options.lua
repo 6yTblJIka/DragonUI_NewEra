@@ -60,6 +60,7 @@ local function builder(scroll)
             { id = "Spellbook",   label = "Spellbook" },
             { id = "Talents",     label = "Talents" },
             { id = "Professions", label = "Professions" },
+                        { id = "AuctionHouse", label = "Auction House" },
             { id = "combinedbag", label = "Combined bag (all-in-one)",
               desc = "Our all-in-one bag window. Turn OFF to use the stock Blizzard bags instead. Reload (/reload) to apply." },
         }

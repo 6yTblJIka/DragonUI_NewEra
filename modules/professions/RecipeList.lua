@@ -315,8 +315,14 @@ end
 local function getVisibleRowCount(rl)
   if not (rl and rl.Content) then return MAX_ROWS end
   local h = rl.Content:GetHeight() or 0
+  -- During profession switches/layout churn, content height can briefly read as 0.
+  -- Treat that as "layout not ready" instead of forcing a 1-row viewport.
+  if h < ROW_H_RECIPE then
+    return rl._lastVisibleRows or MAX_ROWS
+  end
   local n = math.floor(h / ROW_H_RECIPE)
   if n < 1 then n = 1 end
+  rl._lastVisibleRows = n
   return n
 end
 
@@ -472,12 +478,36 @@ local function refreshRows(rl)
   local scroll = rl.ScrollFrame
   local offset = scroll and FauxScrollFrame_GetOffset and FauxScrollFrame_GetOffset(scroll) or 0
   local visibleRows = getVisibleRowCount(rl)
+  local canScroll = total > visibleRows
 
   ensureRowPool(rl, visibleRows)
 
   -- Update scrollbar.
   if FauxScrollFrame_Update and scroll then
     FauxScrollFrame_Update(scroll, total, visibleRows, ROW_H_RECIPE)
+  end
+
+  -- Defensive clamp: when content fits, force the hidden Faux slider to a zero range/value.
+  -- This prevents stale drag state from producing phantom offsets on some client/UI stacks.
+  if scroll and not canScroll then
+    local sb = _G[(scroll:GetName() or "") .. "ScrollBar"]
+    if sb then
+      if sb.SetMinMaxValues then sb:SetMinMaxValues(0, 0) end
+      if sb.SetValue then sb:SetValue(0) end
+    end
+    offset = 0
+  end
+
+  -- Keep custom-bar visuals authoritative from recipe-list state (not transient slider state).
+  -- This avoids a stale visible thumb after switching from a long profession list to a short one.
+  local cbar = scroll and scroll._neCustomBar
+  if cbar and cbar._alwaysShow then
+    cbar:Show()
+    if cbar._upBtn then cbar._upBtn:Show() end
+    if cbar._downBtn then cbar._downBtn:Show() end
+    if cbar._thumb then
+      if canScroll then cbar._thumb:Show() else cbar._thumb:Hide() end
+    end
   end
 
   for i = 1, visibleRows do
@@ -723,6 +753,17 @@ function C.buildRecipeList(f)
   local scroll = CreateFrame("ScrollFrame", "NE_ProfessionsCraftingScroll", content, "FauxScrollFrameTemplate")
   scroll:SetAllPoints(content)
   scroll:SetScript("OnVerticalScroll", function(self, offset)
+    local total = #(C.flatList or {})
+    local visibleRows = getVisibleRowCount(rl)
+    if total <= visibleRows then
+      local sb = _G[(self:GetName() or "") .. "ScrollBar"]
+      if sb then
+        if sb.SetMinMaxValues then sb:SetMinMaxValues(0, 0) end
+        if sb.SetValue then sb:SetValue(0) end
+      end
+      refreshRows(rl)
+      return
+    end
     FauxScrollFrame_OnVerticalScroll(self, offset, ROW_H_RECIPE, function() refreshRows(rl) end)
   end)
   -- DOWNPORT/REPORT: wheel scrolling via the (hidden) Faux slider value; auto-clamps to its range.
@@ -741,7 +782,8 @@ function C.buildRecipeList(f)
   -- (Skills/Reputation/Honor/Currency). BuildCustom is a plain function (scrollFrame, opts) — the
   -- stock-slider Reskin path never rendered on 3.3.5a. x pushes the bar into the right gutter.
   if NE.scrollbar and NE.scrollbar.BuildCustom then
-    pcall(NE.scrollbar.BuildCustom, scroll, { x = -8 })
+    -- Keep the empty track visible when content fits (Auction House style), with thumb hidden.
+    pcall(NE.scrollbar.BuildCustom, scroll, { x = -8, alwaysShow = true })
   end
 
   -- Row button pool (MAX_ROWS buttons, reused per scroll position).
