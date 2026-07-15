@@ -10,6 +10,21 @@ local AH = NE.ah
 local MODULE = "AuctionHouse"
 local FRAME_NAME = "NE_AuctionHouseFrame"
 
+-- Ctrl-click dress-up preview. In WoW 3.3.5a the dressup function is DressUpItemLink(link);
+-- DressUpLink is the retail/modern name and does not exist in this client. The legacy
+-- AuctionFrame is kept alive (alpha 0) to hold the AH session. In environments where
+-- SideDressUpFrame.parentFrame points to AuctionFrame, DressUpVisual would route to the bare
+-- side model instead of the full Dressing Room; temporarily clear parentFrame so it falls
+-- through to DressUpFrame, then restore.
+function AH.DressUpItem(link)
+  if not link or not DressUpItemLink then return end
+  local side = _G.SideDressUpFrame
+  local saved
+  if side then saved = side.parentFrame; side.parentFrame = nil end
+  DressUpItemLink(link)
+  if side then side.parentFrame = saved end
+end
+
 local BASE_MODES = {
   Buy = true,
   Sell = true,

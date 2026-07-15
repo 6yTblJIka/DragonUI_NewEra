@@ -1013,6 +1013,10 @@ function AH.BuildBrowsePane(parent)
     -- an auction-index tooltip bound to one specific listing.
     row:RegisterForClicks("LeftButtonUp")
     row:SetScript("OnClick", function(self)
+      if IsModifiedClick and IsModifiedClick("DRESSUP") and self._data and self._data.link then
+        AH.DressUpItem(self._data.link)
+        return
+      end
       if openItemDetail then openItemDetail(self._data) end
     end)
     row:SetScript("OnEnter", function(self)
@@ -1591,6 +1595,11 @@ function AH.BuildBrowsePane(parent)
 
     row:RegisterForClicks("LeftButtonUp")
     row:SetScript("OnClick", function(self)
+      if IsModifiedClick and IsModifiedClick("DRESSUP") and self._data and self._data.index then
+        local link = GetAuctionItemLink and GetAuctionItemLink("list", self._data.index)
+        if link then AH.DressUpItem(link) end
+        return
+      end
       detailSelected = self._data
       for _, rr in ipairs(detailRowWidgets) do
         if rr.Sel then rr.Sel:SetShown(rr._data ~= nil and rr._data == detailSelected) end

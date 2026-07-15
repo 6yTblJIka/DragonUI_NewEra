@@ -545,6 +545,11 @@ function AH.BuildAuctionsPane(parent)
     row.Time:SetJustifyH("RIGHT")
 
     row:SetScript("OnClick", function(self)
+      if IsModifiedClick and IsModifiedClick("DRESSUP") and self._index then
+        local link = GetAuctionItemLink and GetAuctionItemLink(activeListType(), self._index)
+        if link then AH.DressUpItem(link) end
+        return
+      end
       if selectedSub ~= 1 then return end
       selectedOwnerIndex = self._index
       refreshResults()
