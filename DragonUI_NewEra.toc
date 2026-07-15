@@ -120,6 +120,7 @@ modules\auctionhouse\Sell.lua
 modules\auctionhouse\Auctions.lua
 modules\auctionhouse\TabBridge.lua
 modules\auctionhouse\Window.lua
+modules\auctionhouse\AuctionatorEmbed.lua
 
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---
 core\_HelloDemo.lua

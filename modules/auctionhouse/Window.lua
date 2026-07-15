@@ -222,7 +222,17 @@ local function setTitleForMode(mode)
   local f = AH.frame
   if not f then return end
   local t = ""
-  if mode == "Buy" then
+  if type(mode) == "string" and string.find(mode, "external:", 1, true) == 1 then
+    -- External tab: prefer the provider's own live title ("Auctionator+ - Buy", mirrored into
+    -- AH.atr._lastTitle by AuctionatorEmbed's SetText hook), falling back to the tab's label.
+    local key = string.gsub(mode, "^external:", "")
+    local def = f.ExternalTabDefs and f.ExternalTabDefs[key]
+    if def and def.providerId == "Auctionator" and AH.atr and AH.atr._lastTitle then
+      t = AH.atr._lastTitle
+    else
+      t = (def and def.text) or "Auctionator"
+    end
+  elseif mode == "Buy" then
     t = AUCTION_HOUSE_BROWSE_TITLE or "Browse Auctions"
   elseif mode == "Sell" then
     t = AUCTION_HOUSE_FRAME_TITLE_SELL or AUCTION_HOUSE_SELL_TAB or "Post Auctions"
@@ -289,6 +299,13 @@ local function setMode(mode)
     end
   end
 
+  -- Grow the shell to Auctionator's native footprint on its tabs, restore on the base tabs.
+  -- Done BEFORE the external onSelect (which reveals Auctionator's panel) so it lays out at the
+  -- final size. No-ops until AuctionatorEmbed has actually embedded (AH._atrEmbedded).
+  if AH.atr and AH.atr.SetWindowForExternal then
+    AH.atr.SetWindowForExternal(isExternalMode and AH._atrEmbedded and true or false)
+  end
+
   if PanelTemplates_SetTab and f._tabIds and f._tabIds[mode] then
     PanelTemplates_SetTab(f, f._tabIds[mode])
   end
@@ -316,8 +333,11 @@ local function setMode(mode)
 
   setTitleForMode(mode)
   -- External modes hand off rendering to a provider (e.g. Auctionator); suppressing the legacy
-  -- AH frame here would undo whatever the provider's onSelect just showed.
-  if not isExternalMode then
+  -- AH frame here would undo whatever the provider's onSelect just showed -- UNLESS the
+  -- provider's UI has been reparented INTO this shell (AuctionatorEmbed sets AH._atrEmbedded),
+  -- in which case the legacy frame no longer hosts anything of the provider's and must stay
+  -- cloaked.
+  if not isExternalMode or AH._atrEmbedded then
     suppressLegacyAuctionFrame()
   end
   f._switchingModes = false
@@ -436,6 +456,13 @@ function AH.RefreshExternalTabs()
     tab._neMode = mode
     tab:SetID(nextId)
     tab:SetText(ext[i].text)
+    -- Auctionator's own native tabs use its signature orange text; carry that through so the
+    -- embedded tabs read as distinct from the shell's base Buy/Sell/Auctions tabs (which they
+    -- otherwise duplicate by name).
+    if ext[i].providerId == "Auctionator" then
+      local fs = _G[name .. "Text"]
+      if fs and fs.SetTextColor then fs:SetTextColor(1, 0.55, 0.25) end
+    end
     tab:SetScript("OnClick", function(self)
       setMode(self._neMode)
     end)
@@ -539,7 +566,9 @@ local function createWindow()
 
   local f = CreateFrame("Frame", FRAME_NAME, UIParent, "PortraitFrameTemplate")
   f:SetSize(800, 538)
-  f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  -- Default Blizzard UI panels (AuctionFrame included) open pinned to the LEFT side of the
+  -- screen, vertically centered -- not screen-CENTER. Match that instead of centering.
+  f:SetPoint("LEFT", UIParent, "LEFT", 16, 0)
   f:SetFrameStrata("DIALOG")
   f:SetMovable(true)
   f:SetClampedToScreen(true)
