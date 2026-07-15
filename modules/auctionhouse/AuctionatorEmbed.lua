@@ -631,8 +631,7 @@ local function reskinLists()
   end
 
   -- Dark textured backing for the whole left column -- dropdown + list + shopping-list buttons --
-  -- with the same recessed inset border as the right-hand results list, so both columns read as
-  -- matching bordered panels instead of the left one looking like a flat, edgeless void.
+  -- with the same recessed inset border as the right-hand results list.
   -- Toggled with the list's shown state so it doesn't paint over the Sell tab's sell-controls box
   -- (the left column is empty on the Sell tab).
   if hl and p and not ATR._leftCol then
@@ -641,13 +640,6 @@ local function reskinLists()
     col:EnableMouse(false)
     col:SetPoint("TOPLEFT", p, "TOPLEFT", LEFTCOL_L, LEFTCOL_T)
     col:SetPoint("BOTTOMRIGHT", p, "TOPLEFT", LEFTCOL_R, LEFTCOL_B)
-    -- Solid dark base UNDER the themed art: the cropped sell-left atlas fades toward its own edges,
-    -- so on a tall strip its lower reaches can read washed-out; the base keeps the whole column a
-    -- uniform dark all the way to LEFTCOL_B.
-    local base = col:CreateTexture(nil, "BACKGROUND", nil, -2)
-    base:SetTexture(WHITE)
-    base:SetVertexColor(0.06, 0.06, 0.07, 0.95)
-    base:SetAllPoints(col)
     croppedInsetBg(col, "auctionhouse-background-sell-left")
     attachInset(col)
     ATR._leftCol = col
