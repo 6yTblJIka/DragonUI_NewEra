@@ -663,8 +663,11 @@ eventFrame:RegisterEvent("AUCTION_HOUSE_SHOW")
 eventFrame:RegisterEvent("AUCTION_HOUSE_CLOSED")
 
 local function onLogin()
-  prewarmAuctionHouseTextures()
-  createWindow()
+  local enabled = isModuleEnabled()
+  if enabled then
+    prewarmAuctionHouseTextures()
+    createWindow()
+  end
   if NE.RegisterPanel then
     NE.RegisterPanel({
       id = MODULE,
