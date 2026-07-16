@@ -152,6 +152,21 @@ function NE.nineslice.Apply(frame, layoutName, opts)
   return NE.nineslice.ApplyLayout(frame, layoutName, opts)
 end
 
+-- AttachInset — the recurring "recessed inner border" idiom: a mouse-transparent child Frame
+-- anchored TOPLEFT/BOTTOMRIGHT into `parent` with the InsetFrameTemplate nineslice layout walked
+-- onto it. Returns the child so the caller can stash it (e.g. parent.NineSlice = ns). Offsets
+-- default to 0, so an all-points inset is AttachInset(parent).
+-- DOWNPORT: NewEra Core/Chrome/NineSlice.lua — ported verbatim, was missing from this file.
+function NE.nineslice.AttachInset(parent, tlx, tly, brx, bry)
+  if not parent then return end
+  local ns = CreateFrame("Frame", nil, parent)
+  ns:SetPoint("TOPLEFT",     parent, "TOPLEFT",     tlx or 0, tly or 0)
+  ns:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", brx or 0, bry or 0)
+  ns:EnableMouse(false)
+  NE.nineslice.ApplyLayout(ns, "InsetFrameTemplate")
+  return ns
+end
+
 function NE.nineslice.HideLayout(container)
   if not container then return end
   for _, setup in ipairs(nineSliceSetup) do

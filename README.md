@@ -82,6 +82,17 @@ The **Glyphs** tab shares the talent window — a hexagon of major/minor glyph s
 
 A standalone Dragonflight-style profession window replacing the 3.3.5a `TradeSkillFrame`, with a modern recipe list, item/reagent details, a generic skill bar, and cog options — plus optional **Auctionator** integration via an AH scan button.
 
+### Auction House
+
+![Auction House](screenshots/auctionhouse.png)
+
+A standalone Dragonflight-style Auction House window replacing the 3.3.5a `AuctionFrame`:
+
+- **Buy** — search the market; results aggregate by item, drilling into a per-item detail page for bid/buyout.
+- **Sell** — drag an item into the sell slot, set quantity/price/duration against a live view of that item's current market listings, and post.
+- **Auctions** — Auctions/Bids sub-tabs with a retail-style summary of your listings grouped by item, plus the full owner/bidder list and Cancel Auction.
+- **Auctionator reskin** — when Auctionator is installed, its Buy/Sell/More panel is reparented straight into this window and fully restyled to match (dark fill, gold-trim insets, zebra-striped rows, reskinned scrollbars/tabs/dialogs) instead of popping open its own separate parchment-style frame. Its tabs sit alongside the shell's own Buy/Sell/Auctions tabs and drive the same window.
+
 ### Bags — *work in progress*
 
 ![Bags](screenshots/bags.png)
@@ -103,6 +114,7 @@ Faithfully downporting the remaining NewEra panels to 3.3.5a:
 - [x] ~~**Spellbook**~~ — *done* (two-page book, category tabs, active/passive frames, search + Hide Passives / Show All Ranks, single/double-page toggle)
 - [x] ~~**Talents**~~ — *done* (3-tree panel, live preview/Apply/Reset, retail-style nodes, per-tier centering, spec-art backgrounds, animated connectors, dual-spec tabs with custom names, hunter **pet talents** tab, and a **glyphs** page with per-class artwork)
 - [x] ~~**Professions**~~ — *done* (Main profession Window, extra integration with Auctionator via AH Scan Button)
+- [x] ~~**Auction House**~~ — *done* (Buy/Sell/Auctions panel, plus a full Auctionator embed + reskin when it's installed)
 - [ ] **Bags** — *work in progress* (retail combined bag + individual-bag restyle: grid, smart sort, separated specialty-bag sections, keyring row, rarity/usable cues, money + currency band)
 - [ ] **Quest Log**
 - [ ] **Merchant**

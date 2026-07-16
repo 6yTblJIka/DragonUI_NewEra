@@ -336,8 +336,11 @@ local function startAuctionatorScan(r)
 
   -- Match the legacy reference addon flow:
   -- Atr_SelectPane(BUY_TAB) -> Atr_SearchAH(shoppingListName, items) -> Atr_Shop_UpdateUI().
-  if type(_G.Atr_SelectPane) == "function" and _G.BUY_TAB ~= nil then
-    okCall(_G.Atr_SelectPane, _G.BUY_TAB)
+  -- NOTE: BUY_TAB/SELL_TAB/MORE_TAB are LOCAL constants inside Auctionator's own file, never
+  -- exposed as globals, so _G.BUY_TAB was always nil and this call never actually fired. Its
+  -- source hardcodes BUY_TAB = 3; Atr_SelectPane just needs that numeric value.
+  if type(_G.Atr_SelectPane) == "function" then
+    okCall(_G.Atr_SelectPane, 3)
   end
 
   if type(_G.Atr_SearchAH) == "function" then

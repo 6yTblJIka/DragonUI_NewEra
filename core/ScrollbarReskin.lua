@@ -286,12 +286,36 @@ local function cbSync(bar)
   local minV, maxV = slider:GetMinMaxValues()
   minV = minV or 0; maxV = maxV or 0
   local range = maxV - minV
-  -- Content fits → hide the whole custom bar (and keep the stock bits hidden).
+  -- Content fits → normally hide the whole custom bar (and keep the stock bits hidden).
+  -- opts.alwaysShow keeps the TRACK (+ arrows, if present) always visible even with nothing to
+  -- scroll yet -- some lists (e.g. the Auctions tab) want the scrollbar chrome present from the
+  -- first render, not popping in once content overflows. Matches the reference's own Reskin()
+  -- behavior verbatim: "the arrows and track stay ... [only] the thumb hides when content fits
+  -- the viewport" -- arrows are NOT disabled in that state, just the thumb disappears. An earlier
+  -- attempt stretched the thumb to fill the whole track instead, which just looked like a solid
+  -- highlighted bar rather than an empty groove.
   if range <= 0 then
-    bar:Hide()
+    if not bar._alwaysShow then
+      -- The arrow buttons are reparented OFF the slider onto scrollFrame's parent (see BuildCustom)
+      -- so they can outlive the slider's own Hide() -- but that also makes them SIBLINGS of bar,
+      -- not children of it, so hiding bar alone doesn't hide them. Have to hide them explicitly or
+      -- they're left showing over an otherwise-fully-hidden scrollbar (e.g. the Honor tab when its
+      -- list fits the viewport).
+      bar:Hide()
+      if bar._upBtn then bar._upBtn:Hide() end
+      if bar._downBtn then bar._downBtn:Hide() end
+      return
+    end
+    bar:Show()
+    if bar._upBtn then bar._upBtn:Show() end
+    if bar._downBtn then bar._downBtn:Show() end
+    if bar._thumb then bar._thumb:Hide() end
     return
   end
   bar:Show()
+  if bar._upBtn then bar._upBtn:Show() end
+  if bar._downBtn then bar._downBtn:Show() end
+  if bar._thumb then bar._thumb:Show() end
 
   local trackH = bar:GetHeight() or 0
   if trackH <= 0 then return end
@@ -341,6 +365,36 @@ local function cbOnThumbUpdate(thumb)
   end
 end
 
+-- Reskin+reposition a FauxScrollFrame's native arrow button in place, anchored off OUR bar frame
+-- (not the stock slider) -- used only when opts.arrows requests the reference's Auctions-tab style
+-- (the Buy/Sell tabs' scrollbars have no arrows and don't pass this option, so they're unaffected).
+local CB_ARROW_W   = 17
+local CB_ARROW_H   = 11
+-- Reference's ARROW_GAP = thumb cap height (CB_CAP_H, 8) + a 6px visible buffer = 14 -- the gap
+-- between the track's cap and the arrow has to clear the cap's own height or the thumb's rounded
+-- corner visually pokes out past the arrow at full scroll. NOT just the 6px buffer alone.
+local CB_ARROW_GAP = CB_CAP_H + 6
+local function cbReskinArrow(button, normalAtlas, overAtlas, downAtlas, bar, anchor)
+  if not button then return end
+  local n = button:GetNormalTexture()
+  local p = button:GetPushedTexture()
+  local d = button:GetDisabledTexture()
+  local h = button:GetHighlightTexture()
+  if n then setAtlas(n, normalAtlas, false) end
+  if p then setAtlas(p, downAtlas,   false) end
+  if d then setAtlas(d, normalAtlas, false); d:SetDesaturated(true) end
+  if h then setAtlas(h, overAtlas, false); h:SetBlendMode("ADD") end
+  button:SetSize(CB_ARROW_W, CB_ARROW_H)
+  button:ClearAllPoints()
+  if anchor == "TOP" then
+    button:SetPoint("BOTTOM", bar, "TOP", 0, CB_ARROW_GAP)
+  else
+    button:SetPoint("TOP", bar, "BOTTOM", 0, -CB_ARROW_GAP)
+  end
+  button:EnableMouse(true)
+  button:Show()
+end
+
 function NE.scrollbar.BuildCustom(scrollFrame, opts)
   if not scrollFrame then return end
   if scrollFrame._neCustomBar then return scrollFrame._neCustomBar end
@@ -355,29 +409,79 @@ function NE.scrollbar.BuildCustom(scrollFrame, opts)
 
   opts = opts or {}
   local xInset = opts.x ~= nil and -opts.x or CB_X_INSET
+  -- The reference addon's minimal scrollbar always has arrow buttons -- that's now the DEFAULT
+  -- for every list using this widget, not a per-call opt-in. The vertical clearance the arrows
+  -- need is reserved by insetting OUR OWN bar within scrollFrame's existing bounds (below), so
+  -- this doesn't require auditing every caller's layout. Pass arrows = false to opt a specific
+  -- list out if it genuinely needs the old bare-track look. (Whether the TRACK stays visible with
+  -- nothing to scroll, vs. hiding entirely, is the separate opts.alwaysShow -- opt-in, see below.)
+  local wantArrows = opts.arrows ~= false
 
-  -- Hide the stock scrollbar + arrows (do NOT remove — Faux still drives the
-  -- slider value). Re-hide on any attempt to show them.
+  -- upBtn/downBtn are children of the STOCK SLIDER in FauxScrollFrameTemplate's own hierarchy --
+  -- if we want to keep showing them (wantArrows) while hiding the slider itself (its track+thumb
+  -- art we never want), they have to be reparented OFF the slider first. A hidden parent hides its
+  -- children regardless of the child's own Show()/Hide() state, so leaving them parented to the
+  -- now-hidden slider would make them invisible no matter what we do below.
+  if wantArrows then
+    local newParent = scrollFrame:GetParent() or scrollFrame
+    if upBtn then upBtn:SetParent(newParent) end
+    if downBtn then downBtn:SetParent(newParent) end
+  end
+
+  -- Hide the stock scrollbar (do NOT remove — Faux still drives the slider value). If arrows are
+  -- wanted, leave upBtn/downBtn alone here -- they're reskinned+repositioned below instead.
+  -- Re-hide the slider on any attempt to show it.
   local function hideStock()
     if slider then slider:Hide() end
-    if upBtn then upBtn:Hide() end
-    if downBtn then downBtn:Hide() end
+    if not wantArrows then
+      if upBtn then upBtn:Hide() end
+      if downBtn then downBtn:Hide() end
+    end
   end
   hideStock()
   if slider.HookScript then slider:HookScript("OnShow", function(s) s:Hide() end) end
-  if upBtn and upBtn.HookScript then upBtn:HookScript("OnShow", function(s) s:Hide() end) end
-  if downBtn and downBtn.HookScript then downBtn:HookScript("OnShow", function(s) s:Hide() end) end
+  if not wantArrows then
+    if upBtn and upBtn.HookScript then upBtn:HookScript("OnShow", function(s) s:Hide() end) end
+    if downBtn and downBtn.HookScript then downBtn:HookScript("OnShow", function(s) s:Hide() end) end
+  end
 
   -- ---- the custom bar frame (= the track) ----------------------------------
-  local bar = CreateFrame("Frame", nil, scrollFrame)
+  -- Parented to the scrollFrame's OWN PARENT, not the scrollFrame itself -- a ScrollFrame widget
+  -- clips ALL its children to its own rectangle (not just a designated scroll child), and this
+  -- bar is deliberately anchored OUTSIDE the scrollFrame's bounds (to its right). Parented to the
+  -- scrollFrame directly, it would render fully clipped/invisible regardless of Show()/Hide()
+  -- state -- anchors still resolve fine against a non-parent frame, so this changes nothing else.
+  local bar = CreateFrame("Frame", nil, scrollFrame:GetParent() or scrollFrame)
   bar:SetWidth(CB_WIDTH)
-  -- Anchor to the right edge of the scroll pane, inset a little, full height.
+  -- Anchor to the right edge of the scroll pane, inset a little. Full height normally; when arrows
+  -- are wanted, inset top/bottom by the same amount the arrow buttons occupy (CB_ARROW_H +
+  -- CB_ARROW_GAP) so the track+arrows stay entirely within scrollFrame's own bounds instead of
+  -- needing every caller to carve out extra vertical clearance in its own layout.
+  local barYInset = wantArrows and (CB_ARROW_H + CB_ARROW_GAP) or 0
   bar:ClearAllPoints()
-  bar:SetPoint("TOPLEFT",     scrollFrame, "TOPRIGHT", xInset, 0)
-  bar:SetPoint("BOTTOMLEFT",  scrollFrame, "BOTTOMRIGHT", xInset, 0)
+  bar:SetPoint("TOPLEFT",     scrollFrame, "TOPRIGHT", xInset, -barYInset)
+  bar:SetPoint("BOTTOMLEFT",  scrollFrame, "BOTTOMRIGHT", xInset, barYInset)
   bar:SetFrameStrata("HIGH")
   bar:SetFrameLevel((scrollFrame:GetFrameLevel() or 1) + 6)
   bar._slider = slider
+  -- Opt-in, NOT a default -- always-visible-track (even with nothing to scroll) is an Auction
+  -- House convention (Browse/Auctions tabs pass this explicitly); other panels keep the normal
+  -- "hide entirely when content fits" behavior unless they ask for otherwise.
+  bar._alwaysShow = opts.alwaysShow and true or false
+
+  if wantArrows then
+    cbReskinArrow(upBtn,   "minimal-scrollbar-arrow-top",    "minimal-scrollbar-arrow-top-over",    "minimal-scrollbar-arrow-top-down",    bar, "TOP")
+    cbReskinArrow(downBtn, "minimal-scrollbar-arrow-bottom", "minimal-scrollbar-arrow-bottom-over", "minimal-scrollbar-arrow-bottom-down", bar, "BOTTOM")
+    if upBtn then
+      upBtn:SetFrameStrata(bar:GetFrameStrata())
+      upBtn:SetFrameLevel(bar:GetFrameLevel() + 1)
+    end
+    if downBtn then
+      downBtn:SetFrameStrata(bar:GetFrameStrata())
+      downBtn:SetFrameLevel(bar:GetFrameLevel() + 1)
+    end
+    bar._upBtn, bar._downBtn = upBtn, downBtn
+  end
 
   -- track: top cap + bottom cap + tiled middle
   local tTop = bar:CreateTexture(nil, "BACKGROUND")
@@ -481,7 +585,13 @@ function NE.scrollbar.BuildCustom(scrollFrame, opts)
   end)
 
   scrollFrame._neCustomBar = bar
-  if C_Timer and C_Timer.After then C_Timer.After(0, sync) else sync() end
+  -- Sync once immediately (bar:GetHeight() etc. may not be resolved on this very first pass
+  -- through a long anchor chain -- e.g. this bar's own scrollFrame anchors off a panel that
+  -- anchors off a tab whose width comes from GetWidth() on its own text) AND once more deferred
+  -- a frame later once layout has fully settled. Without the deferred pass an alwaysShow bar can
+  -- get stuck invisible if this first call sees a zero-height track.
+  sync()
+  if C_Timer and C_Timer.After then C_Timer.After(0, sync) end
   return bar
 end
 
@@ -576,7 +686,10 @@ function NE.scrollbar.BuildCustomPixel(scrollFrame, opts)
   local xInset = opts.x ~= nil and -opts.x or CB_X_INSET
 
   -- ---- the custom bar frame (= the track) ----------------------------------
-  local bar = CreateFrame("Frame", nil, scrollFrame)
+  -- Parented to the scrollFrame's own parent, not the scrollFrame itself -- see the matching
+  -- note in BuildCustom above (a ScrollFrame clips all its children to its own rect, and this bar
+  -- is deliberately anchored outside it).
+  local bar = CreateFrame("Frame", nil, scrollFrame:GetParent() or scrollFrame)
   bar:SetWidth(CB_WIDTH)
   bar:ClearAllPoints()
   bar:SetPoint("TOPLEFT",    scrollFrame, "TOPRIGHT",    xInset, 0)
