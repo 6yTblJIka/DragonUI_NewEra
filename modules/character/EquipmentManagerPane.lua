@@ -47,7 +47,8 @@ local GREEN  = GREEN_FONT_COLOR  or { r = 0.1, g = 1, b = 0.1 }
 -- ----------------------------------------------------------------------------
 -- StaticPopups (delete confirm + save/overwrite confirm).
 -- ----------------------------------------------------------------------------
-StaticPopupDialogs = StaticPopupDialogs or {}
+-- Never assign the StaticPopupDialogs global itself: writing it taints the global
+-- for every reader, which blocks protected OnAccept handlers such as ReplaceEnchant.
 StaticPopupDialogs["NE_CONFIRM_DELETE_EQUIPMENT_SET"] = {
   text = L("CONFIRM_DELETE_EQUIPMENT_SET", "Delete the equipment set '%s'?"),
   button1 = YES or "Yes", button2 = NO or "No",
