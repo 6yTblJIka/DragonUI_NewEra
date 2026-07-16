@@ -15,7 +15,7 @@ DragonUI ports the Dragonflight **HUD** to 3.3.5a. **DragonUI_NewEra** fills in 
 A full custom replacement for the 3.3.5a `CharacterFrame`, styled to match Dragonflight:
 
 - Paperdoll (3D model + all equipment slots) with modern model controls (zoom, click-drag rotate / pan)
-- **Stats sidebar** (General / Attributes / Melee / Ranged / Spell / Defense / Resistances) with proper tooltips
+- **Stats sidebar** (General / Attributes / Melee / Ranged / Spell / Defense / Resistances) with proper tooltips - compatible with [EnhancedCharStats](https://github.com/thezephyrsong/EnhancedCharStats/)
 - Tabs for **Character, Pet, Skills, Honor, Reputation**
 - **Titles** picker — set your title from the panel; the window header shows `Name <Title>`
 - **Equipment Manager** — a fully client-side gear-set manager (works on any server, no reliance on the native equipment-manager API)
@@ -60,7 +60,7 @@ A standalone War-Within-style talent window over WotLK's classic grid talents, o
 - **Per-tier centering** — rows with fewer than four talents are packed and centred (the way retail lays them out), and the three trees are centred in the window.
 - **Spec-art backgrounds** — each class/spec paints its own artwork behind the trees.
 - **Animated connectors** — prerequisite links draw as a flowing dotted line straight from one talent to the talent that needs it.
-- **Dual-spec** — bottom tabs switch between **Primary** and **Secondary**; rename either spec from the cog (custom names persist per character). View your other spec read-only (dimmed) and hit **Activate** to switch to it.
+- **Multi-spec** — bottom tabs switch between up to 4 specs depending on server configurations; rename the specs from the cog (custom names persist per character). View your other spec read-only (dimmed) and hit **Activate** to switch to it.
 - **Pet talents** — hunters with a talented pet out get a **Pet** tab (Ferocity / Tenacity / Cunning) on the pet's own family artwork, with the same live preview → Apply / Reset flow, the pet's circular portrait, the correct 3-points-per-tier gating, and the single tree centred in the window.
 - Sound cues for spending, refunding, applying, and switching specs.
 
@@ -75,6 +75,7 @@ The **Glyphs** tab shares the talent window — a hexagon of major/minor glyph s
 - **Class artwork** — each class gets its own full-window Legion-artifact-style backdrop behind the sockets.
 - **One title, per-spec labels** — a single **GLYPHS** header; under dual spec each spec's name (**PRIMARY** / **SECONDARY**, or your custom rename, in caps) is lined up above its own socket cluster instead of repeating the title.
 - **Animated links** — the same flowing dotted connectors as the talent trees tie the sockets together.
+- ***Optional*** - see a list of the effects of each glyphs next to the glyphs
 
 ### Professions
 
