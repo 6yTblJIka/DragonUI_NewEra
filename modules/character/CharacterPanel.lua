@@ -374,6 +374,8 @@ CP.ApplyTabState = applyTabState
 -- Show/hide only — never reparent/teardown here (taint-free). Idempotent.
 -- ----------------------------------------------------------------------------
 local function interceptBlizzard()
+  return
+  
   if CP._intercepted then return end
   CP._intercepted = true
 
