@@ -177,18 +177,18 @@ local function buildSidebarTabs()
 
   -- Build right-to-left (NewEra chain anchors).
   -- Tab3: Equipment Manager → SelectSidebar(3) (which routes to ShowEquipManager, guarded).
-  --local tab3 = buildTab(3, strip, "NE_PaperDollSidebarTab3", "tex", TC.equipIcon,
-  --  { title = L("PAPERDOLL_EQUIPMENTMANAGER", "Equipment Manager") }, true,
-  --  function() if CP.SelectSidebar then CP.SelectSidebar(3) end end)
-  --tab3:SetPoint("BOTTOMRIGHT", strip, "BOTTOMRIGHT", -30, 0)
-  --strip.Tab3 = tab3
+  local tab3 = buildTab(3, strip, "NE_PaperDollSidebarTab3", "tex", TC.equipIcon,
+    { title = L("PAPERDOLL_EQUIPMENTMANAGER", "Equipment Manager") }, true,
+    function() if CP.SelectSidebar then CP.SelectSidebar(3) end end)
+  tab3:SetPoint("BOTTOMRIGHT", strip, "BOTTOMRIGHT", -30, 0)
+  strip.Tab3 = tab3
 
   -- Tab2: Titles — ENABLED on 3.3.5 (WotLK has the title system, unlike Classic Era which NewEra
   -- targeted). Selects the titles pane (CP.SelectSidebar(2) → TitlesPane.ShowTitles).
   local tab2 = buildTab(2, strip, "NE_PaperDollSidebarTab2", "tex", TC.titlesIcon,
     { title = L("PAPERDOLL_SIDEBAR_TITLES", "Titles") }, true,
     function() if CP.SelectSidebar then CP.SelectSidebar(2) end end)
-  tab2:SetPoint("BOTTOMRIGHT", strip, "BOTTOMRIGHT", -30, 0)
+  tab2:SetPoint("RIGHT", tab3, "LEFT", -4, 0)
   strip.Tab2 = tab2
 
   -- Tab1: Character — player face portrait → SelectSidebar(1) (stats pane).
