@@ -157,7 +157,6 @@ do
   end)
 end
 
-StaticPopupDialogs = StaticPopupDialogs or {}
 if not StaticPopupDialogs["NE_GLYPH_REMOVE_CONFIRM"] then
   StaticPopupDialogs["NE_GLYPH_REMOVE_CONFIRM"] = {
     text = "Remove this glyph?",

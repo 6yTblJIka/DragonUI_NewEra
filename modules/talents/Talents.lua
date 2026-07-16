@@ -64,13 +64,14 @@ local function hideStockPanel(frame)
 end
 
 -- Cleanup that must run whenever the talent/glyph window closes, so nothing keeps eating ESC:
---   * a glyph mid-apply sits on the spell cursor (SpellIsTargeting) — ESC would cancel THAT instead of
---     opening the game menu, so clear it;
 --   * keep the stock talent/glyph frames hidden and off UISpecialFrames.
+--
+-- TAINT: this must NOT touch the spell cursor. SpellStopTargeting() is protected, so calling it from
+-- here is always blocked ("action only available to the Blizzard UI"). Worse, USE_GLYPH fires when the
+-- player STARTS a glyph apply — the glyph is on the cursor waiting for a socket — so cancelling the
+-- targeting here would abort the very apply the player just began. ESC already cancels spell targeting
+-- on its own; we don't need to help.
 local function cleanupOnClose()
-  if type(SpellIsTargeting) == "function" and SpellIsTargeting() then
-    if type(SpellStopTargeting) == "function" then SpellStopTargeting() end
-  end
   hideStockPanel(_G.PlayerTalentFrame)
   hideStockPanel(_G.GlyphFrame)
   dropSpecialFrame("PlayerTalentFrame")
@@ -776,16 +777,15 @@ local function interceptBlizzard()
   dropSpecialFrame("PlayerTalentFrame")
   dropSpecialFrame("GlyphFrame")
 
-  if type(ToggleGlyphFrame) == "function" and not T._origToggleGlyphFrame then
-    T._origToggleGlyphFrame = ToggleGlyphFrame
-    ToggleGlyphFrame = function(...)
-      T.OpenGlyphTab()
-    end
-  end
+  -- TAINT: do NOT reassign the ToggleGlyphFrame global. Applying a glyph (right-click in a bag) makes
+  -- FrameXML open the glyph UI through this global BEFORE it raises the REPLACE_ENCHANT popup, so a
+  -- tainted global here taints that popup and its OnAccept's ReplaceEnchant() gets blocked. Enchants and
+  -- armor kits share that popup but never read this global, which is why only glyphs broke.
+  -- The suppressStockFrame("GlyphFrame") OnShow hook above already redirects into our glyph tab, so the
+  -- reroute is unnecessary: nothing in this addon calls ToggleGlyphFrame directly.
 end
 
 _G.SLASH_NETALENTS1 = "/netalents"
-SlashCmdList = SlashCmdList or {}
 SlashCmdList["NETALENTS"] = function() T.Toggle() end
 
 -- ----------------------------------------------------------------------------
