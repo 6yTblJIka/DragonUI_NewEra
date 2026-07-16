@@ -167,7 +167,6 @@ local function runTests()
 end
 
 SLASH_DNETEST1 = "/dnetest"
-SlashCmdList = SlashCmdList or {}
 SlashCmdList["DNETEST"] = function()
     -- Run inside pcall so a harness bug never spams the error frame mid-report.
     local ok, err = pcall(runTests)

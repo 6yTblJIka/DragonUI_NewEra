@@ -847,17 +847,43 @@ function AH.BuildBrowsePane(parent)
     return tostring(copper)
   end
 
-  local listRows = {}
-  local listTotal = 0
-  local displayRows = {}
+  local listRows = {}     -- every auction the scan collected, across all server pages
+  local listTotal = 0     -- auctions the server says match, across all server pages
+  local displayRows = {}  -- listRows collapsed to one entry per item name
+  local pageRows = {}     -- the slice of displayRows currently drawn
 
-  -- Page navigation -- QueryAuctionItems' 7th arg is a server-side page number (each page capped at
-  -- NUM_AUCTION_ITEMS_PER_PAGE, typically 50); this was previously hardcoded to 0 in runSearch below,
-  -- so a browse could never surface anything past the server's first page no matter how many results
-  -- matched. Small Prev/Next buttons + a "Page N of M" label in the gutter under the results list,
-  -- using the same proven-safe UIPanelButtonTemplate the Search/Filter buttons above already use.
+  -- Page navigation -- Prev/Next + a "Page N of M" label in the gutter under the results list, using
+  -- the same proven-safe UIPanelButtonTemplate the Search/Filter buttons above already use.
+  --
+  -- These paginate the aggregated ITEM rows, NOT the server's auction pages. A search used to map
+  -- one server page onto one displayed page, which mixed two different units: QueryAuctionItems
+  -- returns up to NUM_AUCTION_ITEMS_PER_PAGE (50) AUCTIONS, but buildDisplayRows collapses those by
+  -- item name, so 50 auctions of 8 distinct glyphs drew 8 rows next to "of 6 pages" and read like 42
+  -- rows went missing -- and each row's "cheapest" price was only the cheapest on that one page, not
+  -- the market's. runSearch now scans every server page up front (see queryPage/collectScanPage) and
+  -- paginates the aggregate client-side, so both numbers are in items and the prices are real minima.
+  local ITEMS_PER_PAGE = 50
   local currentPage = 0
   local lastQuery = nil
+
+  -- Scan state. MAX_SCAN_PAGES bounds a pathological search (an empty-text browse of a busy AH can
+  -- match tens of thousands of auctions); scanTruncated records that we stopped early so the label
+  -- can say so rather than quietly presenting a partial aggregate as the whole market.
+  local MAX_SCAN_PAGES = 20
+  local scanning = false
+  local scanPage = 0
+  local scanPages = 1
+  local scanTruncated = false
+  -- True from the moment a page is requested until its auctions are banked into listRows. Both the
+  -- AUCTION_ITEM_LIST_UPDATE event and a poll timer can reach collectScanPage for the SAME page, so
+  -- without this whichever arrived second would append that page's auctions a second time -- the
+  -- aggregate would double every quantity and the auction count would exceed the server's total.
+  local scanPending = false
+  -- Bumped whenever the search is replaced or cleared. A scan spans many queries and timer
+  -- callbacks, so every one of them carries the token it started under and bails if it no longer
+  -- matches -- otherwise a retry still pending from an abandoned scan would resume into the NEXT
+  -- search and splice a stale page's auctions into its aggregate.
+  local scanToken = 0
 
   local pagePrev = CreateFrame("Button", nil, pane, "UIPanelButtonTemplate")
   pagePrev:SetSize(24, 20)
@@ -875,10 +901,35 @@ function AH.BuildBrowsePane(parent)
   pageLabel:SetPoint("LEFT", pageNext, "RIGHT", 8, 0)
   pageLabel:SetText("Page 1 of 1")
 
+  local function totalDisplayPages()
+    return math.max(1, math.ceil(#displayRows / ITEMS_PER_PAGE))
+  end
+
   local function updatePageControls()
-    local perPage = NUM_AUCTION_ITEMS_PER_PAGE or 50
-    local totalPages = math.max(1, math.ceil((listTotal or 0) / perPage))
-    pageLabel:SetText(string.format("Page %d of %d", currentPage + 1, totalPages))
+    local totalItems = #displayRows
+    local totalPages = totalDisplayPages()
+
+    -- Prev/Next stay disabled mid-scan: displayRows is still growing a page at a time, so the page
+    -- count it implies right now is not the final one.
+    if scanning then
+      pageLabel:SetText(string.format("Scanning page %d of %d...",
+        math.min(scanPage + 1, scanPages), scanPages))
+      pagePrev:Disable()
+      pageNext:Disable()
+      return
+    end
+
+    if totalItems <= 0 then
+      pageLabel:SetText("Page 1 of 1")
+    else
+      local first = currentPage * ITEMS_PER_PAGE + 1
+      local last = math.min(first + ITEMS_PER_PAGE - 1, totalItems)
+      pageLabel:SetText(string.format("Page %d of %d  (items %d-%d of %d, from %d auction%s%s)",
+        currentPage + 1, totalPages, first, last, totalItems,
+        listTotal, listTotal == 1 and "" or "s",
+        scanTruncated and " -- partial scan" or ""))
+    end
+
     if currentPage <= 0 then pagePrev:Disable() else pagePrev:Enable() end
     if currentPage + 1 >= totalPages then pageNext:Disable() else pageNext:Enable() end
   end
@@ -916,11 +967,12 @@ function AH.BuildBrowsePane(parent)
     return batch, total
   end
 
-  local function captureListRows()
+  -- Read whatever the client currently has in its "list" slot -- i.e. ONE server page of auctions.
+  -- Pure: the caller (collectScanPage) owns listRows/listTotal, because a search accumulates many
+  -- of these pages before anything is drawn.
+  local function capturePageAuctions()
     local rows = {}
     local batchCount, totalCount = getListCounts()
-    listTotal = totalCount
-    updatePageControls()
 
     local cap = batchCount
     if cap <= 0 then
@@ -937,8 +989,10 @@ function AH.BuildBrowsePane(parent)
         break
       end
       local link = GetAuctionItemLink and GetAuctionItemLink("list", index)
+      -- No auction index is kept: it only addresses the page currently in the client's "list" slot,
+      -- and these rows outlive that page (they're accumulated across the whole scan). Acting on a
+      -- specific listing goes through the drill-down, which re-queries "list" for one item.
       rows[#rows + 1] = {
-        index = index,
         name = name,
         texture = texture,
         quality = quality,
@@ -949,14 +1003,14 @@ function AH.BuildBrowsePane(parent)
       }
     end
 
-    listRows = rows
     return rows, batchCount, totalCount
   end
 
   -- Group the raw per-auction rows above by item name into one row per item (icon, quality-colored
   -- name, cheapest current price, total quantity across every auction of that item) -- matching the
   -- reference's aggregated Browse view. Clicking an aggregate row re-queries and drills into the
-  -- individual auctions (openItemDetail, near the end of this function).
+  -- individual auctions (openItemDetail, near the end of this function). listRows spans every server
+  -- page by the time the scan finishes, so the price here is the whole result set's minimum.
   local function buildDisplayRows()
     local groups = {}
     local order = {}
@@ -978,6 +1032,23 @@ function AH.BuildBrowsePane(parent)
       end
     end
     displayRows = order
+  end
+
+  -- Slice displayRows down to the page the pager is on. Call after every buildDisplayRows and after
+  -- any currentPage change; clamps currentPage so a shrinking result set can't strand the pager past
+  -- the last page.
+  local function buildPageRows()
+    local totalPages = totalDisplayPages()
+    if currentPage < 0 then currentPage = 0 end
+    if currentPage > totalPages - 1 then currentPage = totalPages - 1 end
+
+    local slice = {}
+    local first = currentPage * ITEMS_PER_PAGE + 1
+    local last = math.min(first + ITEMS_PER_PAGE - 1, #displayRows)
+    for i = first, last do
+      slice[#slice + 1] = displayRows[i]
+    end
+    pageRows = slice
   end
 
   -- Fill the entire scroll viewport instead of a hardcoded row count -- previously a fixed 17 rows
@@ -1070,7 +1141,7 @@ function AH.BuildBrowsePane(parent)
   end
 
   local function refreshResults()
-    local drawCount = #displayRows
+    local drawCount = #pageRows
     local visibleRows = resultsVisibleRows()
     fsUpdate(scroll, drawCount, visibleRows, ROW_H + 1)
     syncAlwaysShowFauxBar(scroll, drawCount, visibleRows)
@@ -1083,7 +1154,9 @@ function AH.BuildBrowsePane(parent)
       empty:Hide()
     else
       empty:Show()
-      if listTotal > 0 then
+      if scanning then
+        empty:SetText("Searching...")
+      elseif listTotal > 0 then
         empty:SetText("Loading results...")
       else
         empty:SetText("No results. Adjust filters and search again.")
@@ -1092,7 +1165,7 @@ function AH.BuildBrowsePane(parent)
 
     for i = 1, visibleRows do
       local row = ensureRow(i)
-      local data = displayRows[i + offset]
+      local data = pageRows[i + offset]
       if data then
         row._data = data
         row.Price:SetText(moneyText((data.minBuyout and data.minBuyout > 0) and data.minBuyout or data.minBid or 0))
@@ -1134,35 +1207,81 @@ function AH.BuildBrowsePane(parent)
     end
   end)
 
-  -- Re-issue the last search scoped to a different server page, reusing the same filter/category
-  -- params runSearch captured into `lastQuery`. Shared by runSearch (always page 0) and the Prev/
-  -- Next buttons below.
-  local function doQuery(page)
-    if not lastQuery then return end
-    if not (CanSendAuctionQuery and CanSendAuctionQuery("list")) then
-      empty:SetText("Auction query is throttled. Try again in a moment.")
-      return
-    end
+  -- Ask the server for one server page of the last search, reusing the filter/category params
+  -- runSearch captured into `lastQuery`. This is a step of the scan, not a user-facing pager action:
+  -- collectScanPage (further down, driven by AUCTION_ITEM_LIST_UPDATE) calls it again for the next
+  -- page until every page is in, then the aggregate is drawn and Prev/Next page through THAT.
+  local queryPage
 
-    currentPage = page
-    listRows = {}
-    displayRows = {}
-
-    local q = lastQuery
-    local ok, err = pcall(QueryAuctionItems, q.text, q.minLevel, q.maxLevel, q.invTypeIndex, q.classIndex, q.subClassIndex, page, q.isUsable, q.minQuality, false)
-    if ok then
-      empty:SetText("Searching...")
+  -- Abort the scan. Anything already collected stays on screen -- a partial aggregate still beats an
+  -- empty list -- but scanTruncated makes the pager label admit it's partial, since these rows'
+  -- prices are only minima across the pages we actually got.
+  local function abortScan(message)
+    scanning = false
+    scanPending = false
+    scanTruncated = true
+    if #pageRows > 0 then
+      if NE.Log then NE.Log("AH", "browse scan aborted: " .. tostring(message)) end
     else
-      -- Surface the real Lua error instead of a generic message -- if this still isn't the right
-      -- call shape, the exact "bad argument #N" text tells us which slot to fix next.
-      empty:SetText("Search failed: " .. tostring(err))
-      if NE.Log then NE.Log("AH", "QueryAuctionItems error: " .. tostring(err)) end
+      scanTruncated = false
+      empty:SetText(message)
+      empty:Show()
     end
     updatePageControls()
   end
 
+  -- The core rate-limits back-to-back list queries, and a scan issues one per server page. Wait out
+  -- a busy slot rather than abandoning the scan mid-way, which would leave a partial aggregate whose
+  -- prices silently aren't market minima.
+  local scanRetries = 0
+  local MAX_SCAN_RETRIES = 50 -- ~10s at 0.2s steps
+
+  queryPage = function(page, token)
+    if token ~= scanToken then return end
+    if not lastQuery then return end
+
+    if not (CanSendAuctionQuery and CanSendAuctionQuery("list")) then
+      scanRetries = scanRetries + 1
+      if scanRetries <= MAX_SCAN_RETRIES and C_Timer and C_Timer.After then
+        C_Timer.After(0.2, function() queryPage(page, token) end)
+      else
+        abortScan("Auction query is throttled. Try again in a moment.")
+      end
+      return
+    end
+    scanRetries = 0
+
+    scanning = true
+    scanPage = page
+
+    local q = lastQuery
+    local ok, err = pcall(QueryAuctionItems, q.text, q.minLevel, q.maxLevel, q.invTypeIndex, q.classIndex, q.subClassIndex, page, q.isUsable, q.minQuality, false)
+    if not ok then
+      -- Surface the real Lua error instead of a generic message -- if this still isn't the right
+      -- call shape, the exact "bad argument #N" text tells us which slot to fix next.
+      if NE.Log then NE.Log("AH", "QueryAuctionItems error: " .. tostring(err)) end
+      abortScan("Search failed: " .. tostring(err))
+      return
+    end
+    scanPending = true
+    updatePageControls()
+  end
+
   local function runSearch()
+    -- Fresh scan from page 0: drop everything the previous search accumulated.
+    listRows = {}
     listTotal = 0
+    displayRows = {}
+    pageRows = {}
+    currentPage = 0
+    scanPage = 0
+    scanPages = 1
+    scanTruncated = false
+    scanToken = scanToken + 1
+    scanPending = false
+    -- Mark the scan live before the first draw below, so an empty list reads "Searching..." and not
+    -- "No results" while queryPage is still waiting out a throttled query slot.
+    scanning = true
     -- A fresh browse search always returns to the aggregate list -- close any open item drill-down
     -- so it can't keep routing the shared "list" query event and show a stale item's rows.
     activeQuery = "browse"
@@ -1200,16 +1319,42 @@ function AH.BuildBrowsePane(parent)
       text = q, minLevel = minLevel, maxLevel = maxLevel, invTypeIndex = invTypeIndex,
       classIndex = classIndex, subClassIndex = subClassIndex, isUsable = isUsable, minQuality = minQuality,
     }
-    doQuery(0)
+    refreshResults()
+    queryPage(0, scanToken)
+  end
+
+  -- Scroll the results list back to the top. The bar the user sees is our own custom one, but the
+  -- offset refreshResults reads comes from the Faux slider underneath it (same lookup as
+  -- syncAlwaysShowFauxBar), so that's what has to be driven.
+  local function resetResultsScroll()
+    if not scroll then return end
+    if FauxScrollFrame_SetOffset then
+      FauxScrollFrame_SetOffset(scroll, 0)
+    else
+      scroll.offset = 0
+    end
+    local sliderName = scroll.GetName and scroll:GetName()
+    local slider = (sliderName and _G[sliderName .. "ScrollBar"]) or scroll.ScrollBar or scroll.scrollBar
+    if slider and slider.SetValue then slider:SetValue(0) end
+  end
+
+  -- Pure client-side paging over the already-scanned aggregate: no re-query, so no throttle and no
+  -- wait. Guarded against running mid-scan because displayRows is still growing then, so the slice
+  -- taken here would be re-sliced from different content a moment later.
+  local function showPage(page)
+    if scanning then return end
+    currentPage = page
+    buildPageRows()
+    resetResultsScroll()
+    refreshResults()
+    updatePageControls()
   end
 
   pagePrev:SetScript("OnClick", function()
-    if currentPage > 0 then doQuery(currentPage - 1) end
+    if currentPage > 0 then showPage(currentPage - 1) end
   end)
   pageNext:SetScript("OnClick", function()
-    local perPage = NUM_AUCTION_ITEMS_PER_PAGE or 50
-    local totalPages = math.max(1, math.ceil((listTotal or 0) / perPage))
-    if currentPage + 1 < totalPages then doQuery(currentPage + 1) end
+    if currentPage + 1 < totalDisplayPages() then showPage(currentPage + 1) end
   end)
 
   -- Exposed so Window.lua can clear this pane's search state when the WHOLE Auction House window
@@ -1222,9 +1367,18 @@ function AH.BuildBrowsePane(parent)
     listRows = {}
     listTotal = 0
     displayRows = {}
+    pageRows = {}
     activeQuery = "browse"
     currentPage = 0
     lastQuery = nil
+    -- Clearing lastQuery already makes queryPage a no-op, so an in-flight scan can't resume against
+    -- the search we just threw away; drop the scanning flag too so the label/pager leave that state.
+    scanning = false
+    scanPage = 0
+    scanPages = 1
+    scanTruncated = false
+    scanToken = scanToken + 1
+    scanPending = false
     if pane.ItemDetail then pane.ItemDetail:Hide() end
     setBrowseResultsShown(true)
     searchBox:SetText("")
@@ -1242,26 +1396,69 @@ function AH.BuildBrowsePane(parent)
   end)
 
   -- The client reports GetNumAuctionItems("list") counts before GetAuctionItemInfo has the
-  -- per-index data ready, so a single retry can still race the server response. Poll on a short
-  -- timer until rows actually populate (or we give up) instead of trying just once.
+  -- per-index data ready, so a single read can still race the server response. Poll on a short timer
+  -- until this page's rows actually populate (or we give up) instead of trying just once.
   local pollAttempts = 0
   local MAX_POLL_ATTEMPTS = 40 -- ~4s at 0.1s steps
 
-  local function pollForRows()
+  -- One page of the scan landed: fold it into listRows, redraw so results visibly accumulate, then
+  -- either chain to the next server page or finish. Drives the whole scan together with queryPage.
+  local collectScanPage
+  collectScanPage = function(token)
+    if token ~= scanToken then return end
+    if not scanning then return end
+    if not scanPending then return end
     if not (pane and pane:IsShown()) then return end
     if activeQuery ~= "browse" then return end
-    local rowsData = captureListRows()
-    buildDisplayRows()
-    refreshResults()
-    if #rowsData > 0 then
-      pollAttempts = 0
-      return
+
+    local rows, batchCount, totalCount = capturePageAuctions()
+
+    -- Page not fully materialized yet -- wait for the rest rather than banking a short page, which
+    -- would drop auctions out of the aggregate AND (since a short page looks like the last page)
+    -- could end the scan early.
+    if batchCount > 0 and #rows < batchCount then
+      pollAttempts = pollAttempts + 1
+      if pollAttempts < MAX_POLL_ATTEMPTS and C_Timer and C_Timer.After then
+        C_Timer.After(0.1, function() collectScanPage(token) end)
+        return
+      end
     end
-    pollAttempts = pollAttempts + 1
-    if pollAttempts < MAX_POLL_ATTEMPTS and C_Timer and C_Timer.After then
-      C_Timer.After(0.1, pollForRows)
-    else
-      pollAttempts = 0
+    pollAttempts = 0
+
+    -- Past every bail-out: this page is being banked exactly once, right now.
+    scanPending = false
+
+    listTotal = totalCount
+    for i = 1, #rows do
+      listRows[#listRows + 1] = rows[i]
+    end
+
+    local perPage = NUM_AUCTION_ITEMS_PER_PAGE or 50
+    local pages = math.max(1, math.ceil(totalCount / perPage))
+    scanTruncated = pages > MAX_SCAN_PAGES
+    if scanTruncated then pages = MAX_SCAN_PAGES end
+    scanPages = pages
+
+    -- A page that came back short of the server's own per-page cap is the last one, whatever the
+    -- total claimed -- keeps a stale/rounded total from spinning the scan on empty pages forever.
+    local more = scanPage + 1 < pages and #rows >= perPage
+    -- Clear `scanning` BEFORE drawing on the final page: refreshResults and updatePageControls both
+    -- render scan-in-progress text, and this pass is the finished one.
+    if not more then scanning = false end
+
+    buildDisplayRows()
+    buildPageRows()
+    -- pcall-wrapped: refreshResults calls the stock FauxScrollFrame_Update, which errors if the
+    -- scroll frame is ever anonymous again (see the naming comment above) -- don't let a future
+    -- regression there leave the UI stuck showing stale text with no visible feedback.
+    local rrOk, rrErr = pcall(refreshResults)
+    if not rrOk and NE.Log then
+      NE.Log("AH", "refreshResults error: " .. tostring(rrErr))
+    end
+    updatePageControls()
+
+    if more then
+      queryPage(scanPage + 1, token)
     end
   end
 
@@ -1292,22 +1489,15 @@ function AH.BuildBrowsePane(parent)
       return
     end
 
-    local rowsData, batchCount, totalCount = captureListRows()
-    buildDisplayRows()
-    local found = totalCount
-    if found <= 0 then
-      found = batchCount
-    end
-    -- pcall-wrapped: refreshResults calls the stock FauxScrollFrame_Update, which errors if the
-    -- scroll frame is ever anonymous again (see the naming comment above) -- don't let a future
-    -- regression there leave the UI stuck showing stale text with no visible feedback.
-    local rrOk, rrErr = pcall(refreshResults)
-    if not rrOk and NE.Log then
-      NE.Log("AH", "refreshResults error: " .. tostring(rrErr))
-    end
-    if found > 0 and #rowsData <= 0 and C_Timer and C_Timer.After then
-      pollAttempts = 0
-      C_Timer.After(0.1, pollForRows)
+    -- This event is the scan's clock: each server page we asked for arrives here, gets folded in,
+    -- and collectScanPage requests the next one. Ignore the event outside a scan -- an unsolicited
+    -- AUCTION_ITEM_LIST_UPDATE (the stock UI, another addon, an owner/bidder query) is about a
+    -- "list" slot we didn't fill and must not be spliced into our aggregate.
+    if not scanning then return end
+    pollAttempts = 0
+    local csOk, csErr = pcall(collectScanPage, scanToken)
+    if not csOk and NE.Log then
+      NE.Log("AH", "collectScanPage error: " .. tostring(csErr))
     end
   end)
 
@@ -1660,7 +1850,7 @@ function AH.BuildBrowsePane(parent)
     -- that merely shares the substring.
     local wantName = detail.CurrentItem and detail.CurrentItem.name
     for i = 1, batch do
-      -- Same 13-value field order as captureListRows above.
+      -- Same 13-value field order as capturePageAuctions above.
       local name, _, count, _, _, _, minBid, minInc, buyout, bidAmt, _, owner = GetAuctionItemInfo("list", i)
       if name and (not wantName or name == wantName) then
         local cur = (bidAmt and bidAmt > 0) and bidAmt or minBid
