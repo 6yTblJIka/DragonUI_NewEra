@@ -77,6 +77,7 @@ modules\character\Skills.lua
 modules\character\Honor.lua
 modules\character\Currency.lua
 modules\character\PetPaperDoll.lua
+modules\character\Companions.lua
 modules\character\CloseButton.lua
 modules\character\EditModeRegister.lua
 
