@@ -20,7 +20,18 @@ local SO = NE.social
 
 local NUM_ROWS    = 24
 local ROW_HEIGHT  = 16
-local ROSTER_ROWS = 24
+
+-- Roster pane (owner steer 2026-07-17: capped at 23 names because it was a fixed, non-scrolling
+-- FontString stack — real channels like General can run well past that). ROSTER_ROWS is now the
+-- VISIBLE scrolled window; ROSTER_PROBE_MAX is how many rosterIndex slots we'll query per channel
+-- (cheap local reads, no network cost — GetChannelRosterInfo just walks already-cached data).
+local ROSTER_ROWS      = 34
+local ROSTER_ROW_HEIGHT = 14
+local ROSTER_PROBE_MAX  = 300
+
+-- Forward-declared: read by the roster scroll's OnVerticalScroll (wired in SO.SetupChannels,
+-- which is defined before this is assigned) and by refreshRoster below.
+local renderRosterRows
 
 -- Build the display list: { {header=bool, name=, number=, count=, index=} , ... }
 -- Preferred: GetChannelDisplayInfo (carries headers). Fallback: the flat GetChannelList (no
@@ -61,11 +72,23 @@ function SO.SetupChannels(f)
   panel._built = true
   panel._selected = nil
 
+  -- Dark recessed backdrop, applied to each fill'd (owner steer 2026-07-17: "Who, Chat and Raid
+  -- tabs should have the dark inset frames" — same treatment already used for Friends/Roster; the
+  -- Left/Right wells already had a border via AttachInset but no dark fill behind it).
+  local function darkFill(v)
+    local bg = v:CreateTexture(nil, "BACKGROUND")
+    bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    bg:SetVertexColor(0.06, 0.06, 0.07, 0.75)
+    bg:SetAllPoints(v)
+    return bg
+  end
+
   -- LEFT: channel list (recessed well).
   local left = CreateFrame("Frame", nil, panel)
   left:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -2)
   left:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 0, 34)
   left:SetWidth(250)
+  darkFill(left)
   if NE.nineslice and NE.nineslice.AttachInset then pcall(NE.nineslice.AttachInset, left, 0, 0, 0, 0) end
   panel.Left = left
 
@@ -73,6 +96,7 @@ function SO.SetupChannels(f)
   local right = CreateFrame("Frame", nil, panel)
   right:SetPoint("TOPLEFT", left, "TOPRIGHT", 8, 0)
   right:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 34)
+  darkFill(right)
   if NE.nineslice and NE.nineslice.AttachInset then pcall(NE.nineslice.AttachInset, right, 0, 0, 0, 0) end
   panel.Right = right
 
@@ -116,13 +140,38 @@ function SO.SetupChannels(f)
     panel._rows[i] = row
   end
 
-  -- Roster rows (right pane).
+  -- Roster header ("N players") — separate from the scrollable name list below it. Padding
+  -- tightened to match the left channel list's 4px inset (owner steer 2026-07-17: "take up the
+  -- full inset panel" — the old 10/8 padding was wasting space versus the left list's convention).
+  panel.RosterHeader = right:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  panel.RosterHeader:SetPoint("TOPLEFT", right, "TOPLEFT", 4, -4)
+  panel.RosterHeader:SetPoint("RIGHT", right, "RIGHT", -4, 0)
+  panel.RosterHeader:SetJustifyH("LEFT")
+
+  -- Roster name list, now scrollable (owner steer 2026-07-17: "seems to cap at 23 players" — it
+  -- was a fixed FontString stack with no way to see past it). Anchored flush to the panel's own
+  -- edges (matching the left list's scroll) rather than indented under the header.
+  local rosterScroll = CreateFrame("ScrollFrame", "NE_SocialChannelRosterScroll", right, "FauxScrollFrameTemplate")
+  rosterScroll:SetPoint("TOPLEFT", panel.RosterHeader, "BOTTOMLEFT", 0, -4)
+  rosterScroll:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", -24, 4)
+  rosterScroll:SetScript("OnVerticalScroll", function(self, o)
+    FauxScrollFrame_OnVerticalScroll(self, o, ROSTER_ROW_HEIGHT, function() renderRosterRows(panel) end)
+  end)
+  panel._rosterScroll = rosterScroll
+  rosterScroll.ScrollBar = _G["NE_SocialChannelRosterScrollScrollBar"]   -- 3.3.5a template has no parentKey
+  -- BuildCustom, not Reskin (owner steer 2026-07-17: "no scrollbar" — Reskin's in-place reskin of
+  -- the stock Slider is documented as non-rendering for FauxScrollFrameTemplate lists;
+  -- core/ScrollbarReskin.lua:249-256 explains why BuildCustom exists as the real fix, already used
+  -- for the Guild Event Log list).
+  if NE.scrollbar and NE.scrollbar.BuildCustom then NE.scrollbar.BuildCustom(rosterScroll) end
+
   panel._roster = {}
   for i = 1, ROSTER_ROWS do
     local fs = right:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    if i == 1 then fs:SetPoint("TOPLEFT", right, "TOPLEFT", 10, -8)
+    if i == 1 then fs:SetPoint("TOPLEFT", rosterScroll, "TOPLEFT", 0, 0)
     else fs:SetPoint("TOPLEFT", panel._roster[i - 1], "BOTTOMLEFT", 0, -2) end
-    fs:SetJustifyH("LEFT")
+    fs:SetPoint("RIGHT", rosterScroll, "RIGHT", -2, 0)
+    fs:SetJustifyH("LEFT"); fs:SetWordWrap(false)
     panel._roster[i] = fs
   end
 
@@ -160,15 +209,39 @@ function SO.SetupChannels(f)
   end)
 end
 
--- Populate the right pane with the selected channel's roster, when the client exposes it.
-local function refreshRoster(panel, entry)
-  for i = 1, ROSTER_ROWS do panel._roster[i]:SetText("") end
-  if not (entry and GetChannelRosterInfo) then return end
-  local count = tonumber(entry.count) or 0
-  for i = 1, math.min(count, ROSTER_ROWS) do
-    local ok, name = pcall(GetChannelRosterInfo, entry.index, i)
-    if ok and name then panel._roster[i]:SetText(name) end
+-- Paint the currently visible window of panel._rosterNames into the fixed row FontStrings, per
+-- the roster scroll's offset.
+renderRosterRows = function(panel)
+  local names = panel._rosterNames or {}
+  local total = #names
+  local offset = panel._rosterScroll and FauxScrollFrame_GetOffset(panel._rosterScroll) or 0
+  for i = 1, ROSTER_ROWS do
+    panel._roster[i]:SetText(names[offset + i] or "")
   end
+  if panel._rosterScroll then
+    FauxScrollFrame_Update(panel._rosterScroll, total, ROSTER_ROWS, ROSTER_ROW_HEIGHT)
+  end
+end
+
+-- Populate the right pane with the selected channel's roster, when the client exposes it.
+-- DOWNPORT: GetChannelDisplayInfo's `count` return is unreliable on this server (confirmed
+-- 2026-07-17: read back 0 for a channel the default UI shows real members for), so don't trust it
+-- as a loop bound. Probe GetChannelRosterInfo directly instead, starting at rosterIndex 1 and
+-- stopping at the first index that fails — that's how the real member count is actually known here.
+local function refreshRoster(panel, entry)
+  panel._rosterNames = {}
+  if entry and GetChannelRosterInfo then
+    for i = 1, ROSTER_PROBE_MAX do
+      local ok, name = pcall(GetChannelRosterInfo, entry.index, i)
+      if not (ok and name) then break end
+      panel._rosterNames[#panel._rosterNames + 1] = name
+    end
+  end
+  local shown = #panel._rosterNames
+  panel.RosterHeader:SetText(entry
+    and string.format("|cffffd200%d|r %s", shown, (shown == 1) and "player" or "players")
+    or "")
+  renderRosterRows(panel)
 end
 
 function SO.RefreshChannels()
@@ -179,7 +252,16 @@ function SO.RefreshChannels()
   local list = displayList()
   local total = #list
   local offset = FauxScrollFrame_GetOffset(panel._scroll)
+
+  -- Find the selected entry across the WHOLE list, not just the currently visible rows (a prior
+  -- version only searched the visible slice, so a selection scrolled out of view silently cleared
+  -- the roster pane).
   local selectedEntry
+  if panel._selected then
+    for _, e in ipairs(list) do
+      if not e.header and e.name == panel._selected then selectedEntry = e; break end
+    end
+  end
 
   for i = 1, NUM_ROWS do
     local idx = offset + i
@@ -200,8 +282,7 @@ function SO.RefreshChannels()
         row.label:SetTextColor(1, 1, 1)
         row.label:SetPoint("LEFT", row, "LEFT", 18, 0)
       end
-      local isSel = (not e.header) and e.name == panel._selected
-      if isSel then selectedEntry = e end
+      local isSel = (not e.header) and e == selectedEntry
       if row._sel then row._sel:SetShown(isSel) end
       row:Show()
     else

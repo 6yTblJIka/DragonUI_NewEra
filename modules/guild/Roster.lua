@@ -24,8 +24,9 @@ local ROW_HEIGHT = 18
 
 -- Column layout: { key = sort key for SortGuildRoster, title, x (left offset), w, justify }.
 -- Follows the reference guild frame (owner 2026-07-16): Lvl | Class | Name | Zone | Rank | Note,
--- with Class rendered as an ICON rather than text. The left guild column is gone, so the panel
--- spans the full window and the columns get generous widths.
+-- with Class rendered as an ICON rather than text. The panel sits to the right of the left
+-- GuildColumn (owner 2026-07-17: column moved onto the Roster tab) rather than spanning the full
+-- window; the fill-width Note column just gets a bit less room as a result.
 local COLUMNS = {
   { key = "level", title = LEVEL_ABBR or "Lvl",  x = 4,   w = 40,  justify = "CENTER" },
   { key = "class", title = CLASS or "Class",     x = 46,  w = 46,  justify = "CENTER", icon = true },
@@ -198,12 +199,56 @@ local function showMemberDetail(f, index)
 end
 
 -- ---------------------------------------------------------------------------
+-- Right-click context menu (owner steer 2026-07-17: same treatment as the Social Friends rows —
+-- rows had no context menu, right-click was never wired up). Native EasyMenu/UIDropDownMenu, same
+-- pattern as modules/bags/CombinedBag.lua:CB.OpenMenu and modules/social/Friends.lua.
+-- ---------------------------------------------------------------------------
+local rosterMenuFrame
+local function openRosterMenu(idx)
+  if not (EasyMenu and idx) then return end
+  local name, rank, _, level, _, zone, note, officernote, online, _, classFile = GetGuildRosterInfo(idx)
+  if not name then return end
+  if not rosterMenuFrame then
+    rosterMenuFrame = CreateFrame("Frame", "NE_GuildRosterMenu", UIParent, "UIDropDownMenuTemplate")
+  end
+  local menu = { { text = name, isTitle = true, notCheckable = true } }
+  if online then
+    menu[#menu + 1] = { text = GROUP_INVITE or "Invite", notCheckable = true,
+      func = function() if InviteUnit then InviteUnit(name) end end }
+    menu[#menu + 1] = { text = WHISPER or "Whisper", notCheckable = true,
+      func = function() if ChatFrame_SendTell then ChatFrame_SendTell(name) end end }
+  end
+  if CanGuildPromote and CanGuildPromote() then
+    menu[#menu + 1] = { text = GUILD_PROMOTE or "Promote", notCheckable = true,
+      func = function() if GuildPromote then GuildPromote(name) end; G.RefreshRoster() end }
+  end
+  if CanGuildDemote and CanGuildDemote() then
+    menu[#menu + 1] = { text = GUILD_DEMOTE or "Demote", notCheckable = true,
+      func = function() if GuildDemote then GuildDemote(name) end; G.RefreshRoster() end }
+  end
+  if CanGuildRemove and CanGuildRemove() then
+    menu[#menu + 1] = { text = REMOVE or "Remove", notCheckable = true,
+      func = function() if GuildUninvite then GuildUninvite(name) end; G.RefreshRoster() end }
+  end
+  EasyMenu(menu, rosterMenuFrame, "cursor", 0, 0, "MENU")
+end
+
+-- ---------------------------------------------------------------------------
 -- Roster list.
 -- ---------------------------------------------------------------------------
 function G.SetupRoster(f)
   local panel = f.RosterFrame
   if not panel or panel._built then return end
   panel._built = true
+
+  -- Dark recessed backdrop behind the whole roster panel (owner steer 2026-07-17: "dark inset
+  -- behind the roster"). Created first so it draws behind every child built below.
+  local panelBg = panel:CreateTexture(nil, "BACKGROUND")
+  panelBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+  panelBg:SetVertexColor(0.06, 0.06, 0.07, 0.90)
+  panelBg:SetAllPoints(panel)
+  panel.Bg = panelBg
+  if NE.nineslice and NE.nineslice.AttachInset then pcall(NE.nineslice.AttachInset, panel, 0, 0, 0, 0) end
 
   -- Show-offline toggle.
   local cb = CreateFrame("CheckButton", "NE_GuildShowOffline", panel, "UICheckButtonTemplate")
@@ -242,7 +287,7 @@ function G.SetupRoster(f)
     btn:SetPoint("TOPLEFT", header, "TOPLEFT", col.x, 0)
     btn:SetHeight(22)
     btn:SetWidth(col.w > 0 and col.w or 160)
-    local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")   -- gold header label
+    local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")   -- gold header label (bumped 1 size, owner 2026-07-17)
     fs:SetPoint("LEFT", btn, "LEFT", 4, 0)
     fs:SetText(col.title)
     btn._sortKey = col.key
@@ -305,7 +350,7 @@ function G.SetupRoster(f)
         tex:SetPoint("LEFT", row, "LEFT", col.x + (col.w - (ROW_HEIGHT - 4)) / 2, 0)
         row.cells[c] = tex
       else
-        local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")   -- bumped 1 size, owner 2026-07-17
         fs:SetPoint("LEFT", row, "LEFT", col.x, 0)
         if col.w > 0 then fs:SetWidth(col.w) else fs:SetPoint("RIGHT", row, "RIGHT", -2, 0) end
         fs:SetJustifyH(col.justify)
@@ -314,11 +359,15 @@ function G.SetupRoster(f)
       end
     end
 
-    row:SetScript("OnClick", function(self)
-      if self._index then
-        if SetGuildRosterSelection then SetGuildRosterSelection(self._index) end
-        showMemberDetail(f, self._index)
+    row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    row:SetScript("OnClick", function(self, button)
+      if not self._index then return end
+      if button == "RightButton" then
+        openRosterMenu(self._index)
+        return
       end
+      if SetGuildRosterSelection then SetGuildRosterSelection(self._index) end
+      showMemberDetail(f, self._index)
     end)
     panel.Rows[i] = row
   end
@@ -384,7 +433,9 @@ function G.RefreshRoster()
   end
 end
 
--- Recompute the online member count once (O(n)); cached for the cheap per-scroll refresh.
+-- Recompute the online member count once (O(n)); cached for the cheap per-scroll refresh. Also
+-- feeds the Roster tab's left GuildColumn (Window.lua), which shows the same name/count under its
+-- crest badge.
 local function recountOnline()
   if not GetNumGuildMembers then return end
   local total = GetNumGuildMembers() or 0
@@ -394,6 +445,11 @@ local function recountOnline()
     if isOnline then online = online + 1 end
   end
   G._onlineCount = online
+
+  local column = G.frame and G.frame.GuildColumn
+  if column and column.SetGuild then
+    column.SetGuild(IsInGuild() and GetGuildInfo("player") or nil, online, total)
+  end
 end
 
 -- Live roster updates.

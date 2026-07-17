@@ -40,6 +40,10 @@ local function buildWell(parent, name, labelText, anchorTop, height, commitFn, c
     pcall(NE.nineslice.AttachInset, scroll, -4, 4, 22, -4)
   end
 
+  -- Modern minimal-scrollbar reskin (same treatment as Roster/Social's list scrollbars).
+  scroll.ScrollBar = _G[name .. "ScrollBar"]   -- 3.3.5a template doesn't set the parentKey
+  if NE.scrollbar and NE.scrollbar.Reskin then NE.scrollbar.Reskin(scroll) end
+
   local edit = CreateFrame("EditBox", nil, scroll)
   edit:SetMultiLine(true)
   edit:SetAutoFocus(false)

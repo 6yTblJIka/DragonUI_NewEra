@@ -23,6 +23,15 @@ function G.SetupChat(f)
   if not panel or panel._built then return end
   panel._built = true
 
+  -- Dark recessed backdrop behind the whole chat panel (same treatment as the Roster panel,
+  -- owner steer 2026-07-17: "add that same dark background inset behind the guild chat").
+  local panelBg = panel:CreateTexture(nil, "BACKGROUND")
+  panelBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+  panelBg:SetVertexColor(0.06, 0.06, 0.07, 0.90)
+  panelBg:SetAllPoints(panel)
+  panel.Bg = panelBg
+  if NE.nineslice and NE.nineslice.AttachInset then pcall(NE.nineslice.AttachInset, panel, 0, 0, 0, 0) end
+
   -- Recessed message well.
   local well = CreateFrame("Frame", nil, panel)
   well:SetPoint("TOPLEFT", panel, "TOPLEFT", 2, -2)

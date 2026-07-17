@@ -93,22 +93,40 @@ local function buildChrome(f)
     f.PortraitTex = ns:CreateTexture(nil, "ARTWORK")
   end
   if NE.portrait and NE.portrait.ApplyCutout then
-    NE.portrait.ApplyCutout(f.PortraitTex, f)
+    -- size 60 -> 54 -> 58 (owner report 2026-07-17: "make it larger"). 54 was the size that fully
+    -- hid the ring's opaque-metal gap (see below); 60 was confirmed too big (exposed a grey
+    -- frame-colored triangle past the ring at the top-left). This icon has real transparent
+    -- corners — unlike the old fully-opaque scroll icon that always painted over that gap
+    -- regardless of size — so anything pushed toward 60 risks the same triangle reappearing.
+    -- Split the difference; anchor kept solving for the same visual center (25,-22 off the frame's
+    -- TOPLEFT) as both prior sizes. If the triangle is back, drop toward 54-56 instead of higher.
+    NE.portrait.ApplyCutout(f.PortraitTex, f, { size = 58, anchor = { "TOPLEFT", -4, 7 } })
   end
-  if f.PortraitTex.SetMask then
-    f.PortraitTex:SetMask("Interface\\CharacterFrame\\TempPortraitAlphaMask")
-  end
-  f.PortraitTex:SetTexture("Interface\\FriendsFrame\\FriendsFrameScrollIcon")
+  -- Owner-supplied 2026-07-17: the real Battlenet-Portrait art (NewEra's own icon here, previously
+  -- flagged as unavailable on this client) shipped locally and registered in Assets.lua under fdid
+  -- 626421. Falls back to the old scroll icon if the registration is ever missing.
+  local battlenetPath = NE.tex and NE.tex.localFiles and NE.tex.localFiles[626421]
+  local portraitPath = battlenetPath or "Interface\\FriendsFrame\\FriendsFrameScrollIcon"
+  f.PortraitTex:SetTexture(portraitPath)
+  -- REVERTED the 0.15-0.85 zoom crop (owner report 2026-07-17: it exposed a square edge — the
+  -- source art is a circle with the rest of the square canvas as genuine alpha, not a wide
+  -- transparent margin around a smaller circle, so cropping in ate into real pixel content instead
+  -- of just trimming padding). Full, uncropped TexCoord is correct for this art.
+  f.PortraitTex:SetTexCoord(0, 1, 0, 1)
 end
 
 -- ---------------------------------------------------------------------------
 -- Content panels (one per non-action tab). Exposed as parentKeys for the list files.
 -- ---------------------------------------------------------------------------
 local function buildPanels(f)
+  -- Top offset 44 -> 56 (owner steer 2026-07-17: the sub-tabs/inset, which sit right at this
+  -- panel's top edge, were clipping into the corner portrait). The portrait (ApplyCutout default
+  -- size 60, anchored TOPLEFT -5,8 off f) hangs down to y=-52 off the frame top, 8px past the old
+  -- 44 offset — push the panel below that, plus a few px of clearance.
   for _, t in ipairs(TABS) do
     if t.panel then
       local p = CreateFrame("Frame", FRAME_NAME .. t.panel, f)
-      p:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -44)
+      p:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -56)
       p:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -12, 36)
       p:Hide()
       f[t.panel] = p
@@ -214,7 +232,8 @@ local function createWindow()
   -- DOWNPORT: bare Frame, not template-inherited — see the comment in modules/guild/Window.lua's
   -- createWindow() for why (the AH module's template-inheritance approach left f.portrait unset).
   local f = CreateFrame("Frame", FRAME_NAME, UIParent)
-  f:SetSize(620, 560)   -- owner steer: ~30% larger than the first pass (+ room for 6 tabs)
+  -- Width 620 -> 465 (owner steer 2026-07-17: "narrower by 1/4", 620 * 0.75).
+  f:SetSize(465, 560)
   f:SetPoint("LEFT", UIParent, "LEFT", 16, 0)
   f:SetFrameStrata("DIALOG")
   f:SetMovable(true); f:SetClampedToScreen(true); f:EnableMouse(true)
@@ -253,7 +272,19 @@ end
 
 function SO.Show()
   if not isModuleEnabled() then return end
-  createWindow():Show()
+  local f = createWindow()
+  f:Show()
+  -- Mirror of Guild's G.Show() repositioning (modules/guild/Window.lua): both windows default to
+  -- the same UIParent LEFT+16 anchor, so opening one after the other stacks them fully overlapped.
+  -- Guild already re-anchors itself to our RIGHT when it opens second; this covers the reverse
+  -- order — if Guild is already open when we show, push IT to our right instead (owner steer
+  -- 2026-07-17: "guild window then social window they overlap... guild window gets pushed to its
+  -- right").
+  local guild = NE.guild and NE.guild.frame
+  if guild and guild:IsShown() then
+    guild:ClearAllPoints()
+    guild:SetPoint("LEFT", f, "RIGHT", 8, 0)
+  end
 end
 function SO.Hide() if SO.frame then SO.frame:Hide() end end
 function SO.Toggle()
@@ -285,7 +316,12 @@ local function wireRedirects()
     ff._neSocialHooked = true
     ff:HookScript("OnShow", function(self)
       if isModuleEnabled() then
-        self:Hide()
+        -- HideUIPanel, not a raw self:Hide() (owner report 2026-07-17: "who window takes over
+        -- escape after it's closed"). Blizzard opened this frame via ShowUIPanel (its own
+        -- WHO_LIST_UPDATE handler), which pushes it onto the panel stack; hiding it without going
+        -- back through HideUIPanel leaves that bookkeeping stale, which can wedge the Escape-key
+        -- CloseSpecialWindows() chain that native FriendsFrame is registered in.
+        if HideUIPanel then HideUIPanel(self) else self:Hide() end
         SO.Show()
       end
     end)

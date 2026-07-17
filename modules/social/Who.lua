@@ -25,6 +25,37 @@ local COLUMNS = {
   { title = CLASS or "Class",      x = 370, w = 0,   justify = "LEFT" },
 }
 
+-- Column 2 is SWITCHABLE (owner steer 2026-07-17: "who list needs to be able to show
+-- zone/guild/race" — the stock Who tab's 2nd column is a single variable field toggled via a
+-- dropdown on its header, not three separate columns; GetWhoInfo already returns guild/race
+-- alongside zone, we just weren't exposing the switch). COLUMNS[2].title stays "Zone" as the
+-- built-in default label.
+local WHO_FIELDS = {
+  { key = "ZONE",  label = ZONE or "Zone" },
+  { key = "GUILD", label = GUILD or "Guild" },
+  { key = "RACE",  label = RACE or "Race" },
+}
+
+local whoFieldMenuFrame
+local function openWhoFieldMenu(panel, anchor)
+  if not EasyMenu then return end
+  if not whoFieldMenuFrame then
+    whoFieldMenuFrame = CreateFrame("Frame", "NE_SocialWhoFieldMenu", UIParent, "UIDropDownMenuTemplate")
+  end
+  local menu = {}
+  for _, fdef in ipairs(WHO_FIELDS) do
+    menu[#menu + 1] = {
+      text = fdef.label, notCheckable = true,
+      func = function()
+        panel._field = fdef.key
+        if panel._fieldHeaderFS then panel._fieldHeaderFS:SetText(fdef.label) end
+        SO.RefreshWho()
+      end,
+    }
+  end
+  EasyMenu(menu, whoFieldMenuFrame, anchor, 0, 0, "MENU")
+end
+
 local function classColor(classFile)
   local c = classFile and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile]
   if c then return c.r, c.g, c.b end
@@ -36,6 +67,16 @@ function SO.SetupWho(f)
   if not panel or panel._built then return end
   panel._built = true
   panel._selected = nil
+  panel._field = "ZONE"
+
+  -- Dark recessed backdrop (owner steer 2026-07-17: "Who, Chat and Raid tabs should have the dark
+  -- inset frames" — same treatment already used for Friends/Roster).
+  local panelBg = panel:CreateTexture(nil, "BACKGROUND")
+  panelBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+  panelBg:SetVertexColor(0.06, 0.06, 0.07, 0.75)
+  panelBg:SetAllPoints(panel)
+  panel.Bg = panelBg
+  if NE.nineslice and NE.nineslice.AttachInset then pcall(NE.nineslice.AttachInset, panel, 0, 0, 0, 0) end
 
   -- NOTE: SetWhoToUI is deliberately NOT set here. It's a global, sticky flag — setting it at
   -- build time (login) hijacked every /who the player typed into the UI for the whole session.
@@ -79,16 +120,34 @@ function SO.SetupWho(f)
   header:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -28)
   header:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -28)
   header:SetHeight(16)
-  for _, col in ipairs(COLUMNS) do
-    local fs = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    fs:SetPoint("LEFT", header, "LEFT", col.x + 2, 0)
-    fs:SetText(col.title)
+  for ci, col in ipairs(COLUMNS) do
+    if ci == 2 then
+      -- Switchable Zone/Guild/Race header (see WHO_FIELDS above) — a clickable button instead of
+      -- a plain label, matching the stock WhoFrameDropdown's spot on this exact column.
+      local btn = CreateFrame("Button", nil, header)
+      btn:SetPoint("LEFT", header, "LEFT", col.x, 0)
+      btn:SetSize(col.w, 16)
+      local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+      fs:SetPoint("LEFT", btn, "LEFT", 2, 0)
+      fs:SetText(col.title)
+      panel._fieldHeaderFS = fs
+      local arrow = btn:CreateTexture(nil, "OVERLAY")
+      arrow:SetTexture("Interface\\ChatFrame\\ChatFrameExpandArrow")
+      arrow:SetSize(10, 10)
+      arrow:SetPoint("LEFT", fs, "RIGHT", 2, 0)
+      btn:SetScript("OnClick", function(self) openWhoFieldMenu(panel, self) end)
+    else
+      local fs = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+      fs:SetPoint("LEFT", header, "LEFT", col.x + 2, 0)
+      fs:SetText(col.title)
+    end
   end
 
-  -- List.
+  -- List. Inset 3px from the panel's edges (owner steer 2026-07-17), on top of the existing header
+  -- clearance (-46), scrollbar clearance (-24), and button-row clearance (34).
   local scroll = CreateFrame("ScrollFrame", "NE_SocialWhoScroll", panel, "FauxScrollFrameTemplate")
-  scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -46)
-  scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -24, 34)
+  scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 3, -49)
+  scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -27, 37)
   scroll:SetScript("OnVerticalScroll", function(self, o)
     FauxScrollFrame_OnVerticalScroll(self, o, ROW_HEIGHT, SO.RefreshWho)
   end)
@@ -104,6 +163,15 @@ function SO.SetupWho(f)
     else row:SetPoint("TOPLEFT", panel._rows[i - 1], "BOTTOMLEFT", 0, 0) end
     row:SetPoint("RIGHT", scroll, "RIGHT", 0, 0)
     row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+
+    -- Selection highlight (owner steer 2026-07-17: "Who should allow me to click on a user" — the
+    -- click handler already set panel._selected, but nothing ever showed it, so a click looked
+    -- like it did nothing).
+    local sel = row:CreateTexture(nil, "BACKGROUND")
+    sel:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+    sel:SetBlendMode("ADD"); sel:SetAllPoints(row); sel:SetAlpha(0.4); sel:Hide()
+    row._sel = sel
+
     row.cells = {}
     for c, col in ipairs(COLUMNS) do
       local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -154,13 +222,16 @@ function SO.RefreshWho()
       local name, guild, level, race, class, zone, classFile = GetWhoInfo(idx)
       row._index = idx
       row.cells[1]:SetText(name or "")
-      row.cells[2]:SetText(zone or "")
+      local field2 = (panel._field == "GUILD" and guild) or (panel._field == "RACE" and race) or zone
+      row.cells[2]:SetText(field2 or "")
       row.cells[3]:SetText(level or "")
       row.cells[4]:SetText(class or "")
       row.cells[1]:SetTextColor(classColor(classFile))
+      if row._sel then row._sel:SetShown(idx == panel._selected) end
       row:Show()
     else
       row._index = nil
+      if row._sel then row._sel:Hide() end
       row:Hide()
     end
   end

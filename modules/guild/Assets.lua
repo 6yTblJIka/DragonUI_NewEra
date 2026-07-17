@@ -25,18 +25,25 @@ local P = "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Guild\\"
 -- ============================================================================
 
 -- 1981967 — Communities atlas sheet. Holds communities-guildbanner-background / -border, the
--- guild-banner plate drawn behind a guild-list entry's emblem. Extracted build-pinned 12.0.5.67451.
---
--- CURRENTLY UNUSED (owner removed the left guild column 2026-07-16 — the banner plate was its only
--- consumer). Registration is kept because it costs nothing at runtime: the BLP is only streamed if
--- something actually calls NE.tex.SetAtlas on one of these names, and it's the art a future guild
--- tabard/crest badge would want. If no such feature lands, drop this line AND
--- Textures/Guild/1981967-communities.blp (~525KB) together.
+-- guild-banner plate drawn behind the Roster tab's left-column crest badge. Extracted build-pinned
+-- 12.0.5.67451.
 NE.tex.RegisterLocal(1981967, P .. "1981967-communities.blp")
 
 -- 1677861 — voicechat icon sheet (voicechat-icon-headphone-on etc.) for the guild-chat headset
 -- button. 1:1 visual parity only — voice chat is non-functional on 3.3.5a.
 NE.tex.RegisterLocal(1677861, P .. "1677861-voicechat-icons.blp")
+
+-- Bluemenu family (owner 2026-07-16: "put the left panel back" + "reference NewEra for any missing
+-- art"; owner 2026-07-17: moved the panel from the Chat tab onto the Roster tab). Pulled from
+-- ReferenceAddons/NewEra/Art/LFG/ — that's a Cata+ era LFG-panel sheet, but NewEra's OWN
+-- Guild/Guild.lua:buildCommunitiesList reuses the exact same three files for the CommunitiesList's
+-- decorative frame (its comment: "file ships on Era, its own bundled CommunitiesList uses it").
+-- Registered as plain FDID->path only: Guild.lua consumes these with raw SetTexture()+SetTexCoord()
+-- (NOT NE.tex.SetAtlas), so no atlas-rect registration is needed here — Window.lua ports the same
+-- raw-texcoord calls verbatim.
+NE.tex.RegisterLocal(593917, P .. "593917-bluemenu-goldborder-horiz.blp")
+NE.tex.RegisterLocal(593918, P .. "593918-bluemenu-main.blp")
+NE.tex.RegisterLocal(593919, P .. "593919-bluemenu-vert.blp")
 
 -- ============================================================================
 -- 2. atlas-name → texcoord rect  (NE.tex.RegisterAtlases)

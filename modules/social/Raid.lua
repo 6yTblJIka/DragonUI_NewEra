@@ -37,6 +37,15 @@ function SO.SetupRaid(f)
   if not panel or panel._built then return end
   panel._built = true
 
+  -- Dark recessed backdrop (owner steer 2026-07-17: "Who, Chat and Raid tabs should have the dark
+  -- inset frames" — same treatment already used for Friends/Roster).
+  local panelBg = panel:CreateTexture(nil, "BACKGROUND")
+  panelBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+  panelBg:SetVertexColor(0.06, 0.06, 0.07, 0.75)
+  panelBg:SetAllPoints(panel)
+  panel.Bg = panelBg
+  if NE.nineslice and NE.nineslice.AttachInset then pcall(NE.nineslice.AttachInset, panel, 0, 0, 0, 0) end
+
   -- Column header strip.
   local header = CreateFrame("Frame", nil, panel)
   header:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -4)
@@ -95,12 +104,16 @@ function SO.SetupRaid(f)
   prompt:SetPoint("BOTTOM", empty, "BOTTOM", 0, 46)
   prompt:SetText(RAID_BROWSER_OPT_IN or "Find a Raid Group or Assemble a Raid")
 
-  -- Raid Browser (LFR-style browser; LoD Blizzard_RaidUI / LFRParentFrame on 3.3.5a).
+  -- Raid Browser (owner report 2026-07-17: "doesn't open anything" — ToggleRaidBrowser isn't a real
+  -- 3.3.5a global, it doesn't exist on this client and the call was silently no-op'ing. Patch 3.3's
+  -- actual Icecrown Raid Finder frame is LFRParentFrame, toggled with ToggleLFRParentFrame — confirmed
+  -- as the live, working call via AddOns/DragonUI/modules/micromenu.lua:2649, which drives the same
+  -- frame from the minimap LFG eye's "listed" mode.)
   local browser = CreateFrame("Button", nil, empty, "UIPanelButtonTemplate")
   browser:SetSize(200, 24); browser:SetText(RAID_BROWSER_BUTTON or "Open Raid Browser")
   browser:SetPoint("BOTTOM", empty, "BOTTOM", 0, 14)
   browser:SetScript("OnClick", function()
-    if ToggleRaidBrowser then ToggleRaidBrowser() end
+    if ToggleLFRParentFrame then ToggleLFRParentFrame() end
   end)
   panel.Browser = browser
 
@@ -114,21 +127,8 @@ function SO.SetupRaid(f)
   end)
   panel.Convert = convert
 
-  -- Raid Info (saved instance lockouts) — the native frame, opened as-is. RaidInfoFrame lives in
-  -- the load-on-demand Blizzard_RaidUI, so pull that in first or the button silently no-ops until
-  -- something else happens to load it.
-  local info = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-  info:SetSize(120, 22); info:SetText(RAID_INFO or "Raid Info")
-  info:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 4)
-  info:SetScript("OnClick", function()
-    if RequestRaidInfo then RequestRaidInfo() end
-    if not _G.RaidInfoFrame and LoadAddOn then pcall(LoadAddOn, "Blizzard_RaidUI") end
-    local ri = _G.RaidInfoFrame
-    if ri then
-      if ri:IsShown() then ri:Hide() else ri:Show() end
-    end
-  end)
-  panel.Info = info
+  -- Raid Info button REMOVED (owner steer 2026-07-17): the saved-instance/lockout info it toggled
+  -- is already surfaced in the main raid window, making the separate popup redundant.
 end
 
 function SO.RefreshRaid()
