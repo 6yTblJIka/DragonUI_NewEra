@@ -433,9 +433,12 @@ end
 -- ---------------------------------------------------------------------------
 -- Refresh: drive the model + fill info + XP + stats. NO pet → degrade.
 -- ---------------------------------------------------------------------------
+local collectionModeActive = false
+
 local function refresh()
   if not getPane() then return end
   if not scene then return end
+  if collectionModeActive then return end
 
   local hasPet = UnitExists("pet")
   if not hasPet then
@@ -522,6 +525,21 @@ local function refresh()
   if CP._sidebarPetMode and CP.RefreshSidebar then pcall(CP.RefreshSidebar) end
 end
 CP.RefreshPet = function() pcall(refresh) end
+
+-- Exposed for Companions.lua: the "Mounts & Companions" browser shares this same pane (per the
+-- server's merged mount/companion model). When it's active we hide the live pet model/XP bar and
+-- skip our own refresh entirely so the two views never fight over the pane; SetPetCollectionMode(false)
+-- hands the pane straight back and re-runs a normal refresh.
+function CP.SetPetCollectionMode(active)
+	collectionModeActive = active and true or false
+	if collectionModeActive then
+		if scene then scene:Hide() end
+		if statScroll then statScroll:Hide() end
+		if noPetLabel then noPetLabel:Hide() end
+	else
+		pcall(refresh)
+	end
+end
 
 local function build()
   local host = getPane()

@@ -5,18 +5,23 @@
 -- the same pre-Cata Companions API and conceptually belong together with "your pet stuff".
 --
 -- Two small buttons in the pane's top-right corner switch between:
---   "My Pet"    -- the existing PetPaperDoll.lua model/stats view (untouched).
+--   "My Pet"     -- the existing PetPaperDoll.lua model/stats view (untouched).
 --   "Collection" -- a scrollable icon grid of mounts + companion pets, with a Mounts/Companions
---                   filter. Click an icon to summon it; click the currently-summoned one again to
---                   dismiss it (same convention as Blizzard's later Mount Journal).
+--                   filter. Left-click an icon to preview its 3D model (in the space normally used
+--                   by the pet-stats sidebar - mounts/companions have no combat stats worth showing,
+--                   so that space is repurposed here). Right-click to summon it, or dismiss it if
+--                   it's already active.
 --
 -- DATA (3.3.5a pre-Cata Companions API):
 --   GetNumCompanions("MOUNT"/"CRITTER")
 --   GetCompanionInfo("type", index) -> creatureID, creatureName, creatureSpellID, icon, issummoned, mountTypeID
 --   CallCompanion("type", index) / DismissCompanion("type")
+--   PlayerModel:SetCreature(creatureID) -- added 3.0.2, so this works even without summoning anything.
 --   Events: COMPANION_LEARNED, COMPANION_UPDATE
 -- Every call is pcall-guarded — a server with a slightly different Companions implementation should
--- degrade to an empty/disabled grid rather than error.
+-- degrade to an empty/disabled grid rather than error. Note per Blizzard's own bug reports,
+-- SetCreature() only reliably shows a model if that creature's model is already client-cached; since
+-- these are the player's own learned companions that's normally already true.
 
 local NE = DragonUI_NewEra
 NE.charpanel = NE.charpanel or {}
@@ -28,11 +33,13 @@ local function log(msg)
 end
 
 local ICON_SIZE   = 36
-local ICON_GAP    = 6
+local ICON_GAP    = 14   -- breathing room for the enlarged "currently summoned" ring
 local COLS        = 6
 local TOGGLE_H    = 20
 local FILTER_H    = 20
 local SCROLL_GAP  = 16   -- room reserved on the right for the custom scrollbar
+local BORDER_SIZE = 10   -- how far the summoned/preview rings extend past the icon, each side
+local BORDER_THICK = 3   -- ring line thickness
 
 -- ---------------------------------------------------------------------------
 -- State
@@ -41,10 +48,12 @@ local pane
 local topRow, petModeBtn, collectionModeBtn
 local collectionFrame, filterRow, mountFilterBtn, critterFilterBtn
 local scroll, content, emptyLabel
+local previewHost, previewModel, previewName, previewHint
 local activeFilter = "MOUNT"     -- "MOUNT" or "CRITTER"
 local collectionActive = false
-local icons = {}                 -- recycled icon buttons
-local list  = {}                 -- flat list of companion data for the active filter
+local previewedData               -- the companion currently shown in the 3D preview (or nil)
+local icons = {}                  -- recycled icon buttons
+local list  = {}                  -- flat list of companion data for the active filter
 
 local function getPane()
   if pane then return pane end
@@ -61,28 +70,98 @@ local function rebuildList()
   count = (ok and count) or 0
   local n = 0
   for i = 1, count do
-    local okI, _, name, spellID, icon, issummoned = pcall(GetCompanionInfo, activeFilter, i)
+    local okI, creatureID, name, spellID, icon, issummoned = pcall(GetCompanionInfo, activeFilter, i)
     if okI and name then
       n = n + 1
-      list[n] = { index = i, name = name, spellID = spellID, icon = icon, issummoned = issummoned }
+      list[n] = {
+        index = i, creatureID = creatureID, name = name,
+        spellID = spellID, icon = icon, issummoned = issummoned,
+      }
     end
   end
 end
 
 -- ---------------------------------------------------------------------------
+-- 3D preview (repurposes the pet-stats sidebar's InsetRight space - see applySidebarMode below)
+-- ---------------------------------------------------------------------------
+local function buildPreview()
+  if previewModel then return true end
+  local host = CP.InsetRight
+  if not host then return false end
+  previewHost = host
+
+  local ok, m = pcall(CreateFrame, "PlayerModel", "DragonUI_NewEra_CompanionPreviewModel", host)
+  if not ok or not m then log("buildPreview: PlayerModel creation failed"); return false end
+  previewModel = m
+  previewModel:SetPoint("TOPLEFT", host, "TOPLEFT", 3, -24)
+  previewModel:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -3, 3)
+  previewModel:EnableMouse(true)
+  previewModel:SetScript("OnMouseDown", function(self)
+    self._rotating = true
+    self._lastX = GetCursorPosition()
+  end)
+  previewModel:SetScript("OnMouseUp", function(self) self._rotating = false end)
+  previewModel:SetScript("OnUpdate", function(self)
+    if not self._rotating then return end
+    local x = GetCursorPosition()
+    local dx = x - (self._lastX or x)
+    self._lastX = x
+    if dx ~= 0 then
+      self._rot = (self._rot or 0) - dx * 0.01
+      pcall(self.SetRotation, self, self._rot)
+    end
+  end)
+
+  previewName = host:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  previewName:SetPoint("TOP", host, "TOP", 0, -6)
+  previewName:SetPoint("LEFT", host, "LEFT", 6, 0)
+  previewName:SetPoint("RIGHT", host, "RIGHT", -6, 0)
+
+  previewHint = host:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  previewHint:SetPoint("CENTER", previewModel, "CENTER", 0, 0)
+  previewHint:SetText("Left-click an icon to preview it here.\nRight-click to summon/dismiss.")
+
+  return true
+end
+
+local function showPreview(data)
+  previewedData = data
+  if not (previewModel and buildPreview()) then return end
+  if not data then
+    previewModel:Hide()
+    if previewName then previewName:SetText("") end
+    if previewHint then previewHint:Show() end
+    return
+  end
+  if previewHint then previewHint:Hide() end
+  previewModel:Show()
+  if data.creatureID then
+    pcall(previewModel.SetCreature, previewModel, data.creatureID)
+  end
+  previewModel._rot = 0
+  pcall(previewModel.SetRotation, previewModel, 0)
+  if previewName then previewName:SetText(data.name) end
+end
+
+-- ---------------------------------------------------------------------------
 -- Icon grid (recycled buttons on a plain, pixel-scrolled ScrollFrame)
 -- ---------------------------------------------------------------------------
-local function iconOnClick(self)
+local function iconOnClick(self, button)
   local data = self._data
   if not data then return end
-  if data.issummoned then
-    pcall(DismissCompanion, activeFilter)
+  if button == "RightButton" then
+    if data.issummoned then
+      pcall(DismissCompanion, activeFilter)
+    else
+      pcall(CallCompanion, activeFilter, data.index)
+    end
+    -- COMPANION_UPDATE should refresh us, but nudge shortly after in case a server doesn't fire it.
+    if C_Timer and C_Timer.After then
+      C_Timer.After(0.2, function() if CP.RefreshCollection then pcall(CP.RefreshCollection) end end)
+    end
   else
-    pcall(CallCompanion, activeFilter, data.index)
-  end
-  -- COMPANION_UPDATE should refresh us, but nudge shortly after in case a server doesn't fire it.
-  if C_Timer and C_Timer.After then
-    C_Timer.After(0.2, function() if CP.RefreshCollection then pcall(CP.RefreshCollection) end end)
+    showPreview(data)
+    if CP.RefreshCollection then pcall(CP.RefreshCollection) end -- to update the preview-ring highlight
   end
 end
 
@@ -92,17 +171,34 @@ local function iconOnEnter(self)
   GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
   GameTooltip:SetText(data.name, 1, 1, 1)
   if data.issummoned then
-    GameTooltip:AddLine(_G.CANCEL and (_G.CANCEL .. " (click to dismiss)") or "Click to dismiss", 0, 1, 0)
+    GameTooltip:AddLine("Right-click to dismiss", 0, 1, 0)
   else
-    GameTooltip:AddLine("Click to summon", 1, 0.82, 0)
+    GameTooltip:AddLine("Right-click to summon", 1, 0.82, 0)
   end
+  GameTooltip:AddLine("Left-click to preview", 0.6, 0.8, 1)
   GameTooltip:Show()
+end
+
+-- A single, clean backdrop ring (rather than a stretched icon-border texture, which distorts once
+-- pushed this far out) so both the "summoned" and "previewing" indicators stay crisp at this size.
+local function makeRing(parent, r, g, b)
+  local ring = CreateFrame("Frame", nil, parent)
+  ring:SetPoint("TOPLEFT", parent, "TOPLEFT", -BORDER_SIZE, BORDER_SIZE)
+  ring:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", BORDER_SIZE, -BORDER_SIZE)
+  ring:SetBackdrop({
+    edgeFile = "Interface\\Buttons\\WHITE8X8",
+    edgeSize = BORDER_THICK,
+  })
+  ring:SetBackdropBorderColor(r, g, b, 1)
+  ring:Hide()
+  return ring
 end
 
 local function acquireIcon(i)
   if icons[i] then return icons[i] end
   local b = CreateFrame("Button", nil, content)
   b:SetSize(ICON_SIZE, ICON_SIZE)
+  b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
   local tex = b:CreateTexture(nil, "ARTWORK")
   tex:SetPoint("TOPLEFT", b, "TOPLEFT", 2, -2)
@@ -115,14 +211,12 @@ local function acquireIcon(i)
   slotTex:SetTexture("Interface\\Buttons\\UI-Quickslot2")
   b._slot = slotTex
 
-  local activeBorder = b:CreateTexture(nil, "OVERLAY")
-  activeBorder:SetPoint("TOPLEFT", b, "TOPLEFT", -3, 3)
-  activeBorder:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 3, -3)
-  activeBorder:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-  activeBorder:SetBlendMode("ADD")
-  activeBorder:SetVertexColor(0.2, 1, 0.2)
-  activeBorder:Hide()
-  b._activeBorder = activeBorder
+  -- Green: this one is currently summoned. Blue: this one is what's in the 3D preview. Both can be
+  -- shown at once (offset slightly) since they mean different things.
+  b._activeRing = makeRing(b, 0.25, 1, 0.25)
+  b._previewRing = makeRing(b, 0.35, 0.7, 1)
+  b._previewRing:SetPoint("TOPLEFT", b, "TOPLEFT", -(BORDER_SIZE + BORDER_THICK + 2), (BORDER_SIZE + BORDER_THICK + 2))
+  b._previewRing:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", (BORDER_SIZE + BORDER_THICK + 2), -(BORDER_SIZE + BORDER_THICK + 2))
 
   local hl = b:CreateTexture(nil, "HIGHLIGHT")
   hl:SetAllPoints(b)
@@ -157,12 +251,18 @@ local function layoutGrid()
   end
   if emptyLabel then emptyLabel:Hide() end
 
-  local cellW = ICON_SIZE + ICON_GAP
+  -- Extra spacing beyond the icon+ring so neighboring rings never touch.
+  local cellW = ICON_SIZE + ICON_GAP + BORDER_SIZE
   for i, data in ipairs(list) do
     local b = acquireIcon(i)
     b._data = data
     if data.icon then b._icon:SetTexture(data.icon) end
-    if data.issummoned then b._activeBorder:Show() else b._activeBorder:Hide() end
+    if data.issummoned then b._activeRing:Show() else b._activeRing:Hide() end
+    if previewedData and previewedData.index == data.index then
+      b._previewRing:Show()
+    else
+      b._previewRing:Hide()
+    end
     local col = (i - 1) % COLS
     local row = math.floor((i - 1) / COLS)
     b:ClearAllPoints()
@@ -198,6 +298,7 @@ end
 local function selectFilter(filter)
   if activeFilter == filter then return end
   activeFilter = filter
+  showPreview(nil)
   setFilterArt()
   refreshCollection()
 end
@@ -236,7 +337,7 @@ local function buildCollectionFrame(host)
   scroll:EnableMouseWheel(true)
 
   content = CreateFrame("Frame", nil, scroll)
-  content:SetWidth((ICON_SIZE + ICON_GAP) * COLS + ICON_GAP)
+  content:SetWidth((ICON_SIZE + ICON_GAP + BORDER_SIZE) * COLS + ICON_GAP)
   content:SetHeight(1)
   content:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, 0)
   scroll:SetScrollChild(content)
@@ -252,30 +353,44 @@ local function buildCollectionFrame(host)
   setFilterArt()
 end
 
+-- Swap what's showing in the pet-stats sidebar's InsetRight space: the normal pet stats pane for
+-- "My Pet", our 3D preview for "Collection". Both are children of the same InsetRight and just take
+-- turns being Shown/Hidden - the sidebar stays expanded (548-wide frame) the whole time, which is
+-- what actually frees up the space rather than collapsing it away.
+local function applySidebarMode(showCollectionSide)
+  if CP.ExpandPetSidebar then pcall(CP.ExpandPetSidebar) end -- ensures InsetRight/frame width + builds the stats pane
+  if showCollectionSide then
+    if CP._sidebar then CP._sidebar:Hide() end
+    if buildPreview() then
+      showPreview(previewedData) -- re-show whatever was last previewed, or the hint if nothing was
+      previewModel:Show()
+    end
+  else
+    if previewModel then previewModel:Hide() end
+    if previewName then previewName:SetText("") end
+    if previewHint then previewHint:Hide() end
+    -- CP.ExpandPetSidebar above already re-showed CP._sidebar with fresh pet stats.
+  end
+end
+CP.SyncPetSidebarForCollection = function() applySidebarMode(true) end
+
 local function showCollection(show)
   collectionActive = show
   if CP.SetPetCollectionMode then pcall(CP.SetPetCollectionMode, show) end
   if collectionFrame then
     if show then collectionFrame:Show() else collectionFrame:Hide() end
   end
-  if show then
-    refreshCollection()
-    -- Companions/mounts have no combat stats worth showing - collapse the right-side sidebar so it
-    -- doesn't sit there next to the grid still displaying the last live pet's Health/Armor/etc.
-    if CP.CollapseSidebar then pcall(CP.CollapseSidebar) end
-  else
-    -- Back to an actual class pet - bring the stats sidebar back.
-    if CP.ExpandPetSidebar then pcall(CP.ExpandPetSidebar)
-    elseif CP.ExpandSidebar then pcall(CP.ExpandSidebar) end
-  end
+  if show then refreshCollection() end
+  applySidebarMode(show)
   setButtonEnabled(petModeBtn, show)
   setButtonEnabled(collectionModeBtn, not show)
 end
 CP.ShowPetCollection = showCollection
 
--- Exposed so TabButtons.lua's "Pet" tab-select branch can ask whether it should expand the pet-stats
--- sidebar or leave it collapsed - re-entering the Pet tab mid-Collection would otherwise re-expand it
--- (TabButtons unconditionally calls CP.ExpandPetSidebar() for the Pet tab).
+-- Exposed so TabButtons.lua's "Pet" tab-select branch knows whether re-entering the Pet tab should
+-- restore the normal pet-stats sidebar or keep showing the Collection preview (TabButtons otherwise
+-- unconditionally calls CP.ExpandPetSidebar() for the Pet tab, which would yank the model preview
+-- away and put the stale pet stats back up).
 function CP.IsPetCollectionActive()
   return collectionActive
 end
