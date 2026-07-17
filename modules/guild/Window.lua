@@ -655,7 +655,17 @@ local function createWindow()
     NE.FrameUtil.WirePanelSounds(f, "igCharacterInfoOpen", "igCharacterInfoClose")
   end
   if NE.FrameUtil and NE.FrameUtil.EscClose then NE.FrameUtil.EscClose(FRAME_NAME) end
-  if NE.panelchrome and NE.panelchrome.PinPixelPerfect then NE.panelchrome.PinPixelPerfect(f) end
+  -- Window scale (owner steer 2026-07-17: "the guild tab [needs] to follow the same scaling" as
+  -- the Social window). NE.scale.Apply is the preferred path (core/Scale.lua's DEFAULTS["guild"]
+  -- matches Social's 1.0 default, and is exposed as a mode dropdown + custom slider in the options
+  -- panel's "Window Scaling" section, same as Professions/Spellbook/Talents/Social).
+  -- PinPixelPerfect(f) is the fallback if core/Scale.lua isn't loaded for some reason.
+  if NE.scale and NE.scale.Apply then
+    if NE.scale.SetFrame then NE.scale.SetFrame("guild", f) end
+    NE.scale.Apply("guild")
+  elseif NE.panelchrome and NE.panelchrome.PinPixelPerfect then
+    NE.panelchrome.PinPixelPerfect(f)
+  end
 
   G.SetDisplayMode("ROSTER")   -- owner steer 2026-07-15: Roster is the default tab, not Chat
   return f

@@ -62,6 +62,36 @@ local function classColor(classFile)
   return 1, 0.82, 0
 end
 
+-- Right-click context menu (owner steer 2026-07-17: Who tab had no context menu). Same
+-- EasyMenu/UIDropDownMenu pattern as Friends.lua/Roster.lua. TargetUnit(unit, name) accepting a
+-- name lookup (not just a unit token) is confirmed via the on-client APIDocumentation addon's
+-- TargetingDocumentation.lua.
+local whoMenuFrame
+local function openWhoMenu(idx)
+  if not (EasyMenu and idx) then return end
+  if not whoMenuFrame then
+    whoMenuFrame = CreateFrame("Frame", "NE_SocialWhoMenu", UIParent, "UIDropDownMenuTemplate")
+  end
+  local name = GetWhoInfo and GetWhoInfo(idx)
+  local menu = {
+    { text = name or "", isTitle = true, notCheckable = true },
+    { text = WHISPER or "Whisper", notCheckable = true, func = function()
+        if name and ChatFrame_SendTell then ChatFrame_SendTell(name) end
+      end },
+    { text = GROUP_INVITE or "Invite", notCheckable = true, func = function()
+        if name and InviteUnit then InviteUnit(name) end
+      end },
+    { text = TARGET or "Target", notCheckable = true, func = function()
+        if name and TargetUnit then TargetUnit(nil, name) end
+      end },
+    { text = IGNORE or "Ignore", notCheckable = true, func = function()
+        if name and AddIgnore then AddIgnore(name) end
+      end },
+    { text = CANCEL or "Cancel", notCheckable = true },
+  }
+  EasyMenu(menu, whoMenuFrame, "cursor", 0, 0, "MENU")
+end
+
 function SO.SetupWho(f)
   local panel = f.WhoPanel
   if not panel or panel._built then return end
@@ -180,7 +210,12 @@ function SO.SetupWho(f)
       fs:SetJustifyH(col.justify); fs:SetWordWrap(false)
       row.cells[c] = fs
     end
-    row:SetScript("OnClick", function(self) panel._selected = self._index; SO.RefreshWho() end)
+    row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    row:SetScript("OnClick", function(self, button)
+      panel._selected = self._index
+      SO.RefreshWho()
+      if button == "RightButton" then openWhoMenu(self._index) end
+    end)
     panel._rows[i] = row
   end
 
@@ -190,9 +225,13 @@ function SO.SetupWho(f)
     return (GetWhoInfo and (GetWhoInfo(panel._selected)))
   end
 
+  -- Anchored 29px below panel's own bottom edge, not +4 (owner report 2026-07-17, same fix as the
+  -- Friends tab's buttons: panel's dark inset background covers its full extent down to its own
+  -- bottom edge, and panel's bottom already sits 36px above the window's true bottom — so +4 sat
+  -- the buttons inside the dark inset instead of the outer grey chrome band below it).
   local addf = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
   addf:SetSize(110, 22); addf:SetText(ADD_FRIEND or "Add Friend")
-  addf:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 0, 4)
+  addf:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 0, -29)
   addf:SetScript("OnClick", function() local n = selectedName(); if n and AddFriend then AddFriend(n) end end)
 
   local invite = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
@@ -202,7 +241,7 @@ function SO.SetupWho(f)
 
   local whisper = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
   whisper:SetSize(90, 22); whisper:SetText(WHISPER or "Whisper")
-  whisper:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 4)
+  whisper:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, -29)
   whisper:SetScript("OnClick", function()
     local n = selectedName(); if n and ChatFrame_SendTell then ChatFrame_SendTell(n) end
   end)

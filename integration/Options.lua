@@ -60,7 +60,8 @@ local function builder(scroll)
             { id = "Spellbook",   label = "Spellbook" },
             { id = "Talents",     label = "Talents" },
             { id = "Professions", label = "Professions" },
-                        { id = "AuctionHouse", label = "Auction House" },
+            { id = "AuctionHouse", label = "Auction House" },
+            { id = "Social",      label = "Social (Friends/Who/Guild/Chat/Raid)" },
             { id = "combinedbag", label = "Combined bag (all-in-one)",
               desc = "Our all-in-one bag window. Turn OFF to use the stock Blizzard bags instead. Reload (/reload) to apply." },
         }
@@ -103,6 +104,8 @@ local function builder(scroll)
             { key = "spellbook",   label = "Spellbook" },
             { key = "talents",     label = "Talents" },
             { key = "professions", label = "Professions" },
+            { key = "social",      label = "Social" },
+            { key = "guild",       label = "Guild" },
         }
 
         -- One window's stacked controls: a centered column header, a mode dropdown, and a custom-scale
@@ -134,7 +137,8 @@ local function builder(scroll)
         end
 
         if AceGUI then
-            -- Three side-by-side columns (Character | Spellbook | Talents), each a vertical stack.
+            -- Side-by-side columns, each a vertical stack (wraps onto further rows via the Flow
+            -- layout once WINDOWS outgrows a single row of 0.32-width columns).
             local row = AceGUI:Create("SimpleGroup")
             row:SetFullWidth(true)
             row:SetLayout("Flow")

@@ -34,6 +34,29 @@ local STATUS_AFK     = FRIENDS_TEXTURE_AFK     or "Interface\\FriendsFrame\\Stat
 local STATUS_DND     = FRIENDS_TEXTURE_DND     or "Interface\\FriendsFrame\\StatusIcon-DnD"
 local STATUS_OFFLINE = FRIENDS_TEXTURE_OFFLINE or "Interface\\FriendsFrame\\StatusIcon-Offline"
 
+-- Modern minimal scrollbar. The full-hide-when-fits behavior (opts.alwaysShow not passed) proved
+-- unreliable in practice across several fix attempts (owner report 2026-07-17, repeated: "still
+-- doesnt hide"). Switched to alwaysShow = true instead (owner steer: "make them act the same as
+-- the profession scrollbars") — the SAME convention already used and working for the Professions
+-- recipe list, Auction House Browse/Auctions tabs, and the Guild Event Log: track + arrows stay
+-- visible always, only the thumb hides when content fits. Simpler and already proven, at the cost
+-- of the bar chrome never fully disappearing. The strata bump IS still required: the Social window
+-- runs at DIALOG strata (Window.lua), and BuildCustom's bar defaults to HIGH — a HIGH bar renders
+-- BEHIND DIALOG content, i.e. invisible. Same trap already documented/fixed for the Guild Event Log.
+-- x = -8 (owner steer 2026-07-17: "move the scrollbar right by about 10 pixels"): BuildCustom's
+-- own default inset is x=-2 (bar sits 2px LEFT of the scroll's right edge); opts.x is negated
+-- internally (xInset = -opts.x), so -8 here yields an actual xInset of 8 — 10px further right than
+-- the -2 default.
+local function buildModernScrollbar(scroll)
+  if not (NE.scrollbar and NE.scrollbar.BuildCustom) then return end
+  local ok, bar = pcall(NE.scrollbar.BuildCustom, scroll, { x = -8, alwaysShow = true })
+  if not (ok and bar) then return end
+  bar:SetFrameStrata("DIALOG")
+  bar:SetFrameLevel((scroll:GetFrameLevel() or 1) + 10)
+  if bar._upBtn then bar._upBtn:SetFrameStrata("DIALOG"); bar._upBtn:SetFrameLevel(bar:GetFrameLevel() + 1) end
+  if bar._downBtn then bar._downBtn:SetFrameStrata("DIALOG"); bar._downBtn:SetFrameLevel(bar:GetFrameLevel() + 1) end
+end
+
 local function statusTexture(connected, status)
   if not connected then return STATUS_OFFLINE end
   if status == (CHAT_FLAG_AFK or "<Away>") then return STATUS_AFK end
@@ -203,26 +226,63 @@ end
 
 -- ---------------------------------------------------------------------------
 -- Right-click context menus (owner steer 2026-07-17: rows had no context menu at all — right-click
--- was never wired up). Native EasyMenu/UIDropDownMenu, same pattern as
+-- was never wired up; later expanded to the full Whisper/Invite/Set Note/Ignore/Remove Friend/
+-- Cancel spec). Native EasyMenu/UIDropDownMenu, same pattern as
 -- modules/bags/CombinedBag.lua:CB.OpenMenu (confirmed working on 3.3.5a).
+--
+-- SetFriendNotes(name, notes) confirmed via Blizzard's own auto-generated API metadata
+-- (Blizzard_APIDocumentationGenerated/FriendListDocumentation.lua, Classic branch of
+-- Gethe/wow-ui-source): name-based, distinct from the separate index-based
+-- `SetFriendNotesByIndex(index, notes)`. (The !!!ClassicAPI shim aliases both C_FriendList names
+-- onto the same raw global, which looks index-suggestive but is just a shim mislabel.)
 -- ---------------------------------------------------------------------------
+StaticPopupDialogs["NE_SET_FRIEND_NOTE"] = {
+  text = "Enter a note for %s:",
+  button1 = ACCEPT or "Accept",
+  button2 = CANCEL or "Cancel",
+  hasEditBox = true,
+  maxLetters = 48,
+  OnShow = function(self)
+    self.editBox:SetText(self.data and self.data.note or "")
+    self.editBox:HighlightText()
+  end,
+  OnAccept = function(self)
+    local text = self.editBox:GetText()
+    if self.data and self.data.name and SetFriendNotes then SetFriendNotes(self.data.name, text) end
+    if SO.RefreshFriends then SO.RefreshFriends() end
+  end,
+  EditBoxOnEnterPressed = function(self) self:GetParent():Hide() end,
+  EditBoxOnEscapePressed = function(self) self:GetParent():Hide() end,
+  timeout = 0, whileDead = true, hideOnEscape = true,
+}
+
 local friendMenuFrame
 local function openFriendMenu(idx)
   if not (EasyMenu and idx) then return end
   if not friendMenuFrame then
     friendMenuFrame = CreateFrame("Frame", "NE_SocialFriendMenu", UIParent, "UIDropDownMenuTemplate")
   end
-  local name = GetFriendInfo(idx)
-  local menu = {
-    { text = name or "", isTitle = true, notCheckable = true },
-    { text = SEND_MESSAGE or "Send Message", notCheckable = true, func = function()
+  local name, _, _, _, connected, _, note = GetFriendInfo(idx)
+  local menu = { { text = name or "", isTitle = true, notCheckable = true } }
+  if connected then
+    menu[#menu + 1] = { text = SEND_MESSAGE or "Whisper", notCheckable = true, func = function()
         if name and ChatFrame_SendTell then ChatFrame_SendTell(name) end
-      end },
-    { text = REMOVE_FRIEND or "Remove Friend", notCheckable = true, func = function()
-        if RemoveFriend then RemoveFriend(idx) end
-        SO.RefreshFriends()
-      end },
-  }
+      end }
+    menu[#menu + 1] = { text = GROUP_INVITE or "Invite", notCheckable = true, func = function()
+        if name and InviteUnit then InviteUnit(name) end
+      end }
+  end
+  menu[#menu + 1] = { text = "Set Note", notCheckable = true, func = function()
+      if name then StaticPopup_Show("NE_SET_FRIEND_NOTE", name, nil, { name = name, note = note }) end
+    end }
+  menu[#menu + 1] = { text = IGNORE or "Ignore", notCheckable = true, func = function()
+      if name and AddIgnore then AddIgnore(name) end
+    end }
+  menu[#menu + 1] = { text = REMOVE_FRIEND or "Remove Friend", notCheckable = true, func = function()
+      if RemoveFriend then RemoveFriend(idx) end
+      SO.RefreshFriends()
+    end }
+  menu[#menu + 1] = { text = CANCEL or "Cancel", notCheckable = true }
   EasyMenu(menu, friendMenuFrame, "cursor", 0, 0, "MENU")
 end
 
@@ -239,6 +299,7 @@ local function openIgnoreMenu(idx)
         if name and DelIgnore then DelIgnore(name) end
         SO.RefreshIgnore()
       end },
+    { text = CANCEL or "Cancel", notCheckable = true },
   }
   EasyMenu(menu, ignoreMenuFrame, "cursor", 0, 0, "MENU")
 end
@@ -249,27 +310,58 @@ end
 local function setupFriendsView(view)
   view._selected = nil
 
+  -- Periodic re-poll while the tab is actually visible (owner report 2026-07-17: "friends list
+  -- location doesn't update if the friend moves zones when the tab is open"). The server doesn't
+  -- proactively push a FRIENDLIST_UPDATE when a friend's zone changes — only login/logoff/add/
+  -- remove reliably fire that event — so the zone/level/area fields in GetFriendInfo go stale
+  -- unless something re-requests them. Stock FriendsFrame does the same thing: an OnUpdate ticker
+  -- that re-calls ShowFriends() every few seconds while shown. Scoped to `view` itself (not the
+  -- whole window) so it naturally stops ticking once the Friends sub-tab isn't the visible one.
+  local FRIENDS_REFRESH_INTERVAL = 5
+  view:SetScript("OnUpdate", function(self, elapsed)
+    self._refreshElapsed = (self._refreshElapsed or 0) + elapsed
+    if self._refreshElapsed >= FRIENDS_REFRESH_INTERVAL then
+      self._refreshElapsed = 0
+      if ShowFriends then ShowFriends() end
+    end
+  end)
+
   local scroll = CreateFrame("ScrollFrame", "NE_SocialFriendsScroll", view, "FauxScrollFrameTemplate")
   -- Inset 3px from the view's edges (owner steer 2026-07-17), on top of the existing scrollbar
-  -- clearance (-24) and button-row clearance (34).
+  -- clearance (-24). Bottom inset 37 -> 5 (owner steer 2026-07-17: "make sure it extends to the
+  -- bottom of the frame") — the 37px used to clear the Add Friend/Ignore Player button that lived
+  -- inside `view`; that button now anchors to the panel's outer chrome instead (see below), so this
+  -- clearance was stale dead space keeping both the list and its scrollbar short of the bottom.
   scroll:SetPoint("TOPLEFT", view, "TOPLEFT", 3, -5)
-  scroll:SetPoint("BOTTOMRIGHT", view, "BOTTOMRIGHT", -27, 37)
+  scroll:SetPoint("BOTTOMRIGHT", view, "BOTTOMRIGHT", -27, 5)
   scroll:SetScript("OnVerticalScroll", function(self, o)
     FauxScrollFrame_OnVerticalScroll(self, o, ROW_HEIGHT, SO.RefreshFriends)
   end)
   view._scroll = scroll
   scroll.ScrollBar = _G["NE_SocialFriendsScrollScrollBar"]   -- 3.3.5a template has no parentKey
-  if NE.scrollbar and NE.scrollbar.Reskin then NE.scrollbar.Reskin(scroll) end
+  buildModernScrollbar(scroll)
 
   -- Online/offline separator (owner steer 2026-07-17: "a separator in the list between online and
   -- offline friends, just a light grey bar"). One shared bar, repositioned each refresh to sit
   -- between whichever two VISIBLE rows are the online->offline transition (RefreshFriends below);
   -- naturally hides itself when that boundary has scrolled out of view or doesn't exist (all
   -- online/all offline).
-  local sep = view:CreateTexture(nil, "OVERLAY")
-  sep:SetTexture("Interface\\Buttons\\WHITE8X8")
-  sep:SetVertexColor(0.6, 0.6, 0.6, 0.5)
-  sep:SetHeight(1)
+  --
+  -- BUG FIX (owner report 2026-07-17: "divider isn't visible"): a texture parented straight to
+  -- `view` draws at VIEW's frame level. The rows are CreateFrame("Button", nil, view) — child
+  -- FRAMES default to one level above their parent — so every row's own background painted over
+  -- this texture regardless of its OVERLAY draw layer (frame level always wins over draw layer
+  -- across different frames). Give the bar its own frame, explicitly leveled above the rows.
+  local sepFrame = CreateFrame("Frame", nil, view)
+  sepFrame:SetFrameLevel(view:GetFrameLevel() + 10)
+  -- UI-TooltipDivider-Transparent (owner steer 2026-07-17: "3/4 line, more of a grey glowy line
+  -- than a solid one") — the stock tooltip-divider asset: a soft grey glow that fades out toward
+  -- both ends, built for sitting over an arbitrary background (the -Transparent variant, unlike
+  -- the plain UI-TooltipDivider which assumes a solid tooltip backdrop behind it). Width is set to
+  -- 75% of the row per-refresh below (RefreshFriends), centered.
+  local sep = sepFrame:CreateTexture(nil, "OVERLAY")
+  sep:SetTexture("Interface\\Common\\UI-TooltipDivider-Transparent")
+  sep:SetHeight(8)
   sep:Hide()
   view._sep = sep
 
@@ -343,7 +435,13 @@ local function setupFriendsView(view)
 
   local add = CreateFrame("Button", nil, view, "UIPanelButtonTemplate")
   add:SetSize(116, 22); add:SetText(ADD_FRIEND or "Add Friend")
-  add:SetPoint("BOTTOMLEFT", view, "BOTTOMLEFT", 0, 4)
+  -- Anchored to the PANEL (view's parent), not `view` itself (owner report 2026-07-17: button was
+  -- sitting inside the dark inset, overlapping the last row, instead of the outer grey frame below
+  -- it). Panel's own bottom edge sits 36px above the window's true bottom (Window.lua's buildPanels
+  -- content-panel offset) — that 36px band is the outer chrome strip the button belongs in. Still
+  -- parented to `view` itself (unchanged) so it keeps auto-hiding with the Friends sub-tab; only
+  -- the anchor TARGET moves to the panel, which a child's SetPoint can do independent of parentage.
+  add:SetPoint("BOTTOMLEFT", view:GetParent(), "BOTTOMLEFT", 0, -29)
   -- Stock Blizzard invite dialog (owner steer 2026-07-17, same fix as the Guild Invite button:
   -- "fix the add friend button to do this also"). REVERTED the inline name-prompt above — that was
   -- built on an unverified assumption that StaticPopup_Show("ADD_FRIEND") silently no-ops here; on a
@@ -351,7 +449,18 @@ local function setupFriendsView(view)
   -- button itself opens (hasEditBox, OnAccept calls AddFriend() with the typed name internally). The
   -- list refresh doesn't need a manual call either — FRIENDLIST_UPDATE (registered below) already
   -- drives SO.RefreshFriends() once the server round-trip lands.
-  add:SetScript("OnClick", function() StaticPopup_Show("ADD_FRIEND") end)
+  -- Targeting a player adds them directly (owner steer 2026-07-17: "click add friend while
+  -- targeting someone it should add them to my friends list") — skips the popup and its typed
+  -- name entirely; AddFriend() itself already reports success/failure via the server's own system
+  -- message (already-friends, target list full, etc.), so no extra feedback UI is needed here.
+  -- No target (or targeting something that isn't a player) falls back to the manual-entry popup.
+  add:SetScript("OnClick", function()
+    if UnitExists("target") and UnitIsPlayer("target") and not UnitIsUnit("target", "player") then
+      AddFriend(UnitName("target"))
+    else
+      StaticPopup_Show("ADD_FRIEND")
+    end
+  end)
 
   -- Send Message / Remove Friend buttons REMOVED (owner steer 2026-07-17): both actions are
   -- already on the row's right-click menu (openFriendMenu above), so the dedicated buttons were
@@ -372,28 +481,42 @@ function SO.RefreshFriends()
     local row = view._rows[i]
     local isBoundary = false
     if idx <= total then
-      local name, level, class, area, connected, status = GetFriendInfo(idx)
+      local name, level, class, area, connected, status, note = GetFriendInfo(idx)
       row._index = idx
       row.icon:SetTexture(statusTexture(connected, status))
+      -- Owner report 2026-07-17: "Notes for people on the friend tab dont show up" — Set Note
+      -- (added to the row's right-click menu) wrote via SetFriendNotes fine, but GetFriendInfo's
+      -- 7th return (the note) was never read here, so nothing on the row ever displayed it.
+      -- Appended to the info line, after the zone/offline text.
+      local noteSuffix = (note and note ~= "") and ("  |cff40ff40(" .. note .. ")|r") or ""
       if connected then
         row.name:SetText(friendNameText(name, level, class))
         row.name:SetTextColor(1, 0.82, 0)
-        row.info:SetText(area or "")
+        row.info:SetText((area or "") .. noteSuffix)
         row.info:SetTextColor(0.5, 0.5, 0.5)
       else
         row.name:SetText(tostring(name or ""))
         row.name:SetTextColor(0.5, 0.5, 0.5)
-        row.info:SetText(FRIENDS_LIST_OFFLINE or "Offline")
+        row.info:SetText((FRIENDS_LIST_OFFLINE or "Offline") .. noteSuffix)
         row.info:SetTextColor(0.4, 0.4, 0.4)
       end
       if row._sel then row._sel:SetShown(idx == view._selected) end
-      isBoundary = (prevConnected == true and connected == false)
+      -- BUG FIX (owner report 2026-07-17: "divider doesn't show, no padding between online/offline
+      -- either" — same root cause for both, this flag drives them both). `connected == false`
+      -- never matched: GetFriendInfo's offline value here is nil, not a literal false, so the
+      -- equality check silently failed every time. Truthy/falsy comparison instead.
+      isBoundary = (prevConnected and not connected) and true or false
       if isBoundary and view._sep then
-        -- Centered in the 10px gap opened up below (5px clear on either side of the line — owner
-        -- steer 2026-07-17), not flush against either row.
+        -- Centered in the 10px gap opened up below, both directions (owner steer 2026-07-17: gap
+        -- to the offline row below read as gone/too small). BUG FIX: anchoring by the line's TOP
+        -- edge 5px above the row put its CENTER there instead — an 8px-tall texture anchored by
+        -- its top extends 8px downward from that point, so it bled 3px past the row's top edge
+        -- into the gap meant to clear it. CENTER anchor instead, so the texture's own height is
+        -- split evenly above/below the midpoint of the 10px gap. Width 3/4 of the row, horizontally
+        -- centered (owner steer 2026-07-17: "should be a 3/4 line").
         view._sep:ClearAllPoints()
-        view._sep:SetPoint("BOTTOMLEFT", row, "TOPLEFT", 4, 5)
-        view._sep:SetPoint("BOTTOMRIGHT", row, "TOPRIGHT", -4, 5)
+        view._sep:SetWidth((row:GetWidth() or 0) * 0.75)
+        view._sep:SetPoint("CENTER", row, "TOP", 0, 5)
         view._sep:Show()
         sepPlaced = true
       end
@@ -416,6 +539,10 @@ function SO.RefreshFriends()
   end
   if not sepPlaced and view._sep then view._sep:Hide() end
   FauxScrollFrame_Update(view._scroll, total, NUM_ROWS, ROW_HEIGHT)
+  -- Explicit, synchronous re-sync (owner report 2026-07-17, same fix as Guild Roster) — see
+  -- NE.scrollbar.SyncCustom's comment in core/ScrollbarReskin.lua. total/NUM_ROWS passed through so
+  -- it can defensively clamp the slider itself when the list fits (thumb-stuck-visible fix).
+  if NE.scrollbar and NE.scrollbar.SyncCustom then NE.scrollbar.SyncCustom(view._scroll, total, NUM_ROWS) end
 end
 
 -- ---------------------------------------------------------------------------
@@ -426,15 +553,18 @@ local function setupIgnoreView(view)
 
   local scroll = CreateFrame("ScrollFrame", "NE_SocialIgnoreScroll", view, "FauxScrollFrameTemplate")
   -- Inset 3px from the view's edges (owner steer 2026-07-17), on top of the existing scrollbar
-  -- clearance (-24) and button-row clearance (34).
+  -- clearance (-24). Bottom inset 37 -> 5 (owner steer 2026-07-17: "make sure it extends to the
+  -- bottom of the frame") — the 37px used to clear the Add Friend/Ignore Player button that lived
+  -- inside `view`; that button now anchors to the panel's outer chrome instead (see below), so this
+  -- clearance was stale dead space keeping both the list and its scrollbar short of the bottom.
   scroll:SetPoint("TOPLEFT", view, "TOPLEFT", 3, -5)
-  scroll:SetPoint("BOTTOMRIGHT", view, "BOTTOMRIGHT", -27, 37)
+  scroll:SetPoint("BOTTOMRIGHT", view, "BOTTOMRIGHT", -27, 5)
   scroll:SetScript("OnVerticalScroll", function(self, o)
     FauxScrollFrame_OnVerticalScroll(self, o, IGNORE_HEIGHT, SO.RefreshIgnore)
   end)
   view._scroll = scroll
   scroll.ScrollBar = _G["NE_SocialIgnoreScrollScrollBar"]
-  if NE.scrollbar and NE.scrollbar.Reskin then NE.scrollbar.Reskin(scroll) end
+  buildModernScrollbar(scroll)
 
   view._rows = {}
   for i = 1, IGNORE_ROWS do
@@ -472,7 +602,10 @@ local function setupIgnoreView(view)
 
   local add = CreateFrame("Button", nil, view, "UIPanelButtonTemplate")
   add:SetSize(116, 22); add:SetText(IGNORE_PLAYER or "Ignore Player")
-  add:SetPoint("BOTTOMLEFT", view, "BOTTOMLEFT", 0, 4)
+  -- Same outer-chrome anchor fix as the Friends tab's Add Friend button above (owner report
+  -- 2026-07-17): anchored to the panel (view's parent), not `view` itself, so it sits in the grey
+  -- band below the dark inset instead of overlapping the last row.
+  add:SetPoint("BOTTOMLEFT", view:GetParent(), "BOTTOMLEFT", 0, -29)
   -- Stock Blizzard dialog (owner steer 2026-07-17, same fix as the Guild Invite / Add Friend
   -- buttons: "use the blizzard ui not the one you did"). REVERTED the inline name-prompt — same
   -- disproven "StaticPopup_Show silently no-ops here" theory as the other two buttons; on a
@@ -508,6 +641,10 @@ function SO.RefreshIgnore()
     end
   end
   FauxScrollFrame_Update(view._scroll, total, IGNORE_ROWS, IGNORE_HEIGHT)
+  -- Explicit, synchronous re-sync (owner report 2026-07-17, same fix as Guild Roster) — see
+  -- NE.scrollbar.SyncCustom's comment in core/ScrollbarReskin.lua. total/IGNORE_ROWS passed through
+  -- so it can defensively clamp the slider itself when the list fits (thumb-stuck-visible fix).
+  if NE.scrollbar and NE.scrollbar.SyncCustom then NE.scrollbar.SyncCustom(view._scroll, total, IGNORE_ROWS) end
 end
 
 -- SO.SetupFriends builds the Friends panel + BOTH sub-views (Window.lua calls it once).

@@ -213,11 +213,15 @@ local function openRosterMenu(idx)
   end
   local menu = { { text = name, isTitle = true, notCheckable = true } }
   if online then
-    menu[#menu + 1] = { text = GROUP_INVITE or "Invite", notCheckable = true,
-      func = function() if InviteUnit then InviteUnit(name) end end }
     menu[#menu + 1] = { text = WHISPER or "Whisper", notCheckable = true,
       func = function() if ChatFrame_SendTell then ChatFrame_SendTell(name) end end }
+    menu[#menu + 1] = { text = GROUP_INVITE or "Invite", notCheckable = true,
+      func = function() if InviteUnit then InviteUnit(name) end end }
   end
+  -- Ignore (owner steer 2026-07-17: added to the right-click menu spec; Promote/Demote/Remove kept
+  -- as-is per owner confirmation rather than replaced).
+  menu[#menu + 1] = { text = IGNORE or "Ignore", notCheckable = true,
+    func = function() if AddIgnore then AddIgnore(name) end end }
   if CanGuildPromote and CanGuildPromote() then
     menu[#menu + 1] = { text = GUILD_PROMOTE or "Promote", notCheckable = true,
       func = function() if GuildPromote then GuildPromote(name) end; G.RefreshRoster() end }
@@ -230,6 +234,7 @@ local function openRosterMenu(idx)
     menu[#menu + 1] = { text = REMOVE or "Remove", notCheckable = true,
       func = function() if GuildUninvite then GuildUninvite(name) end; G.RefreshRoster() end }
   end
+  menu[#menu + 1] = { text = CANCEL or "Cancel", notCheckable = true }
   EasyMenu(menu, rosterMenuFrame, "cursor", 0, 0, "MENU")
 end
 
@@ -319,7 +324,27 @@ function G.SetupRoster(f)
   end)
   panel.Scroll = scroll
   scroll.ScrollBar = _G["NE_GuildRosterScrollScrollBar"]   -- 3.3.5a template doesn't set the parentKey
-  if NE.scrollbar and NE.scrollbar.Reskin then NE.scrollbar.Reskin(scroll) end
+  -- Modern minimal scrollbar. BuildCustom, not Reskin — same reasoning as the Guild Event Log list
+  -- a few hundred lines up in Window.lua (Reskin doesn't render for FauxScrollFrame lists).
+  -- Full-hide-when-fits (no alwaysShow) proved unreliable in practice (owner report 2026-07-17,
+  -- the Show Offline toggle case: "bars not re-hiding after not being needed anymore"). Switched to
+  -- alwaysShow = true instead (owner steer: "make them act the same as the profession scrollbars")
+  -- — the same convention already working for Professions/Auction House/Guild Event Log: track +
+  -- arrows stay visible always, only the thumb hides when content fits. Strata bumped to DIALOG:
+  -- this window runs at DIALOG strata (createWindow below), and BuildCustom's bar defaults to HIGH,
+  -- which renders BEHIND DIALOG content — the same trap already hit and fixed for the Event Log.
+  if NE.scrollbar and NE.scrollbar.BuildCustom then
+    -- x = -8 (owner steer 2026-07-17: "move the roster scrollbar right by 10 pixels too" — same
+    -- fix as the Friends/Ignore lists). BuildCustom's default inset is x=-2; opts.x is negated
+    -- internally (xInset = -opts.x), so -8 yields an actual xInset of 8, 10px right of default.
+    local ok, bar = pcall(NE.scrollbar.BuildCustom, scroll, { x = -7, alwaysShow = true })
+    if ok and bar then
+      bar:SetFrameStrata("DIALOG")
+      bar:SetFrameLevel((scroll:GetFrameLevel() or 1) + 10)
+      if bar._upBtn then bar._upBtn:SetFrameStrata("DIALOG"); bar._upBtn:SetFrameLevel(bar:GetFrameLevel() + 1) end
+      if bar._downBtn then bar._downBtn:SetFrameStrata("DIALOG"); bar._downBtn:SetFrameLevel(bar:GetFrameLevel() + 1) end
+    end
+  end
 
   -- Row buttons.
   panel.Rows = {}
@@ -421,6 +446,12 @@ function G.RefreshRoster()
   end
 
   FauxScrollFrame_Update(panel.Scroll, total, NUM_ROWS, ROW_HEIGHT)
+  -- Explicit, synchronous re-sync (owner report 2026-07-17: the scrollbar wasn't reliably
+  -- re-hiding when Show Offline shrank the list back to fitting the viewport) — see
+  -- NE.scrollbar.SyncCustom's own comment in core/ScrollbarReskin.lua for why this is called
+  -- directly here instead of trusting a hook/event/poll to catch it. total/NUM_ROWS passed through
+  -- so it can defensively clamp the slider itself when the list fits (thumb-stuck-visible fix).
+  if NE.scrollbar and NE.scrollbar.SyncCustom then NE.scrollbar.SyncCustom(panel.Scroll, total, NUM_ROWS) end
 
   -- Member count on the header row (uses the cached online count — recomputed only on roster
   -- changes, not on every scroll; see recountOnline below).

@@ -264,7 +264,17 @@ local function createWindow()
     NE.FrameUtil.WirePanelSounds(f, "igCharacterInfoOpen", "igCharacterInfoClose")
   end
   if NE.FrameUtil and NE.FrameUtil.EscClose then NE.FrameUtil.EscClose(FRAME_NAME) end
-  if NE.panelchrome and NE.panelchrome.PinPixelPerfect then NE.panelchrome.PinPixelPerfect(f) end
+  -- Window scale (owner steer 2026-07-17: "make this user adjustable same as professions etc.") —
+  -- NE.scale.Apply is the preferred path (core/Scale.lua's DEFAULTS["social"] = 1.0, plain/
+  -- unscaled, now also exposed as a mode dropdown + custom slider in the options panel's "Window
+  -- Scaling" section, same as Professions/Spellbook/Talents). PinPixelPerfect(f) is the fallback if
+  -- core/Scale.lua isn't loaded for some reason.
+  if NE.scale and NE.scale.Apply then
+    if NE.scale.SetFrame then NE.scale.SetFrame("social", f) end
+    NE.scale.Apply("social")
+  elseif NE.panelchrome and NE.panelchrome.PinPixelPerfect then
+    NE.panelchrome.PinPixelPerfect(f)
+  end
 
   SO.SetMode("FRIENDS")
   return f
