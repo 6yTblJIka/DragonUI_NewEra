@@ -13,13 +13,6 @@ local NE = DragonUI_NewEra
 local T  = NE.talents or {}
 NE.talents = T
 
--- Triumvirate-only realm gate (mirrors Behavior.lua's; reuses T.IsTriumvirate if it's already set,
--- so this still works regardless of file load order).
-local function IsTriumvirate()
-  if T.IsTriumvirate then return T.IsTriumvirate() end
-  return (GetRealmName and GetRealmName() or "") == "Triumvirate"
-end
-
 local MAX_NAME = 16
 
 -- ---- per-character custom names: NE.db.talentSpecNames[charKey][group] = "name" -------------------
@@ -43,14 +36,7 @@ local function setCustomName(group, name)
   db.talentSpecNames[key] = db.talentSpecNames[key] or {}
   db.talentSpecNames[key][group] = (name ~= "") and name or nil   -- blank clears -> default
 end
-local function defaultName(group)
-  if group == 1 then return "Primary"
-  elseif group == 2 then return "Secondary"
-  elseif group == 3 then return "Tertiary"    -- or "Third"
-  elseif group == 4 then return "Quaternary"  -- or "Fourth"
-  end
-  return "Spec " .. group
-end
+local function defaultName(group) return (group == 1) and "Primary" or "Secondary" end
 local function specName(group) return customName(group) or defaultName(group) end
 
 -- ---- rename dialog (opened by the cog) ------------------------------------------------------------
@@ -108,7 +94,7 @@ local function setTabArt(tab, selected)
   end
 end
 
-local TAB_NAMES = { "NE_TalentSpecTab1", "NE_TalentSpecTab2", "NE_TalentSpecTab3", "NE_TalentSpecTab4" }
+local TAB_NAMES = { "NE_TalentSpecTab1", "NE_TalentSpecTab2" }
 local GLYPH_TAB_NAME = "NE_TalentSpecTabGlyphs"
 local PET_TAB_NAME   = "NE_TalentSpecTabPet"
 
@@ -124,20 +110,10 @@ local function buildTab(g)
   tab:SetID(g)
   tab:SetScript("OnClick", function(self)
     if PlaySound then pcall(PlaySound, "igCharacterInfoTab") end
-    local id = self:GetID()
-    T._viewGroup = id
-    T._petView = false                        -- a player-spec tab leaves pet view
+    T._viewGroup = self:GetID()
+    T._petView = false                       -- a player-spec tab leaves pet view
     if T.GlyphsSetActive then T.GlyphsSetActive(false) end
     if T.GlyphsApplyPaneVisibility then T.GlyphsApplyPaneVisibility() end
-  
-    -- TRIUMVIRATE COMPATIBILITY: Pass the click to the server's hidden native tab
-    if IsTriumvirate() then
-      local triumvirateTab = _G["TriumvirateSpecTab" .. id]
-      if triumvirateTab and triumvirateTab.Click then
-        triumvirateTab:Click()
-      end
-    end
-
     if T.RefreshSpecTabs then T.RefreshSpecTabs() end
     if T.Refresh then T.Refresh() end
   end)
@@ -233,23 +209,19 @@ end
 function T.RefreshSpecTabs()
   local f = T.frame
   if not f then return end
-  
-  -- Triumvirate bypasses the default Blizzard 2-spec limit (up to 4 specs). Everywhere else, respect
-  -- the real GetNumTalentGroups() so we don't show unlock tabs for specs the server doesn't support.
-  local num = IsTriumvirate() and 4
-    or ((GetNumTalentGroups and (GetNumTalentGroups() or 1)) or 1)
-  
+  local num = (GetNumTalentGroups and (GetNumTalentGroups() or 1)) or 1   -- VERIFY: GetNumTalentGroups on 3.3.5a
   local hasGlyph = (type(T.GlyphsSetActive) == "function")
   local viewG = T._viewGroup or T._activeGroup or 1
   local glyphActive = T.GlyphsIsActive and T.GlyphsIsActive() or false
   local petAvail    = T.PetHasTalents and T.PetHasTalents() or false
   local petActive   = T.PetViewActive and T.PetViewActive() or false
+  -- A player-talents tab must exist whenever the Pet tab does, so there's always a way back to the
+  -- character's own talents (even single-spec with no glyph module).
   local needTalentsTab = hasGlyph or petAvail
   local tabsToSize = {}
 
-  -- Loop through all 4 specs instead of stopping at 2
   if num >= 2 then
-    for g = 1, num do
+    for g = 1, 2 do
       local tab = buildTab(g)
       local txt = _G[TAB_NAMES[g] .. "Text"]
       if txt then txt:SetText(specName(g)) elseif tab.SetText then tab:SetText(specName(g)) end
@@ -268,13 +240,11 @@ function T.RefreshSpecTabs()
       tab:Hide()
     end
 
-    for g = 2, 4 do
-      local t2 = _G[TAB_NAMES[g]]
-      if t2 then t2:Hide() end
-    end
+    local t2 = _G[TAB_NAMES[2]]
+    if t2 then t2:Hide() end
   end
 
-  -- Pet tab (between the player-spec tabs and Glyphs)
+  -- Pet tab (between the player-spec tabs and Glyphs). Only for a hunter with a talented pet out.
   if petAvail then
     local ptab = buildPetTab()
     local ptxt = _G[PET_TAB_NAME .. "Text"]
@@ -286,7 +256,6 @@ function T.RefreshSpecTabs()
     if ptab then ptab:Hide() end
   end
 
-  -- Glyph Tab
   if hasGlyph then
     local gtab = buildGlyphTab()
     local gtxt = _G[GLYPH_TAB_NAME .. "Text"]
@@ -303,22 +272,19 @@ function T.RefreshSpecTabs()
     return
   end
 
-  -- Auto-size and chain all tabs horizontally along the bottom edge
+  -- size each tab to its (possibly renamed) text + chain them along the bottom edge
   if NE.tabs and NE.tabs.SizeAndAnchorTabs then
     NE.tabs.SizeAndAnchorTabs(f, tabsToSize, { startX = 14, startY = 0, parentPoint = "BOTTOMLEFT" })
   end
 
-  -- Update selected tab art for all 4 specs
+  -- A player-spec tab is selected only when neither glyphs nor pet view owns the window.
   local specTurn = (not glyphActive) and (not petActive)
   if num >= 2 then
-    for g = 1, num do 
-      local tab = _G[TAB_NAMES[g]]
-      if tab then setTabArt(tab, specTurn and (g == viewG)) end 
-    end
+    for g = 1, 2 do setTabArt(_G[TAB_NAMES[g]], specTurn and (g == viewG)) end
     if glyphActive or petActive then
-      if T._specCog then T._specCog:Hide() end
+      if T._specCog then T._specCog:Hide() end   -- rename cog is a player-spec affordance
     else
-      buildCog():Show()
+      buildCog():Show()   -- anchored top-right inside the window (set in buildCog)
     end
   else
     if T._specCog then T._specCog:Hide() end

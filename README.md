@@ -15,7 +15,7 @@ DragonUI ports the Dragonflight **HUD** to 3.3.5a. **DragonUI_NewEra** fills in 
 A full custom replacement for the 3.3.5a `CharacterFrame`, styled to match Dragonflight:
 
 - Paperdoll (3D model + all equipment slots) with modern model controls (zoom, click-drag rotate / pan)
-- **Stats sidebar** (General / Attributes / Melee / Ranged / Spell / Defense / Resistances) with proper tooltips - compatible with [EnhancedCharStats](https://github.com/thezephyrsong/EnhancedCharStats/)
+- **Stats sidebar** (General / Attributes / Melee / Ranged / Spell / Defense / Resistances) with proper tooltips
 - Tabs for **Character, Pet, Skills, Honor, Reputation**
 - **Titles** picker — set your title from the panel; the window header shows `Name <Title>`
 - **Equipment Manager** — a fully client-side gear-set manager (works on any server, no reliance on the native equipment-manager API)
@@ -60,7 +60,7 @@ A standalone War-Within-style talent window over WotLK's classic grid talents, o
 - **Per-tier centering** — rows with fewer than four talents are packed and centred (the way retail lays them out), and the three trees are centred in the window.
 - **Spec-art backgrounds** — each class/spec paints its own artwork behind the trees.
 - **Animated connectors** — prerequisite links draw as a flowing dotted line straight from one talent to the talent that needs it.
-- **Multi-spec** — bottom tabs switch between up to 4 specs depending on server configurations; rename the specs from the cog (custom names persist per character). View your other spec read-only (dimmed) and hit **Activate** to switch to it.
+- **Dual-spec** — bottom tabs switch between **Primary** and **Secondary**; rename either spec from the cog (custom names persist per character). View your other spec read-only (dimmed) and hit **Activate** to switch to it.
 - **Pet talents** — hunters with a talented pet out get a **Pet** tab (Ferocity / Tenacity / Cunning) on the pet's own family artwork, with the same live preview → Apply / Reset flow, the pet's circular portrait, the correct 3-points-per-tier gating, and the single tree centred in the window.
 - Sound cues for spending, refunding, applying, and switching specs.
 
@@ -75,7 +75,6 @@ The **Glyphs** tab shares the talent window — a hexagon of major/minor glyph s
 - **Class artwork** — each class gets its own full-window Legion-artifact-style backdrop behind the sockets.
 - **One title, per-spec labels** — a single **GLYPHS** header; under dual spec each spec's name (**PRIMARY** / **SECONDARY**, or your custom rename, in caps) is lined up above its own socket cluster instead of repeating the title.
 - **Animated links** — the same flowing dotted connectors as the talent trees tie the sockets together.
-- ***Optional*** - see a list of the effects of each glyphs next to the glyphs
 
 ### Professions
 
@@ -107,6 +106,26 @@ A retail-style **combined bag** plus a per-window restyle for the **individual**
 - **Keyring row** *(optional)* — show your keys as a **KEYS** row inside the window.
 - **At-a-glance cues** — item-rarity glow, a red tint on anything you can't use (missing weapon/armor proficiency, too low a level, or a recipe whose profession/skill you don't have), the merchant "sell" cursor, a quest-item glow, and optional auto-sell-junk at vendors.
 
+### Social & Guild
+
+![Guild and Social windows](screenshots/social-guild.png)
+
+Standalone Dragonflight-style windows replacing the 3.3.5a `GuildFrame` and `FriendsFrame`:
+
+**Guild** — a **Communities**-look window scoped to what 3.3.5a actually serves (no Benefits/Rewards, ClubFinder, or calendar — those are Cata+ systems):
+
+- **Roster** — sortable member list (Level / Class icon / Name / Zone / Rank / Note) with a guild-tabard badge, member detail, and the full permission-gated action set: public/officer notes, promote/demote/remove, and party invite.
+- **Guild Info** — the Message of the Day and Guild Information text wells, editable in place when you have the right, shown side by side with Guild Chat.
+- **Guild Chat, with history sync** — regular guild and officer chat rendered in the modern chrome, with **class-colored names** (live and backlog). Since 3.3.5a keeps no server-side chat log, a rolling per-guild history is saved locally and, on login, synced from other online guildmates over an addon message so a fresh `/reload` doesn't show an empty window — deduplicated and correctly ordered even across guildmates' differing system clocks. History is shared across all characters on your account in the same guild.
+
+**Social** — built on the classic friends/ignore/who/channels/raid APIs:
+
+- **Friends** — two-line entries (status icon + name/level/class over zone) with Friends and Ignore sub-tabs.
+- **Who** — the stock Name / Zone / Lvl / Class columns, with a switchable second column (zone/guild/race) and full filter support.
+- **Guild** — opens the standalone Guild window above rather than hosting a duplicate view inline.
+- **Chat** — the chat-channels tab: a grouped channel list (Group / World / Custom headers) on the left, a live roster for the selected channel on the right, and an Add-channel button.
+- **Raid** — a native raid roster grid with convert-to-raid and a full right-click context menu (promote, demote, assign main tank/assist, remove), permission-gated the same as stock.
+
 ## Roadmap
 
 Faithfully downporting the remaining NewEra panels to 3.3.5a:
@@ -116,6 +135,8 @@ Faithfully downporting the remaining NewEra panels to 3.3.5a:
 - [x] ~~**Talents**~~ — *done* (3-tree panel, live preview/Apply/Reset, retail-style nodes, per-tier centering, spec-art backgrounds, animated connectors, dual-spec tabs with custom names, hunter **pet talents** tab, and a **glyphs** page with per-class artwork)
 - [x] ~~**Professions**~~ — *done* (Main profession Window, extra integration with Auctionator via AH Scan Button)
 - [x] ~~**Auction House**~~ — *done* (Buy/Sell/Auctions panel, plus a full Auctionator embed + reskin when it's installed)
+- [x] ~~**Guild**~~ — *done* (Roster with member actions, Guild Info, Guild Chat with class-colored names + cross-session/cross-character history sync)
+- [x] ~~**Social**~~ — *done* (Friends + Ignore, Who, Chat channels, Raid roster; Guild tab opens the standalone Guild window)
 - [ ] **Bags** — *work in progress* (retail combined bag + individual-bag restyle: grid, smart sort, separated specialty-bag sections, keyring row, rarity/usable cues, money + currency band)
 - [ ] **Quest Log**
 - [ ] **Merchant**

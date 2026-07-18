@@ -122,5 +122,28 @@ modules\auctionhouse\TabBridge.lua
 modules\auctionhouse\Window.lua
 modules\auctionhouse\AuctionatorEmbed.lua
 
+# --- Guild (modern Communities-style guild window; downport of NewEra/Guild) ---
+# Load order: Assets (BLPs + atlas rects) -> Window (shell + mode switching + the Roster-only left
+# GuildColumn) -> data layers (Roster/Info/Chat) -> Tabard (the GuildColumn's crest badge) -> Open
+# (route ToggleGuildFrame / native GuildFrame to NE_GuildFrame).
+modules\guild\Assets.lua
+modules\guild\Window.lua
+modules\guild\Roster.lua
+modules\guild\Info.lua
+modules\guild\Chat.lua
+modules\guild\Tabard.lua
+modules\guild\Open.lua
+
+# --- Social (modern friends window; downport of NewEra/Social) ---
+# Load order: Assets (portrait BLP) -> Window (shell + tabs + ToggleFriendsFrame redirect) -> the
+# per-tab list files. The Guild tab opens the Guild window above. Chat (channels) + Raid have no
+# NewEra counterpart to port — they're built natively on the classic channel/raid APIs.
+modules\social\Assets.lua
+modules\social\Window.lua
+modules\social\Friends.lua
+modules\social\Who.lua
+modules\social\Channels.lua
+modules\social\Raid.lua
+
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---
 core\_HelloDemo.lua
