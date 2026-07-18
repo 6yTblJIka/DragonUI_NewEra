@@ -47,19 +47,17 @@ local TAB_DEFS = {
   { key = "InfoTab",   mode = "GUILD_INFO", icon = "Interface\\Icons\\INV_Scroll_03",         tip = GUILD_INFORMATION or "Guild Information" },
 }
 
--- Mirror AH's per-module enable gate (DragonUI profile.newera.modules[MODULE].enabled). The
--- options panel exposes only ONE checkbox, "Social (Friends/Who/Guild/Chat/Raid)" (id "Social"),
--- covering both windows — there is no separate Guild row — so Guild must also fold in Social's
--- flag: unchecking Social should take the standalone Guild window down with it, not just the
--- Friends window.
+-- Gated entirely by the options panel's single "Social (Friends/Who/Guild/Chat/Raid)" checkbox
+-- (id "Social") — there is no separate Guild row, so Guild has no enable flag of its own; consult
+-- ONLY modules.Social. (A short-lived separate "Guild" toggle briefly existed and was removed —
+-- do NOT resurrect a modules[MODULE] check here, or a stray leftover modules.Guild.enabled=false
+-- from that toggle's use would wedge Guild disabled forever with no control left to undo it.)
 local function isModuleEnabled()
   local dragon = NE.dragon
   if not (dragon and dragon.db and dragon.db.profile and dragon.db.profile.newera) then return true end
   local modules = dragon.db.profile.newera.modules
   local social = modules and modules.Social
   if type(social) == "table" and social.enabled == false then return false end
-  local m = modules and modules[MODULE]
-  if type(m) == "table" and m.enabled ~= nil then return m.enabled and true or false end
   return true
 end
 

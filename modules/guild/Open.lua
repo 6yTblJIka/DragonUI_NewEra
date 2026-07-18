@@ -20,18 +20,15 @@ BINDING_HEADER_DRAGONUI_NEWERA = BINDING_HEADER_DRAGONUI_NEWERA or "DragonUI New
 BINDING_NAME_NEWERA_TOGGLEGUILD = BINDING_NAME_NEWERA_TOGGLEGUILD or "Toggle Guild Window"
 BINDING_NAME_NEWERA_TOGGLESOCIAL = BINDING_NAME_NEWERA_TOGGLESOCIAL or "Toggle Social Window"
 
-local MODULE = "Guild"
--- Same fold-in as Window.lua's isModuleEnabled: the options panel's "Social" checkbox is the only
--- toggle covering Guild (there's no separate Guild row), so disabling Social must also disable the
--- standalone Guild window/redirects, not just the Friends window.
+-- Same as Window.lua's isModuleEnabled: gated entirely by the options panel's single "Social"
+-- checkbox — Guild has no enable flag of its own (see Window.lua's comment for why a
+-- modules["Guild"] fallback must NOT be reintroduced here).
 local function isModuleEnabled()
   local dragon = NE.dragon
   if not (dragon and dragon.db and dragon.db.profile and dragon.db.profile.newera) then return true end
   local modules = dragon.db.profile.newera.modules
   local social = modules and modules.Social
   if type(social) == "table" and social.enabled == false then return false end
-  local m = modules and modules[MODULE]
-  if type(m) == "table" and m.enabled ~= nil then return m.enabled and true or false end
   return true
 end
 G.IsEnabled = isModuleEnabled
