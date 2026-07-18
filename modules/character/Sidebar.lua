@@ -105,6 +105,11 @@ local function ratingBonus(cr)
   local ok, v = pcall(GetCombatRatingBonus, cr)
   return (ok and v) or 0
 end
+-- Stock shows melee/ranged haste inside the Attack Speed tooltip (PaperDollFrame_SetAttackSpeed),
+-- not as its own row. Mirror that: "Haste rating N (X% haste)".
+local function hasteLine(cr)
+  return format(_G.CR_HASTE_RATING_TOOLTIP or "Haste rating %d (%.2f%% haste)", rating(cr), ratingBonus(cr))
+end
 
 -- Self-contained melee hand maths (DUIC ComputeHand — replaces the retail combat dummy).
 local function computeHand(minDamage, maxDamage, physPos, physNeg, percent, speed)
@@ -249,7 +254,7 @@ local SECTIONS = {
           local frameText = format("%.2f", speed or 0)
           if offSpeed then frameText = frameText .. " / " .. format("%.2f", offSpeed) end
           return frameText, (L("ATTACK_SPEED", "Attack Speed") .. " " .. frameText),
-                 "Seconds between melee swings."
+                 "Seconds between melee swings.\n" .. hasteLine(CR_HASTE_MELEE or 18)
         end },
       { id = "hit", name = L("COMBAT_RATING_NAME6", "Hit Rating"), func = function()
           local r = rating(CR_HIT_MELEE)
@@ -316,7 +321,9 @@ local SECTIONS = {
       { id = "r_speed", name = L("ATTACK_SPEED", "Attack Speed"), func = function()
           if not hasRanged() then return L("NOT_APPLICABLE", "N/A") end
           local speed = UnitRangedDamage("player")
-          return format("%.2f", speed or 0)
+          local ft = format("%.2f", speed or 0)
+          return ft, (L("ATTACK_SPEED", "Attack Speed") .. " " .. ft),
+                 hasteLine(CR_HASTE_RANGED or 19)
         end },
       { id = "r_hit", name = L("STAT_HIT_CHANCE", "Hit Chance"), func = function()
           if not hasRanged() then return L("NOT_APPLICABLE", "N/A") end
@@ -353,8 +360,19 @@ local SECTIONS = {
         end },
       { id = "s_hit", name = L("COMBAT_RATING_NAME8", "Spell Hit"), func = function()
           local r = rating(CR_HIT_SPELL)
-          return tostring(r), (L("COMBAT_RATING_NAME8", "Spell Hit") .. " " .. r),
-                 format("Improves your chance to hit with spells by %.2f%%.", ratingBonus(CR_HIT_SPELL))
+          local pen = (GetSpellPenetration and GetSpellPenetration()) or 0
+          -- Faithful to the stock Spell Hit tooltip (PaperDollFrame.lua:342, issue #11): the spell
+          -- penetration line always shows, even at 0. Reuse Blizzard's own localized format string
+          -- when present so the text is byte-identical to default; fall back to a literal otherwise.
+          local fmt = _G.CR_HIT_SPELL_TOOLTIP
+          local body
+          if type(fmt) == "string" then
+            body = format(fmt, UnitLevel("player") or 0, ratingBonus(CR_HIT_SPELL), pen, pen)
+          else
+            body = format("Improves your chance to hit with spells by %.2f%%.\n\nSpell Penetration %d (Reduces enemy resistances by %d)",
+                          ratingBonus(CR_HIT_SPELL), pen, pen)
+          end
+          return tostring(r), (L("COMBAT_RATING_NAME8", "Spell Hit") .. " " .. r), body
         end },
       { id = "s_regen", name = L("MANA_REGEN", "Mana Regen"), func = function()
           if not (UnitHasMana and UnitHasMana("player")) then return L("NOT_APPLICABLE", "N/A") end
@@ -376,6 +394,12 @@ local SECTIONS = {
           local str = format("%.2f%%", minCrit)
           return str, (L("SPELL_CRIT_CHANCE", "Spell Crit") .. " " .. str),
                  "Chance of spells dealing extra damage."
+        end },
+      { id = "s_haste", name = "Haste Rating", func = function()
+          local cr = CR_HASTE_SPELL or 20
+          local r = rating(cr)
+          return tostring(r), ("Haste Rating " .. r),
+                 format(_G.SPELL_HASTE_TOOLTIP or "Increases the speed that your spells cast by %.2f%%.", ratingBonus(cr))
         end },
     },
   },
@@ -418,6 +442,13 @@ local SECTIONS = {
           local blockVal = (GetShieldBlock and GetShieldBlock()) or 0
           return str, (L("BLOCK_CHANCE", "Block Chance") .. str),
                  format("Chance to block. Requires a shield.\nBlock Value: %d", blockVal)
+        end },
+      { id = "resilience", name = "Resilience", func = function()
+          local cr = CR_CRIT_TAKEN_MELEE or 15   -- resilience rating (drives all three crit-taken schools)
+          local r = rating(cr)
+          return tostring(r), ("Resilience " .. r),
+                 format("Reduces the chance you'll be critically hit by %.2f%% and reduces critical damage taken.",
+                        ratingBonus(cr))
         end },
     },
   },
