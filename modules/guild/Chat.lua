@@ -172,6 +172,19 @@ repaintLog = function()
   end
 end
 
+-- Retries the backlog replay G.SetupChat had to skip because guildKey() (GetGuildInfo("player"))
+-- wasn't resolved yet. Safe to call speculatively any time guild info might have just become
+-- available; it's a no-op unless SetupChat actually left the flag set.
+local function tryReplayBacklog()
+  local panel = G.frame and G.frame.ChatFrame
+  if not panel or not panel._needsBacklog then return end
+  local s = store()
+  if not s then return end -- guild info still not resolved; keep waiting
+  panel._needsBacklog = nil
+  if next(nameClass) == nil then panel._needsRecolor = true end
+  repaintLog()
+end
+
 function G.SetupChat(f)
   local panel = f.ChatFrame
   if not panel or panel._built then return end
@@ -230,15 +243,22 @@ function G.SetupChat(f)
   edit:SetScript("OnEscapePressed", function(self) self:SetText(""); self:ClearFocus() end)
   panel.Edit = edit
 
-  -- Replay whatever we already have logged (earlier this session, or synced from a guildmate) so
-  -- opening the window doesn't start blank. Backlog lines get the dim timestamp treatment; live
-  -- lines arriving from here on print with the plain style via appendGuild() below.
+  -- Replay whatever we already have logged (earlier THIS or a DIFFERENT character on the same
+  -- account, or synced from a guildmate) so opening the window doesn't start blank. Backlog lines
+  -- get the dim timestamp treatment; live lines arriving from here on print with the plain style
+  -- via appendGuild() below.
   local s = store()
   if s then
     if next(nameClass) == nil then panel._needsRecolor = true end -- roster not loaded yet
     for _, e in ipairs(s.entries) do
       printBacklogLine(msg, e.kind, e.author, e.message, e.epoch)
     end
+  else
+    -- guildKey() came back nil — GetGuildInfo("player") hasn't resolved yet this soon after
+    -- login/char-switch (owner report 2026-07-18: history from another character on the same
+    -- account "isn't there" if the window's opened quickly). SetupChat only ever runs once
+    -- (panel._built), so flag it for tryReplayBacklog() to retry once guild info is available.
+    panel._needsBacklog = true
   end
 end
 
@@ -317,16 +337,26 @@ ev:RegisterEvent("CHAT_MSG_OFFICER")
 ev:RegisterEvent("CHAT_MSG_ADDON")
 ev:RegisterEvent("PLAYER_ENTERING_WORLD")
 ev:RegisterEvent("GUILD_ROSTER_UPDATE")
+ev:RegisterEvent("PLAYER_GUILD_UPDATE")   -- fires once our own guild membership info resolves
 ev:SetScript("OnEvent", function(_, event, a1, a2, a3)
   if event == "GUILD_ROSTER_UPDATE" then
     refreshRosterClasses()
+    tryReplayBacklog()
+    return
+  end
+
+  if event == "PLAYER_GUILD_UPDATE" then
+    tryReplayBacklog()
     return
   end
 
   if event == "PLAYER_ENTERING_WORLD" then
     refreshRosterClasses()
+    tryReplayBacklog()
     if GuildRoster then GuildRoster() end   -- request a fresh roster so classes resolve promptly
-    C_Timer.After(5, requestSync)   -- let the guild roster populate first
+    -- Belt-and-braces retry: PLAYER_GUILD_UPDATE/GUILD_ROSTER_UPDATE normally beat this to it, but
+    -- if guild info resolved without either firing again this session, don't leave history stuck.
+    C_Timer.After(5, function() tryReplayBacklog(); requestSync() end)
     return
   end
 
