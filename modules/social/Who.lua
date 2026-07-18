@@ -18,11 +18,13 @@ local ROW_HEIGHT = 16
 -- Columns, in the STOCK 3.3.5a order (owner supplied the stock frames as reference 2026-07-16):
 -- Name | Zone | Lvl | Class — NOT the Name/Level/Class/Zone of the first pass.
 -- { title, x, w, justify }; w 0 = fill to the row's right edge.
+-- `sort` = the SortWho() criterion this header sorts by (nil = not a sort header). Column 2 is the
+-- switchable Zone/Guild/Race field, so its sort key follows the selected field (see WHO_FIELDS).
 local COLUMNS = {
-  { title = NAME or "Name",        x = 4,   w = 150, justify = "LEFT" },
+  { title = NAME or "Name",        x = 4,   w = 150, justify = "LEFT",   sort = "name" },
   { title = ZONE or "Zone",        x = 156, w = 170, justify = "LEFT" },
-  { title = LEVEL_ABBR or "Lvl",   x = 328, w = 40,  justify = "CENTER" },
-  { title = CLASS or "Class",      x = 370, w = 0,   justify = "LEFT" },
+  { title = LEVEL_ABBR or "Lvl",   x = 328, w = 40,  justify = "CENTER", sort = "level" },
+  { title = CLASS or "Class",      x = 370, w = 0,   justify = "LEFT",   sort = "class" },
 }
 
 -- Column 2 is SWITCHABLE (owner steer 2026-07-17: "who list needs to be able to show
@@ -49,6 +51,8 @@ local function openWhoFieldMenu(panel, anchor)
       func = function()
         panel._field = fdef.key
         if panel._fieldHeaderFS then panel._fieldHeaderFS:SetText(fdef.label) end
+        -- Selecting a field also sorts by it (SortWho keys are lowercase: zone/guild/race).
+        if SortWho then SortWho(fdef.key:lower()) end
         SO.RefreshWho()
       end,
     }
@@ -171,9 +175,29 @@ function SO.SetupWho(f)
       arrow:SetPoint("LEFT", fs, "RIGHT", 2, 0)
       btn:SetScript("OnClick", function(self) openWhoFieldMenu(panel, self) end)
     else
-      local fs = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-      fs:SetPoint("LEFT", header, "LEFT", col.x + 2, 0)
+      -- Clickable sort header: SortWho() reorders the current results (and reverses on a repeat
+      -- click by the same criterion), then we repaint. A hover tint signals it's clickable.
+      local btn = CreateFrame("Button", nil, header)
+      btn:SetPoint("LEFT", header, "LEFT", col.x, 0)
+      if col.w > 0 then
+        btn:SetSize(col.w, 16)
+      else
+        btn:SetPoint("RIGHT", header, "RIGHT", 0, 0)
+        btn:SetHeight(16)
+      end
+      local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+      fs:SetPoint("LEFT", btn, "LEFT", 2, 0)
       fs:SetText(col.title)
+      fs:SetJustifyH(col.justify)
+      if col.sort then
+        btn:SetScript("OnClick", function()
+          if SortWho then SortWho(col.sort) end
+          if SO.RefreshWho then SO.RefreshWho() end
+        end)
+        -- Brighten on hover to signal the header is clickable; restore the default highlight tint.
+        btn:SetScript("OnEnter", function() fs:SetTextColor(1, 1, 0.6) end)
+        btn:SetScript("OnLeave", function() fs:SetTextColor(1, 1, 1) end)
+      end
     end
   end
 
