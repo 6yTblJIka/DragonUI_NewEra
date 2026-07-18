@@ -330,11 +330,13 @@ selectTab = function(key)
     if CP.HideTitles then pcall(CP.HideTitles) end
     if CP.ExpandSidebar then pcall(CP.ExpandSidebar) end
   elseif key == "Pet" then
-    -- DOWNPORT/REPORT: if Companions.lua's Mounts & Companions grid is showing, its own toggle
-    -- already collapsed the sidebar (mounts/companions have no combat stats worth displaying) -
-    -- don't let re-entering the Pet tab unconditionally re-expand it out from under that.
+    -- DOWNPORT/REPORT: if Companions.lua's Mounts & Companions grid is showing, the sidebar space is
+    -- repurposed for its 3D model preview rather than collapsed - SyncPetSidebarForCollection keeps
+    -- the frame expanded and swaps InsetRight's content, so re-entering the Pet tab doesn't yank the
+    -- preview away and put the stale pet stats back up (which unconditional ExpandPetSidebar would do).
     if CP.IsPetCollectionActive and CP.IsPetCollectionActive() then
-      if CP.CollapseSidebar then pcall(CP.CollapseSidebar) end
+      if CP.SyncPetSidebarForCollection then pcall(CP.SyncPetSidebarForCollection)
+      elseif CP.CollapseSidebar then pcall(CP.CollapseSidebar) end
     elseif CP.ExpandPetSidebar then pcall(CP.ExpandPetSidebar)
     elseif CP.ExpandSidebar then pcall(CP.ExpandSidebar) end
   else

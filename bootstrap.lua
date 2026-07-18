@@ -49,11 +49,14 @@ NE.L = NE.L or setmetatable({}, { __index = function(_, k) return k end })
 -- SavedVariables. Our OWN db holds panel-internal per-char state (equipment sets, talent prefs)
 -- plus account-wide window positions (db.windowPos[key], see FrameUtil.PersistWindowPosition).
 -- Panel ENABLE flags live in DragonUI (DragonUIDB) via profile.newera for a unified UX.
-local CURRENT_SCHEMA = 1
+local CURRENT_SCHEMA = 2
 NE.migrations = NE.migrations or {}
 NE.migrations[1] = function(db)
     db.equipmentSets = db.equipmentSets or {}   -- [charKey] = sets
     db.talents       = db.talents       or {}   -- [charKey] = talent prefs
+end
+NE.migrations[2] = function(db)
+    db.companionFavorites = db.companionFavorites or {}  -- [charKey][filterType..":"..creatureID] = true
 end
 
 local function applyMigrations(db)

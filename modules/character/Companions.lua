@@ -48,7 +48,7 @@ local pane
 local topRow, petModeBtn, collectionModeBtn
 local collectionFrame, filterRow, mountFilterBtn, critterFilterBtn
 local scroll, content, emptyLabel
-local previewHost, previewModel, previewName, previewHint
+local previewHost, previewModel, previewName, previewHint, previewFavBtn
 local activeFilter = "MOUNT"     -- "MOUNT" or "CRITTER"
 local collectionActive = false
 local previewedData               -- the companion currently shown in the 3D preview (or nil)
@@ -59,6 +59,51 @@ local function getPane()
   if pane then return pane end
   pane = _G.DragonUI_NewEra_CharacterPane_Pet or (CP.EnsurePane and CP.EnsurePane("Pet"))
   return pane
+end
+
+-- ---------------------------------------------------------------------------
+-- Favorites (per-character, persisted in NE.db - see bootstrap.lua schema 2)
+-- ---------------------------------------------------------------------------
+-- Keyed by filter+creatureID rather than list index/slot, since GetCompanionInfo's slot ordering
+-- isn't guaranteed stable across sessions (per Blizzard's own docs) - creatureID is the one thing
+-- that reliably identifies "this specific mount/pet" from one login to the next.
+local function favKey(data)
+  if not (data and data.creatureID) then return nil end
+  return activeFilter .. ":" .. tostring(data.creatureID)
+end
+
+local function favTable()
+  if not (NE.db and NE.CharKey) then return nil end
+  NE.db.companionFavorites = NE.db.companionFavorites or {}
+  local key = NE.CharKey()
+  NE.db.companionFavorites[key] = NE.db.companionFavorites[key] or {}
+  return NE.db.companionFavorites[key]
+end
+
+local function isFavorite(data)
+  local t, k = favTable(), favKey(data)
+  return t ~= nil and k ~= nil and t[k] == true
+end
+
+local function setFavorite(data, fav)
+  local t, k = favTable(), favKey(data)
+  if not (t and k) then return end
+  if fav then t[k] = true else t[k] = nil end
+end
+
+-- Stable partition: favorites first (in their existing relative order), then everything else -
+-- rather than a full sort, so non-favorites don't get shuffled around by name/index each refresh.
+local function applyFavoritesOrder()
+  local t = favTable()
+  if not t then return end
+  local favs, rest = {}, {}
+  for _, data in ipairs(list) do
+    local k = favKey(data)
+    if k and t[k] then table.insert(favs, data) else table.insert(rest, data) end
+  end
+  local n = 0
+  for i = 1, #favs do n = n + 1; list[n] = favs[i] end
+  for i = 1, #rest do n = n + 1; list[n] = rest[i] end
 end
 
 -- ---------------------------------------------------------------------------
@@ -79,11 +124,80 @@ local function rebuildList()
       }
     end
   end
+  applyFavoritesOrder()
 end
 
 -- ---------------------------------------------------------------------------
 -- 3D preview (repurposes the pet-stats sidebar's InsetRight space - see applySidebarMode below)
 -- ---------------------------------------------------------------------------
+-- Reuses the same 4-quarter race-keyed background ModelArea.lua stitches behind the main Character
+-- tab's CharacterModelFrame (desaturated + dark race-tinted overlay), via the CP.RaceBgQuarters(race)
+-- lookup it exposes for exactly this kind of reuse. Native quarter art is proportioned for a 231x320
+-- model (retail's fixed size); our preview frame is a different size (it fills whatever's left of
+-- InsetRight), so instead of fixed pixel dimensions like ModelArea.lua uses, each quarter is sized as
+-- a fraction of the preview frame's actual width/height, recomputed on OnSizeChanged.
+local RACE_BG_W_TL, RACE_BG_W_TR = 212 / 231, 19 / 231
+local RACE_BG_H_TL, RACE_BG_H_BL = 245 / 373, 128 / 373
+
+local function resizePreviewBg(model)
+  local w, h = model:GetWidth(), model:GetHeight()
+  if not w or not h or w <= 0 or h <= 0 then return end
+  local tlW, trW = w * RACE_BG_W_TL, w * RACE_BG_W_TR
+  local tlH, blH = h * RACE_BG_H_TL, h * RACE_BG_H_BL
+  model._bgTL:SetSize(tlW, tlH)
+  model._bgTR:SetSize(trW, tlH)
+  model._bgBL:SetSize(tlW, blH)
+  model._bgBR:SetSize(trW, blH)
+end
+
+local function buildPreviewBackground(model)
+  if model._neBgBuilt then return end
+
+  local bgTL = model:CreateTexture(nil, "BACKGROUND")
+  bgTL:SetPoint("TOPLEFT", model, "TOPLEFT", 0, 0)
+  bgTL:SetTexCoord(0.171875, 1, 0.0392156862745098, 1)
+
+  local bgTR = model:CreateTexture(nil, "BACKGROUND")
+  bgTR:SetPoint("TOPLEFT", bgTL, "TOPRIGHT", 0, 0)
+  bgTR:SetTexCoord(0, 0.296875, 0.0392156862745098, 1)
+
+  local bgBL = model:CreateTexture(nil, "BACKGROUND")
+  bgBL:SetPoint("TOPLEFT", bgTL, "BOTTOMLEFT", 0, 0)
+  bgBL:SetTexCoord(0.171875, 1, 0, 1)
+
+  local bgBR = model:CreateTexture(nil, "BACKGROUND")
+  bgBR:SetPoint("TOPLEFT", bgTL, "BOTTOMRIGHT", 0, 0)
+  bgBR:SetTexCoord(0, 0.296875, 0, 1)
+
+  -- Same dark race-tint overlay ModelArea.lua uses, above the bg quarters / below the model.
+  local overlay = model:CreateTexture(nil, "BORDER")
+  if overlay.SetColorTexture then overlay:SetColorTexture(0, 0, 0) else overlay:SetTexture(0, 0, 0) end
+  overlay:SetPoint("TOPLEFT", bgTL, "TOPLEFT", 0, 0)
+  overlay:SetPoint("BOTTOMRIGHT", bgBR, "BOTTOMRIGHT", 0, 0)
+
+  model._bgTL, model._bgTR, model._bgBL, model._bgBR, model._bgOverlay = bgTL, bgTR, bgBL, bgBR, overlay
+  model._neBgBuilt = true
+  model:SetScript("OnSizeChanged", resizePreviewBg)
+end
+
+local function applyPreviewRaceBackground(model)
+  if not (model and CP.RaceBgQuarters) then return end
+  buildPreviewBackground(model)
+  if not model._neBgBuilt then return end
+
+  local _, raceFile = UnitRace("player")
+  local q1, q2, q3, q4, alpha = CP.RaceBgQuarters(raceFile)
+  model._bgTL:SetTexture(q1)
+  model._bgTR:SetTexture(q2)
+  model._bgBL:SetTexture(q3)
+  model._bgBR:SetTexture(q4)
+  for _, t in ipairs({ model._bgTL, model._bgTR, model._bgBL, model._bgBR }) do
+    if t.SetDesaturated then pcall(t.SetDesaturated, t, true) end
+  end
+  model._bgOverlay:SetAlpha(alpha)
+  resizePreviewBg(model)
+end
+
 local function buildPreview()
   if previewModel then return true end
   local host = CP.InsetRight
@@ -111,11 +225,32 @@ local function buildPreview()
       pcall(self.SetRotation, self, self._rot)
     end
   end)
+  pcall(applyPreviewRaceBackground, previewModel)
+  if C_Timer and C_Timer.After then
+    C_Timer.After(0, function() pcall(resizePreviewBg, previewModel) end)
+  end
 
   previewName = host:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   previewName:SetPoint("TOP", host, "TOP", 0, -6)
   previewName:SetPoint("LEFT", host, "LEFT", 6, 0)
-  previewName:SetPoint("RIGHT", host, "RIGHT", -6, 0)
+  previewName:SetPoint("RIGHT", host, "RIGHT", -26, 0) -- leave room for the favorite checkbox
+
+  previewFavBtn = CreateFrame("CheckButton", nil, host, "UICheckButtonTemplate")
+  previewFavBtn:SetSize(20, 20)
+  previewFavBtn:SetPoint("TOPRIGHT", host, "TOPRIGHT", -2, -1)
+  previewFavBtn:SetScript("OnClick", function(self)
+    if not previewedData then self:SetChecked(false); return end
+    setFavorite(previewedData, self:GetChecked() and true or false)
+    refreshCollection()
+  end)
+  previewFavBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    GameTooltip:SetText("Favorite", 1, 0.82, 0)
+    GameTooltip:AddLine("Keeps this at the front of the collection.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  previewFavBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  previewFavBtn:Hide()
 
   previewHint = host:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
   previewHint:SetPoint("CENTER", previewModel, "CENTER", 0, 0)
@@ -131,6 +266,7 @@ local function showPreview(data)
     previewModel:Hide()
     if previewName then previewName:SetText("") end
     if previewHint then previewHint:Show() end
+    if previewFavBtn then previewFavBtn:Hide() end
     return
   end
   if previewHint then previewHint:Hide() end
@@ -141,6 +277,10 @@ local function showPreview(data)
   previewModel._rot = 0
   pcall(previewModel.SetRotation, previewModel, 0)
   if previewName then previewName:SetText(data.name) end
+  if previewFavBtn then
+    previewFavBtn:Show()
+    previewFavBtn:SetChecked(isFavorite(data))
+  end
 end
 
 -- ---------------------------------------------------------------------------
@@ -171,25 +311,30 @@ local function iconOnEnter(self)
   GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
   GameTooltip:SetText(data.name, 1, 1, 1)
   if data.issummoned then
-    GameTooltip:AddLine("Right-click to dismiss", 0, 1, 0)
+    GameTooltip:AddLine("Right-click to dismiss", 1, 0.82, 0)
   else
     GameTooltip:AddLine("Right-click to summon", 1, 0.82, 0)
   end
-  GameTooltip:AddLine("Left-click to preview", 0.6, 0.8, 1)
+  GameTooltip:AddLine("Left-click to preview", 0.82, 0.85, 0.9)
   GameTooltip:Show()
 end
 
 -- A single, clean backdrop ring (rather than a stretched icon-border texture, which distorts once
 -- pushed this far out) so both the "summoned" and "previewing" indicators stay crisp at this size.
-local function makeRing(parent, r, g, b)
+-- Adds a faint tinted glow behind the icon too, echoing retail's gold-highlighted collection rows
+-- (we're a grid of icons rather than text rows, so a full row-fill doesn't apply, but the warm gold
+-- glow + bright edge reads the same way).
+local function makeRing(parent, edgeR, edgeG, edgeB, bgR, bgG, bgB, bgAlpha)
   local ring = CreateFrame("Frame", nil, parent)
   ring:SetPoint("TOPLEFT", parent, "TOPLEFT", -BORDER_SIZE, BORDER_SIZE)
   ring:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", BORDER_SIZE, -BORDER_SIZE)
   ring:SetBackdrop({
+    bgFile = "Interface\\Buttons\\WHITE8X8",
     edgeFile = "Interface\\Buttons\\WHITE8X8",
     edgeSize = BORDER_THICK,
   })
-  ring:SetBackdropBorderColor(r, g, b, 1)
+  ring:SetBackdropColor(bgR or 0, bgG or 0, bgB or 0, bgAlpha or 0)
+  ring:SetBackdropBorderColor(edgeR, edgeG, edgeB, 1)
   ring:Hide()
   return ring
 end
@@ -211,10 +356,10 @@ local function acquireIcon(i)
   slotTex:SetTexture("Interface\\Buttons\\UI-Quickslot2")
   b._slot = slotTex
 
-  -- Green: this one is currently summoned. Blue: this one is what's in the 3D preview. Both can be
-  -- shown at once (offset slightly) since they mean different things.
-  b._activeRing = makeRing(b, 0.25, 1, 0.25)
-  b._previewRing = makeRing(b, 0.35, 0.7, 1)
+  -- Gold: this one is currently summoned (retail's collection "selected" gold). Silver: this one is
+  -- what's in the 3D preview. Both can show at once (offset slightly) since they mean different things.
+  b._activeRing = makeRing(b, 1.0, 0.82, 0.0, 0.55, 0.42, 0.05, 0.35)
+  b._previewRing = makeRing(b, 0.82, 0.85, 0.9, 0.3, 0.32, 0.36, 0.3)
   b._previewRing:SetPoint("TOPLEFT", b, "TOPLEFT", -(BORDER_SIZE + BORDER_THICK + 2), (BORDER_SIZE + BORDER_THICK + 2))
   b._previewRing:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", (BORDER_SIZE + BORDER_THICK + 2), -(BORDER_SIZE + BORDER_THICK + 2))
 
@@ -222,6 +367,7 @@ local function acquireIcon(i)
   hl:SetAllPoints(b)
   hl:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
   hl:SetBlendMode("ADD")
+
 
   b:SetScript("OnEnter", iconOnEnter)
   b:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -363,7 +509,6 @@ local function applySidebarMode(showCollectionSide)
     if CP._sidebar then CP._sidebar:Hide() end
     if buildPreview() then
       showPreview(previewedData) -- re-show whatever was last previewed, or the hint if nothing was
-      previewModel:Show()
     end
   else
     if previewModel then previewModel:Hide() end
@@ -395,6 +540,29 @@ function CP.IsPetCollectionActive()
   return collectionActive
 end
 
+-- Whether this character has an actual controllable combat pet UI at all (Blizzard's own
+-- PetTab_Update rule: Hunter/Warlock/DK/Mage-with-elemental, or anyone with a temporary pet unit
+-- active). Mirrors petTabShown()'s pet-half in TabButtons.lua.
+local function canHavePet()
+  local ok, v = pcall(function() return HasPetUI and HasPetUI() end)
+  return ok and v and true or false
+end
+
+-- Hides the "My Pet" toggle (and the class-pet view behind it) for classes that never have a combat
+-- pet - Shaman, Priest, Rogue, etc. There's nothing useful to show there, so Collection becomes the
+-- only/default view instead of an empty "You do not have a pet." pane the player can't do anything
+-- about. Re-checked on the same events TabButtons.lua watches, since a pet-capable state can appear
+-- mid-session (e.g. a temporary pet-granting trinket/spell on an otherwise petless class).
+local function refreshPetSectionAvailability()
+  local has = canHavePet()
+  if petModeBtn then
+    if has then petModeBtn:Show() else petModeBtn:Hide() end
+  end
+  if not has and not collectionActive then
+    showCollection(true)
+  end
+end
+
 local function buildToggle(host)
   if topRow then return end
 
@@ -415,13 +583,15 @@ local function buildToggle(host)
   petModeBtn:SetText(_G.PET or "My Pet")
   petModeBtn:SetScript("OnClick", function() showCollection(false) end)
   setButtonEnabled(petModeBtn, false) -- resting state = Pet view
+
+  refreshPetSectionAvailability()
 end
 
 local function build()
   local host = getPane()
   if not host then return false end
-  buildToggle(host)
   buildCollectionFrame(host)
+  buildToggle(host)
   return true
 end
 
@@ -435,9 +605,13 @@ boot:RegisterEvent("PLAYER_LOGIN")
 boot:RegisterEvent("PLAYER_ENTERING_WORLD")
 boot:RegisterEvent("COMPANION_LEARNED")
 boot:RegisterEvent("COMPANION_UPDATE")
+boot:RegisterEvent("UNIT_PET")
+boot:RegisterEvent("PET_UI_UPDATE")
 boot:SetScript("OnEvent", function(_, event)
   if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
     if C_Timer and C_Timer.After then C_Timer.After(0, build) else build() end
+  elseif event == "UNIT_PET" or event == "PET_UI_UPDATE" then
+    refreshPetSectionAvailability()
   else
     refreshCollection()
   end
