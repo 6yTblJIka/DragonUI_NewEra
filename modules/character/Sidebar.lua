@@ -693,21 +693,11 @@ local function createCategoryHeader(content, section)
   return row
 end
 
--- Registry of stat elements by id (el.func is looked up live on every hover,
--- so an external addon can override CP._statElements[id].func in place - e.g.
--- Enhanced Character Stats replacing "hit"/"s_hit"/"r_hit" with a talent-aware
--- breakdown - with no need to rebuild or re-anchor any row).
-CP._statElements = CP._statElements or {}
-function CP.GetStatElement(id)
-  return CP._statElements[id]
-end
-
 -- A stat row: 187x15 Button. Faint neutral alternating bg (user preference — NOT the brown atlas).
 local function createStatRow(content, el)
   local row = CreateFrame("Button", nil, content)
   row:SetSize(ROW_W, ROW_H)
   row._el = el
-  if el.id then CP._statElements[el.id] = el end
 
   -- Alternating-row bg (faint neutral white tint). Shown on even rows by the layout pass.
   local rowBg = row:CreateTexture(nil, "BACKGROUND")
