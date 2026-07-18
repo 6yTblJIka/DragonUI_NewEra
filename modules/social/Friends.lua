@@ -341,30 +341,6 @@ local function setupFriendsView(view)
   scroll.ScrollBar = _G["NE_SocialFriendsScrollScrollBar"]   -- 3.3.5a template has no parentKey
   buildModernScrollbar(scroll)
 
-  -- Online/offline separator (owner steer 2026-07-17: "a separator in the list between online and
-  -- offline friends, just a light grey bar"). One shared bar, repositioned each refresh to sit
-  -- between whichever two VISIBLE rows are the online->offline transition (RefreshFriends below);
-  -- naturally hides itself when that boundary has scrolled out of view or doesn't exist (all
-  -- online/all offline).
-  --
-  -- BUG FIX (owner report 2026-07-17: "divider isn't visible"): a texture parented straight to
-  -- `view` draws at VIEW's frame level. The rows are CreateFrame("Button", nil, view) — child
-  -- FRAMES default to one level above their parent — so every row's own background painted over
-  -- this texture regardless of its OVERLAY draw layer (frame level always wins over draw layer
-  -- across different frames). Give the bar its own frame, explicitly leveled above the rows.
-  local sepFrame = CreateFrame("Frame", nil, view)
-  sepFrame:SetFrameLevel(view:GetFrameLevel() + 10)
-  -- UI-TooltipDivider-Transparent (owner steer 2026-07-17: "3/4 line, more of a grey glowy line
-  -- than a solid one") — the stock tooltip-divider asset: a soft grey glow that fades out toward
-  -- both ends, built for sitting over an arbitrary background (the -Transparent variant, unlike
-  -- the plain UI-TooltipDivider which assumes a solid tooltip backdrop behind it). Width is set to
-  -- 75% of the row per-refresh below (RefreshFriends), centered.
-  local sep = sepFrame:CreateTexture(nil, "OVERLAY")
-  sep:SetTexture("Interface\\Common\\UI-TooltipDivider-Transparent")
-  sep:SetHeight(8)
-  sep:Hide()
-  view._sep = sep
-
   view._rows = {}
   for i = 1, NUM_ROWS do
     local row = CreateFrame("Button", nil, view)
@@ -474,12 +450,10 @@ function SO.RefreshFriends()
 
   local total = (GetNumFriends and GetNumFriends()) or 0
   local offset = FauxScrollFrame_GetOffset(view._scroll)
-  local prevConnected, sepPlaced = nil, false
 
   for i = 1, NUM_ROWS do
     local idx = offset + i
     local row = view._rows[i]
-    local isBoundary = false
     if idx <= total then
       local name, level, class, area, connected, status, note = GetFriendInfo(idx)
       row._index = idx
@@ -501,26 +475,6 @@ function SO.RefreshFriends()
         row.info:SetTextColor(0.4, 0.4, 0.4)
       end
       if row._sel then row._sel:SetShown(idx == view._selected) end
-      -- BUG FIX (owner report 2026-07-17: "divider doesn't show, no padding between online/offline
-      -- either" — same root cause for both, this flag drives them both). `connected == false`
-      -- never matched: GetFriendInfo's offline value here is nil, not a literal false, so the
-      -- equality check silently failed every time. Truthy/falsy comparison instead.
-      isBoundary = (prevConnected and not connected) and true or false
-      if isBoundary and view._sep then
-        -- Centered in the 10px gap opened up below, both directions (owner steer 2026-07-17: gap
-        -- to the offline row below read as gone/too small). BUG FIX: anchoring by the line's TOP
-        -- edge 5px above the row put its CENTER there instead — an 8px-tall texture anchored by
-        -- its top extends 8px downward from that point, so it bled 3px past the row's top edge
-        -- into the gap meant to clear it. CENTER anchor instead, so the texture's own height is
-        -- split evenly above/below the midpoint of the 10px gap. Width 3/4 of the row, horizontally
-        -- centered (owner steer 2026-07-17: "should be a 3/4 line").
-        view._sep:ClearAllPoints()
-        view._sep:SetWidth((row:GetWidth() or 0) * 0.75)
-        view._sep:SetPoint("CENTER", row, "TOP", 0, 5)
-        view._sep:Show()
-        sepPlaced = true
-      end
-      prevConnected = connected
       row:Show()
     else
       row._index = nil
@@ -528,16 +482,12 @@ function SO.RefreshFriends()
       row:Hide()
     end
 
-    -- Re-anchor every refresh (the boundary row index moves as friends log on/off or the list
-    -- scrolls): normal flush chain, except the boundary row gets pushed down an extra 10px to open
-    -- the gap the separator sits in.
     if i == 1 then
       row:SetPoint("TOPLEFT", view._scroll, "TOPLEFT", 0, -9)
     else
-      row:SetPoint("TOPLEFT", view._rows[i - 1], "BOTTOMLEFT", 0, isBoundary and -10 or 0)
+      row:SetPoint("TOPLEFT", view._rows[i - 1], "BOTTOMLEFT", 0, 0)
     end
   end
-  if not sepPlaced and view._sep then view._sep:Hide() end
   FauxScrollFrame_Update(view._scroll, total, NUM_ROWS, ROW_HEIGHT)
   -- Explicit, synchronous re-sync (owner report 2026-07-17, same fix as Guild Roster) — see
   -- NE.scrollbar.SyncCustom's comment in core/ScrollbarReskin.lua. total/NUM_ROWS passed through so
