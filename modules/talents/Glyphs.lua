@@ -771,36 +771,67 @@ local function layoutRoot()
   -- ---- NEW: Build the Expanded Glyph Summary List Panel on the Right Side -----------
   if root and not root.listFrame then
     local lf = CreateFrame("Frame", "NE_TalentGlyphListFrame", root)
-    
-    lf.title = lf:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+
+    -- Framed "detail card" behind the text — the SAME dark panel our professions window uses
+    -- for its item-details box: the "quality pane" 3-slice (charcoal fill, silver ornate
+    -- top/bottom flourishes) off the shipped chrome sheet, registered by professions/Assets.lua.
+    -- It sits BELOW the text layer so glyph text/icons always read on top; cap heights + overall
+    -- size are (re)assigned each refresh in T.GlyphsRefresh.
+    lf.card = CreateFrame("Frame", "NE_TalentGlyphCard", lf)
+    lf.card:SetFrameLevel((lf:GetFrameLevel() or 1) + 1)
+    -- Exactly the professions build: three slices, no separate base fill (the top/bottom caps
+    -- carry the charcoal fill + rounded flourishes; the 1px middle stretches between them), so
+    -- the rounded corners read clean against the class-art background.
+    lf.card.PaneTop = lf.card:CreateTexture(nil, "BACKGROUND")
+    if NE.tex and NE.tex.SetAtlas then NE.tex.SetAtlas(lf.card.PaneTop, "professions-qualitypane-bg-top", false) end
+    lf.card.PaneTop:SetPoint("TOPLEFT",  lf.card, "TOPLEFT",  0, 0)
+    lf.card.PaneTop:SetPoint("TOPRIGHT", lf.card, "TOPRIGHT", 0, 0)
+    lf.card.PaneBottom = lf.card:CreateTexture(nil, "BACKGROUND")
+    if NE.tex and NE.tex.SetAtlas then NE.tex.SetAtlas(lf.card.PaneBottom, "professions-qualitypane-bg-bottom", false) end
+    lf.card.PaneBottom:SetPoint("BOTTOMLEFT",  lf.card, "BOTTOMLEFT",  0, 0)
+    lf.card.PaneBottom:SetPoint("BOTTOMRIGHT", lf.card, "BOTTOMRIGHT", 0, 0)
+    lf.card.PaneMid = lf.card:CreateTexture(nil, "BACKGROUND")
+    if NE.tex and NE.tex.SetAtlas then NE.tex.SetAtlas(lf.card.PaneMid, "professions-qualitypane-bg-middle", false) end
+    lf.card.PaneMid:SetPoint("TOPLEFT",     lf.card.PaneTop, "BOTTOMLEFT", 0, 0)
+    lf.card.PaneMid:SetPoint("BOTTOMRIGHT", lf.card.PaneBottom, "TOPRIGHT", 0, 0)
+    lf.card:Hide()
+
+    -- Text layer above the card. Title, lines, and icons are all children of this frame so
+    -- they draw over the card backdrop, while everything still toggles/hides with `lf`.
+    lf.textLayer = CreateFrame("Frame", nil, lf)
+    lf.textLayer:SetAllPoints(lf)
+    lf.textLayer:SetFrameLevel((lf:GetFrameLevel() or 1) + 2)
+
+    lf.title = lf.textLayer:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
     if _G.SystemFont_Shadow_Large2 then lf.title:SetFontObject(_G.SystemFont_Shadow_Large2) end
     if lf.title.SetTextScale then lf.title:SetTextScale(0.72) end -- Matches left side spec header scaling
     lf.title:SetText("ACTIVE EFFECTS")
     lf.title:SetPoint("TOPLEFT", lf, "TOPLEFT", 40, -66)
-    lf.title:SetTextColor(1, 0.82, 0)
+    lf.title:SetTextColor(1, 1, 1)
 
     lf.lines = {}
+    -- Lines are pooled; their width, scale, and anchor are (re)assigned every refresh in
+    -- T.GlyphsRefresh so a real hanging indent can be applied (wrapped lines align to the
+    -- FontString's left edge, so the indent lives in the anchor X, never in leading spaces).
     lf.GetOrCreateLine = function(self, index)
       if self.lines[index] then return self.lines[index] end
-      local line = self:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+      local line = self.textLayer:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
       if _G.SystemFont_Shadow_Med1 then line:SetFontObject(_G.SystemFont_Shadow_Med1) end
-      line:SetWidth(380)
       line:SetWordWrap(true)
       line:SetJustifyH("LEFT")
-      if index == 1 then
-        line:SetPoint("TOPLEFT", self.title, "BOTTOMLEFT", 0, -20)
-      else
-        local prevLine = nil
-        for i = index - 1, 1, -1 do
-          if self.lines[i] then
-            prevLine = self.lines[i]
-            break
-          end
-        end
-        line:SetPoint("TOPLEFT", prevLine or self.title, "BOTTOMLEFT", 0, -6)
-      end
       self.lines[index] = line
       return line
+    end
+
+    -- Pooled glyph icons, one per name line (professions-panel style). The border is trimmed
+    -- via texcoords; each is centred vertically over its name+description block.
+    lf.icons = {}
+    lf.GetOrCreateIcon = function(self, index)
+      if self.icons[index] then return self.icons[index] end
+      local tex = self.textLayer:CreateTexture(nil, "OVERLAY")
+      tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+      self.icons[index] = tex
+      return tex
     end
 
     lf.scratchTip = CreateFrame("GameTooltip", "NE_GlyphScratchTooltip", nil, "GameTooltipTemplate")
@@ -1284,9 +1315,10 @@ function T.GlyphsRefresh()
     for i = 1, numSockets do
       local info = getSocketInfo(i, currentGroup)
       if info and info.enabled and type(info.glyphSpellID) == "number" and info.glyphSpellID > 0 then
-        local spellName = GetSpellInfo(info.glyphSpellID)
+        local spellName, _, spellIcon = GetSpellInfo(info.glyphSpellID)
         if spellName then
-          local data = { name = trimGlyphPrefix(spellName), desc = getSpellDesc(info.glyphSpellID) }
+          local data = { name = trimGlyphPrefix(spellName), desc = getSpellDesc(info.glyphSpellID),
+                         icon = info.icon or spellIcon }
           if info.glyphType == 2 then
             table.insert(minors, data)
           else
@@ -1296,71 +1328,153 @@ function T.GlyphsRefresh()
       end
     end
 
-    for _, line in pairs(root.listFrame.lines) do line:SetText(""); line:Hide() end
-    local lineIdx = 1
+    -- Build a flat, ordered list of entries to render. Rather than chain-anchoring each
+    -- line to the previous line's BOTTOMLEFT (which relies on a word-wrapped + text-scaled
+    -- FontString reporting an accurate auto-height — it does NOT on 3.3.5a, which is what
+    -- lets a 2-line description overlap its neighbour), we lay lines out with explicit Y
+    -- offsets computed from GetStringHeight(), which measures the true wrapped height.
+    --
+    -- Indentation is a REAL hanging indent: each entry carries an `indent` in pixels that is
+    -- applied to its anchor X, so word-wrapped continuation lines align to the same left edge
+    -- as the first line (leading spaces would only indent the first line — that was the
+    -- Trueshot-Aura misalignment).
+    local SECTION_SCALE, NAME_SCALE, DESC_SCALE = 1.15, 1.08, 1.02
 
-    -- ---- Section A: Major Glyphs --------------------------------------------------
-    local line = root.listFrame:GetOrCreateLine(lineIdx)
-    line:SetText("|cffffcc55Major Glyphs|r")
-    if line.SetTextScale then line:SetTextScale(1) end -- Scales down gracefully matching left layout
-    line:Show()
-    lineIdx = lineIdx + 1
+    -- ---- Card + column geometry (a professions-detail-box-sized panel, centred in the pane) --
+    -- The card is a fixed, moderate width (like the professions item-details box) rather than
+    -- the whole half-pane; all X offsets below are measured from the CARD's left edge.
+    local CARD_W = math.max(320, math.min(440, math.floor(paneW - 80)))
+    local cardX = math.floor((paneW - CARD_W) / 2)   -- card left, within the (right-half) pane
+    local TEXT_PAD = 26                              -- inset from card edge to headers/text/right
+    local ICON_X, ICON_SIZE, ICON_PAD = TEXT_PAD, 26, 8
+    -- Name AND description share this left edge; the icon lives in the gutter to the left of it.
+    local TEXT_INDENT = ICON_X + ICON_SIZE + ICON_PAD
 
-    if #majors == 0 then
-      local line = root.listFrame:GetOrCreateLine(lineIdx)
-      line:SetText("  |cff808080No major glyphs active.|r")
-      if line.SetTextScale then line:SetTextScale(0.95) end
-      line:Show()
-      lineIdx = lineIdx + 1
-    else
-      for _, glyph in ipairs(majors) do
-        local nameLine = root.listFrame:GetOrCreateLine(lineIdx)
-        nameLine:SetText("  |cffffd100" .. glyph.name .. "|r")
-        if nameLine.SetTextScale then nameLine:SetTextScale(0.95) end -- Scaled identical to left button names
-        nameLine:Show()
-        lineIdx = lineIdx + 1
-
-        if glyph.desc ~= "" then
-          local descLine = root.listFrame:GetOrCreateLine(lineIdx)
-          descLine:SetText("    |cffb3b3b3" .. glyph.desc .. "|r")
-          if descLine.SetTextScale then descLine:SetTextScale(0.9) end -- Subtext hierarchy scaling factor
-          descLine:Show()
-          lineIdx = lineIdx + 1
+    local entries = {}
+    -- indent   = X offset of the TEXT from the card's left edge (the real hanging indent).
+    -- icon     = texture path for a glyph icon (set on the NAME entry only), placed in the gutter.
+    -- blockEnd = for a name entry, the entry index of the last line of its glyph block (the
+    --            description if present, else itself) so the icon can centre over name+desc.
+    local function addEntry(text, scale, gap, indent, icon)
+      entries[#entries + 1] = { text = text, scale = scale, gap = gap, indent = indent or 0, icon = icon }
+      return #entries
+    end
+    local function addSection(headerText, list)
+      addEntry("|cffffcc55" .. headerText .. "|r", SECTION_SCALE, (#entries > 0) and 28 or 0, TEXT_PAD)
+      if #list == 0 then
+        addEntry("|cff808080None active.|r", NAME_SCALE, 8, TEXT_INDENT)
+      else
+        for _, glyph in ipairs(list) do
+          -- Name and description both sit at TEXT_INDENT; the icon spans the two of them.
+          local nameIdx = addEntry("|cffffd100" .. glyph.name .. "|r", NAME_SCALE, 10, TEXT_INDENT, glyph.icon)
+          local lastIdx = nameIdx
+          if glyph.desc ~= "" then
+            lastIdx = addEntry("|cffb3b3b3" .. glyph.desc .. "|r", DESC_SCALE, 4, TEXT_INDENT)
+          end
+          entries[nameIdx].blockEnd = lastIdx
         end
       end
     end
 
-    lineIdx = lineIdx + 1
-
-    -- ---- Section B: Minor Glyphs --------------------------------------------------
-    local line = root.listFrame:GetOrCreateLine(lineIdx)
-    line:SetText("|cffffcc55Minor Glyphs|r")
-    if line.SetTextScale then line:SetTextScale(1) end
-    line:Show()
-    lineIdx = lineIdx + 1
-
-    if #minors == 0 then
-      local line = root.listFrame:GetOrCreateLine(lineIdx)
-      line:SetText("  |cff808080No minor glyphs active.|r")
-      if line.SetTextScale then line:SetTextScale(0.95) end
-      line:Show()
-      lineIdx = lineIdx + 1
+    -- With glyphs equipped the panel is just the MAJOR/MINOR GLYPHS lists (no title). With
+    -- none, the whole panel reads "NO ACTIVE EFFECTS", centred. The two are mutually exclusive.
+    local hasAny = (#majors > 0) or (#minors > 0)
+    if hasAny then
+      root.listFrame.title:SetText("")
+      root.listFrame.title:Hide()
+      addSection("MAJOR GLYPHS", majors)
+      addSection("MINOR GLYPHS", minors)
     else
-      for _, glyph in ipairs(minors) do
-        local nameLine = root.listFrame:GetOrCreateLine(lineIdx)
-        nameLine:SetText("  |cffffd100" .. glyph.name .. "|r")
-        if nameLine.SetTextScale then nameLine:SetTextScale(0.95) end
-        nameLine:Show()
-        lineIdx = lineIdx + 1
+      root.listFrame.title:SetText("NO ACTIVE EFFECTS")
+      root.listFrame.title:Show()
+    end
 
-        if glyph.desc ~= "" then
-          local descLine = root.listFrame:GetOrCreateLine(lineIdx)
-          descLine:SetText("    |cffb3b3b3" .. glyph.desc .. "|r")
-          if descLine.SetTextScale then descLine:SetTextScale(0.9) end
-          descLine:Show()
-          lineIdx = lineIdx + 1
-        end
+    -- Reset every pooled line + icon, then materialise text + scale + width so heights measure.
+    -- Each line's width is the card width minus its indent and the right inset.
+    for _, line in pairs(root.listFrame.lines) do line:SetText(""); line:Hide() end
+    for _, ic in pairs(root.listFrame.icons) do ic:Hide() end
+    local rendered = {}
+    for idx, e in ipairs(entries) do
+      local line = root.listFrame:GetOrCreateLine(idx)
+      line:SetWidth(math.max(80, CARD_W - e.indent - TEXT_PAD))
+      line:SetText(e.text)
+      if line.SetTextScale then line:SetTextScale(e.scale) end
+      rendered[idx] = line
+    end
+
+    -- Measure the full block so we can centre it on the Y axis. The title only exists in the
+    -- empty state; when glyphs are present it's hidden and contributes no height/gap.
+    local TITLE_GAP = 22
+    local titleH = hasAny and 0
+                   or ((root.listFrame.title.GetStringHeight and root.listFrame.title:GetStringHeight()) or 0)
+    local blockH = titleH
+    if titleH > 0 and #entries > 0 then blockH = blockH + TITLE_GAP end
+    for idx, e in ipairs(entries) do
+      blockH = blockH + e.gap + ((rendered[idx].GetStringHeight and rendered[idx]:GetStringHeight()) or 0)
+    end
+
+    -- Centre the block vertically within the content pane (clamped so it never rides up into
+    -- the GLYPHS header). The (empty-state) title is centred horizontally over the card;
+    -- entries stay left-aligned to the card's text column.
+    local topOffset = math.max(24, math.floor((rootHeight - blockH) / 2))
+    root.listFrame.title:ClearAllPoints()
+    root.listFrame.title:SetJustifyH("CENTER")
+    root.listFrame.title:SetPoint("TOP", root.listFrame, "TOPLEFT", cardX + CARD_W / 2, -topOffset)
+
+    -- Stack entries with explicit, measured offsets from the card's top-left — no overlap
+    -- possible, and each line's hanging indent lives in the anchor X so wrapped lines align.
+    -- Record each line's top and height so glyph icons can centre over the name+desc block.
+    local lineTop, lineH = {}, {}
+    local y = topOffset + titleH + ((titleH > 0 and #entries > 0) and TITLE_GAP or 0)
+    for idx, e in ipairs(entries) do
+      local line = rendered[idx]
+      y = y + e.gap
+      line:ClearAllPoints()
+      line:SetPoint("TOPLEFT", root.listFrame, "TOPLEFT", cardX + e.indent, -y)
+      line:Show()
+      lineTop[idx] = y
+      lineH[idx] = (line.GetStringHeight and line:GetStringHeight()) or 0
+      y = y + lineH[idx]
+    end
+
+    -- Second pass: place each glyph icon in the left gutter, vertically centred between the
+    -- top of its name and the bottom of its description.
+    for idx, e in ipairs(entries) do
+      if e.icon then
+        local last = e.blockEnd or idx
+        local blockTop = lineTop[idx]
+        local blockBottom = (lineTop[last] or lineTop[idx]) + (lineH[last] or lineH[idx] or 0)
+        local iconCenter = (blockTop + blockBottom) / 2
+        local ic = root.listFrame:GetOrCreateIcon(idx)
+        ic:SetTexture(e.icon)
+        ic:SetSize(ICON_SIZE, ICON_SIZE)
+        ic:ClearAllPoints()
+        ic:SetPoint("TOPLEFT", root.listFrame, "TOPLEFT", cardX + ICON_X, -(iconCenter - ICON_SIZE / 2))
+        ic:Show()
       end
+    end
+
+    -- Detail card: fixed width, wrapping the content block with padding. Cap heights preserve
+    -- the flourish aspect (as the professions box does); the card is grown to at least twice
+    -- the cap height so the top/bottom flourishes never overlap on a short list.
+    if root.listFrame.card then
+      local card = root.listFrame.card
+      local contentBottom = (#entries > 0) and y or (topOffset + titleH)
+      local CARD_PAD_TOP, CARD_PAD_BOTTOM = 40, 40
+      local cardTop = topOffset - CARD_PAD_TOP
+      local cardBottom = contentBottom + CARD_PAD_BOTTOM
+      local capH = math.floor(100 * CARD_W / 260 + 0.5)
+      local minH = capH * 2
+      if (cardBottom - cardTop) < minH then
+        local c = (cardTop + cardBottom) / 2
+        cardTop, cardBottom = c - minH / 2, c + minH / 2
+      end
+      card.PaneTop:SetHeight(capH)
+      card.PaneBottom:SetHeight(capH)
+      card:ClearAllPoints()
+      card:SetPoint("TOPLEFT", root.listFrame, "TOPLEFT", cardX, -cardTop)
+      card:SetPoint("BOTTOMRIGHT", root.listFrame, "TOPLEFT", cardX + CARD_W, -cardBottom)
+      card:Show()
     end
   end
   end
