@@ -1712,8 +1712,8 @@ CB.Boot = boot
 if NE.modules and NE.modules.Register then
   NE.modules.Register{
     name    = MODULE,
-    default = true,    -- FORCED default bag UI: takes over bag opening, supersedes the per-window restyle.
-                       -- Its options toggle is hidden (integration/Options.lua) so players can't switch.
+    default = false,   -- Default OFF: players opt in via the options toggle (integration/Options.lua).
+                       -- When enabled it takes over bag opening and supersedes the per-window restyle.
     label   = NE.L["Combined bag (all-in-one)"],
     category = "Windows",
     desc    = NE.L["One movable window showing every bag slot in a Dragonflight-style grid. Takes over "
