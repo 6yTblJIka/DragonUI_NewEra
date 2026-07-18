@@ -9,9 +9,13 @@
 -- login, ask other online guildmates (SendAddonMessage over the "GUILD" distribution) for anything
 -- newer than what we already have. Two problems the owner flagged up front, and how this avoids
 -- both:
---   * Dedup: every entry is stamped with the epoch time() of the client that FIRST witnessed it
---     live, and that stamp is carried through every relay untouched (never re-stamped on receipt).
---     The dedup key (author+epoch+message) is therefore identical no matter who relays it to you.
+--   * Dedup: identity is author+kind+message text, deliberately WITHOUT the epoch timestamp (see
+--     dedupKeyFor() below) — CHAT_MSG_GUILD is a broadcast, so every online client independently
+--     stamps the same message with its OWN local time() the instant it sees it, and those can
+--     differ by a second or more between clients. An epoch-keyed dedup let the same message land
+--     under two different keys and show up twice once synced; text-keyed dedup can't split that way.
+--     When two copies of the same message DO show up with different epochs, remember() keeps
+--     whichever is earliest (closest to the true origin time) rather than whichever arrived first.
 --   * Timezones: we never do manual TZ math. epoch is a plain time() value (already UTC-based on
 --     any sane system clock); each client formats it for display with its OWN date() call, so
 --     everyone sees times in their own computer's local time automatically.
@@ -37,6 +41,11 @@ local function chanColor(kind)
   if info then return info.r, info.g, info.b end
   if kind == "OFFICER" then return 0.4, 0.78, 0.94 end
   return 0.25, 1, 0.25
+end
+
+-- The ScrollingMessageFrame, if the guild window's Chat tab has been built this session.
+local function logFrame()
+  return G.frame and G.frame.ChatFrame and G.frame.ChatFrame.Log
 end
 
 -- ----------------------------------------------------------------------------
@@ -126,19 +135,58 @@ local function store()
   return s
 end
 
--- Insert (kind, author, message, epoch) if not already known. Returns true if newly added.
+-- Identifies a message for dedup purposes. Deliberately EPOCH-FREE: CHAT_MSG_GUILD is a broadcast,
+-- so every online client independently "first witnesses" the same message and stamps it with its
+-- OWN local time() — there is no single shared origin timestamp. Two clients' clocks (or just
+-- event-processing jitter) only need to differ by a second for the same message to land under two
+-- different epochs, which silently defeated an epoch-keyed dedup and let synced history show real
+-- duplicates (owner report 2026-07-18). Author+kind+text alone is stable no matter whose clock
+-- first logged it. Tradeoff: the exact same text from the exact same person won't be stored twice
+-- while it's still within the MAX_STORED window — an acceptable, rare cost for guaranteed dedup.
+local function dedupKeyFor(kind, author, message)
+  return (author or "?") .. FS .. kind .. FS .. (message or "")
+end
+
+-- Insert (kind, author, message, epoch) if not already known. If it IS already known, keep
+-- whichever epoch is EARLIEST: two guildmates with slightly different system clocks (or just
+-- event-processing jitter) can each "first witness" the same live broadcast a moment apart and
+-- store it under two different epochs — the smaller one is the better guess at when it actually
+-- happened. Returns true only for a genuinely new message.
 local function remember(kind, author, message, epoch)
   local s = store()
   if not s then return false end
-  local dedupKey = (author or "?") .. FS .. kind .. FS .. epoch .. FS .. message
-  if s.seen[dedupKey] then return false end
-  s.seen[dedupKey] = true
+  local dedupKey = dedupKeyFor(kind, author, message)
+  local knownEpoch = s.seen[dedupKey]
+  if knownEpoch then
+    if epoch < knownEpoch then
+      s.seen[dedupKey] = epoch
+      for _, e in ipairs(s.entries) do
+        if e.kind == kind and e.author == author and e.message == message then
+          e.epoch = epoch
+          break
+        end
+      end
+    end
+    return false
+  end
+  s.seen[dedupKey] = epoch
+
+  -- Insert in epoch order rather than blind-appending. Live messages are almost always the
+  -- newest thing we know about (a short scan from the tail), but a sync reply can hand us an
+  -- older backlog entry out of arrival order — position must reflect WHEN it happened, not when
+  -- we heard about it, or the MAX_STORED eviction below (which drops index 1, "oldest") could
+  -- evict genuinely recent chat to make room for old backlog that arrived after it.
   local entries = s.entries
-  entries[#entries + 1] = { kind = kind, author = author, message = message, epoch = epoch }
+  local i = #entries
+  while i > 0 and entries[i].epoch > epoch do
+    i = i - 1
+  end
+  table.insert(entries, i + 1, { kind = kind, author = author, message = message, epoch = epoch })
+
   if epoch > s.newest then s.newest = epoch end
   if #entries > MAX_STORED then
     local drop = table.remove(entries, 1)
-    s.seen[(drop.author or "?") .. FS .. drop.kind .. FS .. drop.epoch .. FS .. drop.message] = nil
+    s.seen[dedupKeyFor(drop.kind, drop.author, drop.message)] = nil
   end
   return true
 end
@@ -162,8 +210,7 @@ end
 -- Every live message is also `remember()`-ed (see the event handler below), so the stored log is
 -- always a complete record of everything ever shown — safe to wipe and fully replay at any time.
 repaintLog = function()
-  local f = G.frame
-  local log = f and f.ChatFrame and f.ChatFrame.Log
+  local log = logFrame()
   local s = store()
   if not log or not s then return end
   log:Clear()
@@ -263,8 +310,7 @@ function G.SetupChat(f)
 end
 
 local function appendGuild(kind, message, author, epoch)
-  local f = G.frame
-  local log = f and f.ChatFrame and f.ChatFrame.Log
+  local log = logFrame()
   if not log then return end
   local r, g, b = chanColor(kind)
   log:AddMessage(formatLine(author, message, epoch), r, g, b)
@@ -296,13 +342,19 @@ local function replyWithHistory(since)
     if e.kind == "G" and e.epoch > since then out[#out + 1] = e end
   end
   if #out == 0 then return end
-  if #out > MAX_RELAY then -- a huge gap shouldn't turn into a message storm; newest wins
+  if #out > MAX_RELAY then
+    -- A huge gap shouldn't turn into a message storm; keep the newest. Relies on s.entries being
+    -- epoch-ordered (remember()'s sorted insert), so a straight tail-slice is correct here.
     local trimmed = {}
     for i = #out - MAX_RELAY + 1, #out do trimmed[#trimmed + 1] = out[i] end
     out = trimmed
   end
   for _, e in ipairs(out) do
     local text = e.message or ""
+    -- Truncation only happens here, on the relaying side — a peer who gets this via sync stores
+    -- the shortened "..." text permanently, while whoever was online for the live message kept
+    -- the full text. A known, accepted asymmetry given the 200-char cap; not worth chunking
+    -- single messages across multiple addon messages just to avoid it.
     if #text > MAX_MSG then text = text:sub(1, MAX_MSG) .. "..." end
     queueSend("H" .. FS .. (e.author or "?") .. FS .. e.epoch .. FS .. text)
   end
@@ -338,7 +390,7 @@ ev:RegisterEvent("CHAT_MSG_ADDON")
 ev:RegisterEvent("PLAYER_ENTERING_WORLD")
 ev:RegisterEvent("GUILD_ROSTER_UPDATE")
 ev:RegisterEvent("PLAYER_GUILD_UPDATE")   -- fires once our own guild membership info resolves
-ev:SetScript("OnEvent", function(_, event, a1, a2, a3)
+ev:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
   if event == "GUILD_ROSTER_UPDATE" then
     refreshRosterClasses()
     tryReplayBacklog()
@@ -369,9 +421,12 @@ ev:SetScript("OnEvent", function(_, event, a1, a2, a3)
     return
   end
 
-  -- CHAT_MSG_ADDON: prefix, message, channel
-  local prefix, payload, channel = a1, a2, a3
+  -- CHAT_MSG_ADDON: prefix, message, channel, sender
+  local prefix, payload, channel, sender = a1, a2, a3, a4
   if prefix ~= PREFIX or channel ~= "GUILD" then return end
+  -- Cheap insurance: if this server core ever echoes our own SendAddonMessage back to us (varies
+  -- by core), don't let a self-received "R" schedule a pointless reply to ourselves.
+  if sender and UnitName and sender == UnitName("player") then return end
   local tag = payload:sub(1, 1)
 
   if tag == "R" then
@@ -387,8 +442,7 @@ ev:SetScript("OnEvent", function(_, event, a1, a2, a3)
     if author and epoch and text then
       local isNew = remember("G", author, text, epoch)
       if isNew then
-        local f = G.frame
-        local log = f and f.ChatFrame and f.ChatFrame.Log
+        local log = logFrame()
         if log then printBacklogLine(log, "G", author, text, epoch) end
       end
     end
