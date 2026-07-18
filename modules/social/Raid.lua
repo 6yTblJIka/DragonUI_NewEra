@@ -355,7 +355,7 @@ function SO.SetupRaid(f)
   local ready = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
   ready:SetSize(110, 20)
   ready:SetText(READY_CHECK or "Ready Check")
-  ready:SetPoint("TOP", f, "TOP", 0, -38)
+  ready:SetPoint("TOP", f, "TOP", 0, -33)
   ready:SetScript("OnClick", function()
     if DoReadyCheck then DoReadyCheck() end
   end)

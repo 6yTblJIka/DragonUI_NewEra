@@ -112,10 +112,14 @@ function SO.SetupWho(f)
   -- build time (login) hijacked every /who the player typed into the UI for the whole session.
   -- Window.lua's SO.SetWhoRouting toggles it with the Who tab's visibility instead.
 
-  -- Search box + button.
+  -- Search box + button. Parented to `panel` (shows/hides with the Who tab) but anchored off the
+  -- WINDOW frame, same recipe as Raid's Ready Check (modules/social/Raid.lua): the chrome gap above
+  -- the panel's own top edge (panel content starts 56px down; the title text only runs to about
+  -- -21) has room for a control row, and the owner marked it there with a screenshot annotation
+  -- 2026-07-18 rather than have it sit as the first row inside the dark inset list.
   local box = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
   box:SetSize(200, 20); box:SetAutoFocus(false)
-  box:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -2)
+  box:SetPoint("TOPLEFT", f, "TOPLEFT", 58, -34)
   box:SetScript("OnEnterPressed", function(self)
     if SetWhoToUI then SetWhoToUI(1) end
     if SendWho then SendWho(self:GetText() or "") end
@@ -126,7 +130,7 @@ function SO.SetupWho(f)
 
   local search = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
   search:SetSize(80, 22); search:SetText(SEARCH or "Search")
-  search:SetPoint("LEFT", box, "RIGHT", 8, 0)
+  search:SetPoint("LEFT", box, "RIGHT", 6, 0)
   search:SetScript("OnClick", function()
     if SetWhoToUI then SetWhoToUI(1) end
     if SendWho then SendWho(box:GetText() or "") end
@@ -135,7 +139,7 @@ function SO.SetupWho(f)
   -- Refresh — re-runs the last query (stock window has this bottom-left).
   local refresh = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
   refresh:SetSize(90, 22); refresh:SetText(REFRESH or "Refresh")
-  refresh:SetPoint("LEFT", search, "RIGHT", 8, 0)
+  refresh:SetPoint("LEFT", search, "RIGHT", 6, 0)
   refresh:SetScript("OnClick", function()
     if SetWhoToUI then SetWhoToUI(1) end
     if SendWho then SendWho(box:GetText() or "") end
@@ -147,8 +151,8 @@ function SO.SetupWho(f)
 
   -- Column header strip.
   local header = CreateFrame("Frame", nil, panel)
-  header:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -28)
-  header:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -28)
+  header:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -4)
+  header:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -4)
   header:SetHeight(16)
   for ci, col in ipairs(COLUMNS) do
     if ci == 2 then
@@ -176,7 +180,7 @@ function SO.SetupWho(f)
   -- List. Inset 3px from the panel's edges (owner steer 2026-07-17), on top of the existing header
   -- clearance (-46), scrollbar clearance (-24), and button-row clearance (34).
   local scroll = CreateFrame("ScrollFrame", "NE_SocialWhoScroll", panel, "FauxScrollFrameTemplate")
-  scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 3, -49)
+  scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 3, -24)
   scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -27, 37)
   scroll:SetScript("OnVerticalScroll", function(self, o)
     FauxScrollFrame_OnVerticalScroll(self, o, ROW_HEIGHT, SO.RefreshWho)
