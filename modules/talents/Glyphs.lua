@@ -57,8 +57,8 @@ local GLYPH_GLOSS_TEXTURE = "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talen
 local GLYPH_SHADOW_TEXTURE = "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\glyph-shadow.tga"
 -- Multipliers on the socket's base size. The animated sphere and the gloss over it are grown so the
 -- orb reads big; the gold ring is pushed out to sit at the sphere's rim; the shadow haloes just beyond.
-local GLOBE_SCALE = 1.00   -- animated sphere (and the gloss over it) — fills the orb
-local RING_SCALE  = 1.8   -- gold ring — sits at the sphere's outer rim
+local GLOBE_SCALE = 1.00  -- animated sphere (and the gloss over it) — fills the orb
+local RING_SCALE  = 1.8  -- gold ring — sits at the sphere's outer rim
 -- Point a socket's globe at health/mana; full colour + lit when `lit`.
 local function configGlobe(button, isMajor, lit, size)
   local g = button and button.Globe
@@ -94,6 +94,18 @@ end
 local function setGlyphLabelNamesEnabled(enabled)
   if not NE.db then return end
   NE.db.talentGlyphSlotNames = enabled and true or false
+end
+
+-- Gearbox option: show the "ACTIVE EFFECTS" description list alongside the glyph sockets, or hide
+-- it and let the sockets use the full width (just the glyphs, no effect text). Defaults to shown,
+-- matching the original behavior before this option existed.
+local function glyphShowEffectsEnabled()
+  if not NE.db or NE.db.talentGlyphShowEffects == nil then return true end
+  return NE.db.talentGlyphShowEffects and true or false
+end
+local function setGlyphShowEffectsEnabled(enabled)
+  if not NE.db then return end
+  NE.db.talentGlyphShowEffects = enabled and true or false
 end
 
 local function trimGlyphPrefix(name)
@@ -143,13 +155,9 @@ local function queueGlyphRefresh(passes)
   refreshDriver:Show()
 end
 
--- Refresh the glyph view whenever the game reports a glyph change. The removal path alone polled a
--- few frames, which read stale socket data — so a removed glyph's icon lingered. These events fire
--- once the socket data has actually updated, so the graphic clears/updates reliably.
 do
   local ev = CreateFrame("Frame")
-  for _, e in ipairs({ "GLYPH_ADDED", "GLYPH_REMOVED", "GLYPH_UPDATED", "USE_GLYPH",
-                       "ACTIVE_TALENT_GROUP_CHANGED" }) do
+  for _, e in ipairs({ "GLYPH_ADDED", "GLYPH_REMOVED", "GLYPH_UPDATED", "USE_GLYPH", "ACTIVE_TALENT_GROUP_CHANGED" }) do
     pcall(function() ev:RegisterEvent(e) end)
   end
   ev:SetScript("OnEvent", function()
@@ -169,16 +177,10 @@ if not StaticPopupDialogs["NE_GLYPH_REMOVE_CONFIRM"] then
       if type(_G.RemoveGlyphFromSocket) == "function" then
         local ok = pcall(_G.RemoveGlyphFromSocket, info.socket)
         if ok then
-          -- Drop the removed glyph's rune immediately (visual feedback); the repaint below fills the
-          -- empty placeholder once the socket actually reads empty.
           button._hasGlyph = nil
           if button.Icon then button.Icon:SetTexture(nil) end
           if button.IconTint then button.IconTint:Hide() end
           if button.Glow then button.Glow:Hide() end
-          -- RemoveGlyphFromSocket round-trips the server (~0.5s) before GetGlyphSocketInfo reports the
-          -- socket empty — its glyphSpell (3rd return on 3.3.5a) goes nil. Poll on a timer until it
-          -- clears, THEN repaint, so we never repaint from stale data (which redrew the old rune). The
-          -- GLYPH_REMOVED/GLYPH_UPDATED handler also repaints if the server fires those.
           local socket, group = info.socket, info.group
           local tries = 0
           local function poll()
@@ -513,26 +515,35 @@ local function clickStockGlyphSocket(button, mouseButton)
   local info = button and button._glyphInfo
   if not (info and info.socket and button._activePane) then return end
 
+  -- 1. GESTURE: Shift-Right-Click to remove an equipped glyph
   if mouseButton == "RightButton" and type(_G.IsShiftKeyDown) == "function" and _G.IsShiftKeyDown() then
-    -- Shift-right-click is the "remove glyph" gesture — only offer it on a socket that HAS a glyph.
-    -- Consume the click either way so an empty socket does nothing (no confirm popup, no fall-through).
     if button._hasGlyph and type(_G.StaticPopup_Show) == "function" then
       _G.StaticPopup_Show("NE_GLYPH_REMOVE_CONFIRM", nil, nil, { button = button })
     end
     return
   end
 
+  -- 2. GESTURE: Left-Click with a glyph on the cursor to apply it directly
+  if mouseButton == "LeftButton" and CursorHasGlyph and CursorHasGlyph() then
+    if PlaceGlyphInSocket then
+      -- Bypasses the secure frame click layer entirely
+      pcall(PlaceGlyphInSocket, info.socket)
+    end
+    return
+  end
+
+  -- 3. FALLBACK: Normal click interactions route safely through a pcall guard
   local stock = getStockGlyphSocket(button)
   if not stock then return end
 
   if stock.Click then
-    stock:Click(mouseButton or "LeftButton")
+    pcall(stock.Click, stock, mouseButton or "LeftButton")
     return
   end
 
   local onClick = stock.GetScript and stock:GetScript("OnClick")
   if type(onClick) == "function" then
-    onClick(stock, mouseButton or "LeftButton")
+    pcall(onClick, stock, mouseButton or "LeftButton")
     return
   end
 end
@@ -571,22 +582,18 @@ local function buildSocket(parent, index)
   b:SetSize(64, 64)
   b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
-  -- Stack, bottom to top: shadow -> animated globe -> rune (Icon) -> orb gloss -> gold ring (Border).
-  -- 1) Soft shadow at the very bottom.
   b.GlowUnder = b:CreateTexture(nil, "BACKGROUND", nil, -2)
   b.GlowUnder:SetPoint("CENTER")
-  -- 2) Animated Diablo globe on top of the shadow, still behind the rune.
+  
   b.Globe = b:CreateTexture(nil, "BACKGROUND", nil, -1)
   b.Globe:SetPoint("CENTER")
   b.Globe:SetTexCoord(globeCoord(1))
   glyphGlobes[#glyphGlobes + 1] = b.Globe
   ensureGlobeTicker()
 
-  -- 4) Glass gloss over the rune (ARTWORK 3 → above the Icon/IconTint at 1/2, below the ring).
   b.Gloss = b:CreateTexture(nil, "ARTWORK", nil, 3)
   b.Gloss:SetPoint("CENTER")
 
-  -- 5) Gold ring on the very top (OVERLAY → above the gloss and everything else).
   b.Border = b:CreateTexture(nil, "OVERLAY", nil, 1)
   b.Border:SetSize(64, 64)
   b.Border:SetPoint("CENTER")
@@ -678,6 +685,18 @@ local function ensureGlyphOptionsMenu(anchor)
       if T.GlyphsRefresh then T.GlyphsRefresh() end
     end
     UIDropDownMenu_AddButton(info, level)
+
+    local infoEffects = UIDropDownMenu_CreateInfo()
+    infoEffects.text = "Show glyph effects"
+    infoEffects.checked = glyphShowEffectsEnabled()
+    infoEffects.keepShownOnClick = true
+    infoEffects.isNotRadio = true
+    infoEffects.func = function()
+      setGlyphShowEffectsEnabled(not glyphShowEffectsEnabled())
+      if T.GlyphsApplyPaneVisibility then T.GlyphsApplyPaneVisibility() end
+      if T.GlyphsRefresh then T.GlyphsRefresh() end
+    end
+    UIDropDownMenu_AddButton(infoEffects, level)
   end)
   glyphOptionsMenu = menu
   return glyphOptionsMenu
@@ -716,7 +735,7 @@ local function buildGlyphCog(parent)
   cog:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
     GameTooltip:SetText("Glyph options", 1, 1, 1)
-    GameTooltip:AddLine("Toggle slot name labels.", 0.85, 0.85, 0.85, true)
+    GameTooltip:AddLine("Toggle slot name labels and the active-effects list.", 0.85, 0.85, 0.85, true)
     GameTooltip:Show()
   end)
   cog:SetScript("OnLeave", function()
@@ -739,8 +758,6 @@ local function layoutRoot()
   if not root then
     root = CreateFrame("Frame", "NE_TalentGlyphRoot", h)
     root:SetFrameLevel((h:GetFrameLevel() or 1))
-    -- Single page-level "GLYPHS" title, centered over the WHOLE page (shown once even under dual spec).
-    -- Each pane then shows its spec NAME as a second row beneath it (see buildPane / applyPaneStyle).
     root.title = root:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
     if _G.SystemFont_Shadow_Large2 then root.title:SetFontObject(_G.SystemFont_Shadow_Large2) end
     if root.title.SetTextScale then root.title:SetTextScale(1.1) end
@@ -749,6 +766,47 @@ local function layoutRoot()
     root.title:SetText("GLYPHS")
     root.title:SetTextColor(1, 1, 1)
     buildGlyphCog(root)
+  end
+
+  -- ---- NEW: Build the Expanded Glyph Summary List Panel on the Right Side -----------
+  if root and not root.listFrame then
+    local lf = CreateFrame("Frame", "NE_TalentGlyphListFrame", root)
+    
+    lf.title = lf:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+    if _G.SystemFont_Shadow_Large2 then lf.title:SetFontObject(_G.SystemFont_Shadow_Large2) end
+    if lf.title.SetTextScale then lf.title:SetTextScale(0.72) end -- Matches left side spec header scaling
+    lf.title:SetText("ACTIVE EFFECTS")
+    lf.title:SetPoint("TOPLEFT", lf, "TOPLEFT", 40, -66)
+    lf.title:SetTextColor(1, 0.82, 0)
+
+    lf.lines = {}
+    lf.GetOrCreateLine = function(self, index)
+      if self.lines[index] then return self.lines[index] end
+      local line = self:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+      if _G.SystemFont_Shadow_Med1 then line:SetFontObject(_G.SystemFont_Shadow_Med1) end
+      line:SetWidth(380)
+      line:SetWordWrap(true)
+      line:SetJustifyH("LEFT")
+      if index == 1 then
+        line:SetPoint("TOPLEFT", self.title, "BOTTOMLEFT", 0, -20)
+      else
+        local prevLine = nil
+        for i = index - 1, 1, -1 do
+          if self.lines[i] then
+            prevLine = self.lines[i]
+            break
+          end
+        end
+        line:SetPoint("TOPLEFT", prevLine or self.title, "BOTTOMLEFT", 0, -6)
+      end
+      self.lines[index] = line
+      return line
+    end
+
+    lf.scratchTip = CreateFrame("GameTooltip", "NE_GlyphScratchTooltip", nil, "GameTooltipTemplate")
+    lf.scratchTip:SetOwner(WorldFrame, "ANCHOR_NONE")
+
+    root.listFrame = lf
   end
 
   root:ClearAllPoints()
@@ -770,17 +828,11 @@ local function buildPane(group)
   pane.bg:SetAllPoints(pane)
   pane._bgNick = specBackgroundNick(group)
   pane._bgFlip = (group == 1)
-  -- The Glyphs page now uses a single full-window class ARTIFACT painting (f.glyphBg, applied in
-  -- GlyphsApplyPaneVisibility) rather than a per-pane spec painting, so hide this pane background to
-  -- avoid doubling. (_bgNick/applyPaneBackground kept for a graceful fallback if the class art is absent.)
   pane.bg:Hide()
 
-  -- Per-pane header: this pane's SPEC NAME (Primary/Secondary or custom), centered over its own
-  -- sockets, a row BELOW the single page-level "GLYPHS" title. Text + visibility set in applyPaneStyle
-  -- (shown only under dual spec; a lone spec needs no name since the page title says it all).
   pane.spec = pane:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
   if _G.SystemFont_Shadow_Large2 then pane.spec:SetFontObject(_G.SystemFont_Shadow_Large2) end
-  if pane.spec.SetTextScale then pane.spec:SetTextScale(0.72) end   -- smaller than the GLYPHS title (hierarchy)
+  if pane.spec.SetTextScale then pane.spec:SetTextScale(0.72) end
   pane.spec:SetJustifyH("CENTER")
   pane.spec:SetPoint("TOP", pane, "TOP", 0, -66)
   pane.spec:SetText("")
@@ -819,17 +871,15 @@ end
 
 local function applyPaneStyle(pane, active)
   if not pane then return end
-  -- Show the spec name only when there are two specs (each labels its own pane). With a single spec
-  -- the page-level "GLYPHS" title is enough, so leave the per-pane header blank/hidden.
   local totalGroups = (GetNumTalentGroups and (GetNumTalentGroups() or 1)) or 1
   if totalGroups >= 2 then
-    pane.spec:SetText(string.upper(groupStatus(pane._group or 1) or ""))   -- CAPS "PRIMARY"/"SECONDARY" (matches the GLYPHS title)
+    pane.spec:SetText(string.upper(groupStatus(pane._group or 1) or ""))
     pane.spec:Show()
   else
     pane.spec:SetText("")
     pane.spec:Hide()
   end
-  pane.spec:SetTextColor(1, 1, 1)   -- off-spec dims via pane:SetAlpha in updatePane
+  pane.spec:SetTextColor(1, 1, 1)
 end
 
 local function updateSocket(button, info, activePane, wantMajor)
@@ -846,7 +896,7 @@ local function updateSocket(button, info, activePane, wantMajor)
 
   if not info then
     button:SetSize(slotButtonSize, slotButtonSize)
-    if button.Globe then button.Globe:Hide() end   -- no socket → no globe
+    if button.Globe then button.Globe:Hide() end
     if button.GlowUnder then button.GlowUnder:Hide() end
     if button.Gloss then button.Gloss:Hide() end
     button.Border:SetTexture(GLYPH_RING_TEXTURE)
@@ -886,11 +936,10 @@ local function updateSocket(button, info, activePane, wantMajor)
 
   if not info.enabled then
     button:SetSize(slotButtonSize, slotButtonSize)
-    -- Level-locked socket: desaturated (greyscale) ring + globe until the player is high enough level.
     button.Border:SetTexture(GLYPH_RING_DESAT_TEXTURE)
     local lockedBorderSize = slotIsMajor and lockedMajorBorderSize or lockedMinorBorderSize
     button.Border:SetSize(lockedBorderSize * RING_SCALE, lockedBorderSize * RING_SCALE)
-    configGlobe(button, slotIsMajor, false, lockedBorderSize)   -- locked socket → desaturated globe
+    configGlobe(button, slotIsMajor, false, lockedBorderSize)
     setSocketHitRect(button, slotButtonSize, lockedBorderSize)
     button._borderTint = { 0.55, 0.55, 0.55, 1 }
     button._hoverTint = nil
@@ -921,17 +970,11 @@ local function updateSocket(button, info, activePane, wantMajor)
   end
 
   local isMajor = slotIsMajor
-  -- glyphSpell is the authoritative "is there a glyph" field (nil when the socket is empty). Do NOT
-  -- fall back to info.link: GetGlyphLink returns a STALE link for a just-emptied socket, which kept
-  -- hasGlyph true after a removal so the old glyph icon lingered.
   local hasGlyph = (type(info.glyphSpellID) == "number" and info.glyphSpellID > 0)
   local borderSize = isMajor and ((hasGlyph and filledMajorBorderSize) or emptyMajorBorderSize)
-                             or ((hasGlyph and filledMinorBorderSize) or emptyMinorBorderSize)
-  -- Gold portrait ring for the socket (the character portrait's metal ring). White tint on the active
-  -- spec shows its true gold; the off-spec is dimmed. Hover brightens to full.
+                     or ((hasGlyph and filledMinorBorderSize) or emptyMinorBorderSize)
   button.Border:SetTexture(GLYPH_RING_TEXTURE)
   button.Border:SetSize(borderSize * RING_SCALE, borderSize * RING_SCALE)
-  -- Globe: full colour + animated only for a live glyph on the active spec; desaturated when unused.
   configGlobe(button, isMajor, hasGlyph and activePane, borderSize)
   setSocketHitRect(button, slotButtonSize, borderSize)
   button._borderTint = activePane and { 1.0, 1.0, 1.0, 1 } or { 0.70, 0.70, 0.70, 1 }
@@ -946,14 +989,13 @@ local function updateSocket(button, info, activePane, wantMajor)
     iconSize = hasGlyph and 34 or 30
   end
   if not activePane then iconSize = iconSize - 2 end
-  if hasGlyph then iconSize = iconSize * 0.9 end   -- printed rune sits at 90% scale
+  if hasGlyph then iconSize = iconSize * 0.9 end
   button.Icon:SetSize(iconSize, iconSize)
   local iconTex = hasGlyph and (info.icon or spellIcon) or emptyGlyphIcon(info.glyphType)
-  if not hasGlyph then button.Icon:SetTexture(nil) end   -- drop any prior glyph rune before the placeholder
+  if not hasGlyph then button.Icon:SetTexture(nil) end
   button.Icon:SetTexture(iconTex)
   if button.Icon.SetVertexColor then button.Icon:SetVertexColor(1, 1, 1, 1) end
   button._hasGlyph = hasGlyph and true or nil
-  -- Printed rune at 75% opacity; empty/off-spec placeholder keeps its own faint alpha.
   button._iconAlpha = hasGlyph and (activePane and 0.75 or 0.6) or (activePane and 1 or 0.75)
   button.Icon:SetAlpha(button._iconAlpha)
   if button.Icon.SetDesaturated then
@@ -1054,7 +1096,6 @@ local function updatePane(pane, group, activeGroup)
     return table.remove(tbl, 1)
   end
 
-  -- Display order must alternate around the ring: Major > Minor > Major > Minor > Major > Minor.
   for displayIndex = 1, SOCKET_COUNT do
     local button = pane.sockets[displayIndex]
     local wantMajor = (displayIndex % 2) == 1
@@ -1074,8 +1115,11 @@ end
 
 local function ensurePanes()
   if not layoutRoot() then return nil end
-  buildPane(1)
-  buildPane(2)
+  
+  -- Force calculation to strictly use the currently active spec group
+  local currentGroup = (GetActiveTalentGroup and GetActiveTalentGroup()) or 1
+  buildPane(currentGroup)
+  
   return root
 end
 
@@ -1090,9 +1134,6 @@ function T.GlyphsIsActive()
   return T._glyphActive and true or false
 end
 
--- Full-window class ARTIFACT painting for the Glyphs page (bundled from the TalentArt Artifact pack,
--- one per class). A single BORDER texture on the frame filling the same content rect as the talent
--- paintings — the glyph panes/sockets draw above it on the Host. Returns true if class art was set.
 local GLYPH_BG_PATH = "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Talents\\Artifact\\"
 local GLYPH_BG_FILE = {
   WARRIOR = "Warrior", PALADIN = "Paladin", HUNTER = "Hunter", ROGUE = "Rogue", PRIEST = "Priest",
@@ -1102,7 +1143,7 @@ local function applyGlyphBackground(f)
   if not f then return false end
   local _, classFile = UnitClass("player")
   local file = classFile and GLYPH_BG_FILE[classFile]
-  if not file then return false end   -- unsupported class -> caller keeps the per-pane spec paintings
+  if not file then return false end
   if not f.glyphBg then
     local FR = T.FRAME or {}
     local tx = f:CreateTexture(nil, "BORDER")
@@ -1121,11 +1162,13 @@ function T.GlyphsApplyPaneVisibility()
   if not r then return end
 
   if T._glyphActive then
+    if root.listFrame then
+      if glyphShowEffectsEnabled() then root.listFrame:Show() else root.listFrame:Hide() end
+    end
     if f then
       if f.bg then f.bg:Hide() end
-      if f.petBg then f.petBg:Hide() end   -- glyph view: talent/pet paintings hidden
-      -- Single class Artifact painting for the whole Glyphs page (replaces the per-pane spec art,
-      -- incl. the two side-by-side backgrounds under dual spec).
+      if f.petBg then f.petBg:Hide() end
+      
       local hasArt = applyGlyphBackground(f)
       if f.glyphBg then if hasArt then f.glyphBg:Show() else f.glyphBg:Hide() end end
       if hasArt then
@@ -1143,23 +1186,31 @@ function T.GlyphsApplyPaneVisibility()
       if f.reset then f.reset:Hide() end
       if f.activate then f.activate:Hide() end
     end
-    for _, pane in pairs(panes) do
-      if pane then pane:Show() end
+
+    -- Force the visibility allocation to match the currently active spec group
+    local currentGroup = (GetActiveTalentGroup and GetActiveTalentGroup()) or 1
+    for g, pane in pairs(panes) do
+      if pane then
+        if g == currentGroup then
+          pane:Show()
+        else
+          pane:Hide()
+        end
+      end
     end
     r:Show()
   else
+    if root.listFrame then root.listFrame:Hide() end
     for _, pane in pairs(panes) do
       if pane then pane:Hide() end
     end
     r:Hide()
     if f then
-      if f.glyphBg then f.glyphBg:Hide() end   -- leaving glyphs: drop the class Artifact painting
-      -- Defer the talent background to the current view: pet view keeps the pet art (f.petBg) and
-      -- hides the class painting (f.bg); Populate owns re-selecting the right one on its next pass.
+      if f.glyphBg then f.glyphBg:Hide() end
       local petView = T.PetViewActive and T.PetViewActive()
       if f.bg then if petView then f.bg:Hide() else f.bg:Show() end end
       if f.petBg then if petView then f.petBg:Show() else f.petBg:Hide() end end
-      if f._loBtn and not petView then f._loBtn:Show() end   -- loadout btn is player-only
+      if f._loBtn and not petView then f._loBtn:Show() end
       if f.trees then
         for _, tree in ipairs(f.trees) do
           if tree then tree:Show() end
@@ -1188,25 +1239,135 @@ function T.GlyphsRefresh()
   if rootWidth <= 0 or rootHeight <= 0 then return end
 
   local activeGroup = (GetActiveTalentGroup and GetActiveTalentGroup()) or 1
-  local totalGroups = (GetNumTalentGroups and (GetNumTalentGroups() or 1)) or 1
-  local paneGroups = { 1 }
-  if totalGroups >= 2 then paneGroups[#paneGroups + 1] = 2 end
+  local currentGroup = activeGroup -- Locks text scanning and ring display directly to active spec
 
+  local showEffects = glyphShowEffectsEnabled()
 
-  for i, group in ipairs(paneGroups) do
-    local pane = panes[group]
-    if pane then
-      layoutPane(pane, i, #paneGroups, rootWidth, rootHeight)
-      updatePane(pane, group, activeGroup)
-    end
+  local pane = panes[currentGroup]
+  if pane then
+    layoutPane(pane, 1, showEffects and 2 or 1, rootWidth, rootHeight)
+    updatePane(pane, currentGroup, activeGroup)
   end
 
-  for group = 1, 2 do
-    local pane = panes[group]
-    if pane then
-      if group > totalGroups then
-        pane:Hide()
+  if root.listFrame then
+    if not showEffects then
+      root.listFrame:Hide()
+      for _, line in pairs(root.listFrame.lines) do line:SetText(""); line:Hide() end
+    else
+    root.listFrame:Show()
+    local paneW = math.floor(rootWidth / 2)
+    root.listFrame:SetSize(paneW, rootHeight)
+    root.listFrame:ClearAllPoints()
+    root.listFrame:SetPoint("TOPRIGHT", root, "TOPRIGHT", 0, 0)
+    
+    local numSockets = (GetNumGlyphSockets and GetNumGlyphSockets()) or 0
+    local majors, minors = {}, {}
+
+    local function getSpellDesc(spellID)
+      if not spellID or spellID <= 0 then return "" end
+      local tip = root.listFrame.scratchTip
+      tip:ClearLines()
+      tip:SetHyperlink("spell:" .. spellID)
+      
+      for k = 2, tip:NumLines() do
+        local textObj = _G["NE_GlyphScratchTooltipTextLeft" .. k]
+        if textObj and textObj.GetText then
+          local txt = textObj:GetText()
+          if txt and txt ~= "" and not txt:find("^%s*Requires") then
+            return txt
+          end
+        end
       end
+      return ""
+    end
+
+    for i = 1, numSockets do
+      local info = getSocketInfo(i, currentGroup)
+      if info and info.enabled and type(info.glyphSpellID) == "number" and info.glyphSpellID > 0 then
+        local spellName = GetSpellInfo(info.glyphSpellID)
+        if spellName then
+          local data = { name = trimGlyphPrefix(spellName), desc = getSpellDesc(info.glyphSpellID) }
+          if info.glyphType == 2 then
+            table.insert(minors, data)
+          else
+            table.insert(majors, data)
+          end
+        end
+      end
+    end
+
+    for _, line in pairs(root.listFrame.lines) do line:SetText(""); line:Hide() end
+    local lineIdx = 1
+
+    -- ---- Section A: Major Glyphs --------------------------------------------------
+    local line = root.listFrame:GetOrCreateLine(lineIdx)
+    line:SetText("|cffffcc55Major Glyphs|r")
+    if line.SetTextScale then line:SetTextScale(1) end -- Scales down gracefully matching left layout
+    line:Show()
+    lineIdx = lineIdx + 1
+
+    if #majors == 0 then
+      local line = root.listFrame:GetOrCreateLine(lineIdx)
+      line:SetText("  |cff808080No major glyphs active.|r")
+      if line.SetTextScale then line:SetTextScale(0.95) end
+      line:Show()
+      lineIdx = lineIdx + 1
+    else
+      for _, glyph in ipairs(majors) do
+        local nameLine = root.listFrame:GetOrCreateLine(lineIdx)
+        nameLine:SetText("  |cffffd100" .. glyph.name .. "|r")
+        if nameLine.SetTextScale then nameLine:SetTextScale(0.95) end -- Scaled identical to left button names
+        nameLine:Show()
+        lineIdx = lineIdx + 1
+
+        if glyph.desc ~= "" then
+          local descLine = root.listFrame:GetOrCreateLine(lineIdx)
+          descLine:SetText("    |cffb3b3b3" .. glyph.desc .. "|r")
+          if descLine.SetTextScale then descLine:SetTextScale(0.9) end -- Subtext hierarchy scaling factor
+          descLine:Show()
+          lineIdx = lineIdx + 1
+        end
+      end
+    end
+
+    lineIdx = lineIdx + 1
+
+    -- ---- Section B: Minor Glyphs --------------------------------------------------
+    local line = root.listFrame:GetOrCreateLine(lineIdx)
+    line:SetText("|cffffcc55Minor Glyphs|r")
+    if line.SetTextScale then line:SetTextScale(1) end
+    line:Show()
+    lineIdx = lineIdx + 1
+
+    if #minors == 0 then
+      local line = root.listFrame:GetOrCreateLine(lineIdx)
+      line:SetText("  |cff808080No minor glyphs active.|r")
+      if line.SetTextScale then line:SetTextScale(0.95) end
+      line:Show()
+      lineIdx = lineIdx + 1
+    else
+      for _, glyph in ipairs(minors) do
+        local nameLine = root.listFrame:GetOrCreateLine(lineIdx)
+        nameLine:SetText("  |cffffd100" .. glyph.name .. "|r")
+        if nameLine.SetTextScale then nameLine:SetTextScale(0.95) end
+        nameLine:Show()
+        lineIdx = lineIdx + 1
+
+        if glyph.desc ~= "" then
+          local descLine = root.listFrame:GetOrCreateLine(lineIdx)
+          descLine:SetText("    |cffb3b3b3" .. glyph.desc .. "|r")
+          if descLine.SetTextScale then descLine:SetTextScale(0.9) end
+          descLine:Show()
+          lineIdx = lineIdx + 1
+        end
+      end
+    end
+  end
+  end
+
+  for g, p in pairs(panes) do
+    if p and g ~= currentGroup then
+      p:Hide()
     end
   end
 end
