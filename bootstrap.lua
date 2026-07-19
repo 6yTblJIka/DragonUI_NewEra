@@ -57,6 +57,7 @@ NE.migrations[1] = function(db)
 end
 NE.migrations[2] = function(db)
     db.companionFavorites = db.companionFavorites or {}  -- [charKey][filterType..":"..creatureID] = true
+    db.guildChat = db.guildChat or {}   -- [realm-guildName] = rolling chat log (modules/guild/Chat.lua)
 end
 
 local function applyMigrations(db)

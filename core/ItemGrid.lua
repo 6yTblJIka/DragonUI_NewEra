@@ -232,7 +232,13 @@ local function slotWireTooltip(b)
   -- Inline fallback: standard container item tooltip.
   if b._neTooltipWired then return end
   b._neTooltipWired = true
-  b:SetScript("OnEnter", function(self)
+  -- Set the item tooltip + cursor feedback for this slot. Factored out of OnEnter so the OnUpdate
+  -- ticker below can re-run it while the cursor stays put: re-calling SetBagItem re-evaluates the
+  -- COMPAREITEMS modifier, which is what makes pressing shift *after* mousing over an item show the
+  -- comparison tooltip (issue #19). Stock bags get this from ContainerFrameItemButton_OnUpdate
+  -- re-firing _OnEnter every TOOLTIP_UPDATE_TIME; the custom grid overrode OnEnter without it, so
+  -- the tooltip was set once and frozen — shift had to be held *before* hovering to compare.
+  local function showTip(self)
     local bag, slot = self._bagID, self._slotID
     if not (bag and slot) then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -253,8 +259,26 @@ local function slotWireTooltip(b)
     elseif ResetCursor then
       ResetCursor()
     end
+  end
+  local REFRESH = TOOLTIP_UPDATE_TIME or 0.2
+  b:SetScript("OnEnter", function(self)
+    self._neTipTimer = REFRESH
+    showTip(self)
   end)
-  b:SetScript("OnLeave", function()
+  b:SetScript("OnUpdate", function(self, elapsed)
+    -- Only the hovered slot has a live timer; every other pooled/shown button early-returns here.
+    if not self._neTipTimer then return end
+    self._neTipTimer = self._neTipTimer - (elapsed or 0)
+    if self._neTipTimer > 0 then return end
+    self._neTipTimer = REFRESH
+    if GameTooltip:IsOwned(self) then
+      showTip(self)
+    else
+      self._neTipTimer = nil  -- tooltip re-owned elsewhere (e.g. left without OnLeave firing); stop ticking
+    end
+  end)
+  b:SetScript("OnLeave", function(self)
+    self._neTipTimer = nil
     GameTooltip:Hide()
     if ResetCursor then ResetCursor() end
   end)

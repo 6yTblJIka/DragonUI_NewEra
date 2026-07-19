@@ -339,6 +339,48 @@ local function cbSync(bar)
   bar._thumb:SetPoint("TOP", bar, "TOP", 0, -(frac * travel))
 end
 
+-- BUG FIX (owner report 2026-07-17, TWICE — the global hook below wasn't enough on its own: "bars
+-- still don't hide after not being needed"). cbSync is driven by OnVerticalScroll/
+-- OnScrollRangeChanged hooks (which a FauxScrollFrame — a fake/manual pagination widget, not a
+-- real scrolled child — may never actually fire), the slider's OnValueChanged (doesn't fire for a
+-- pure min/max SHRINK when the current value stays clamped at the same spot, e.g. already scrolled
+-- to top going from scrollable to fully-fits), and a 100ms-throttled OnUpdate poll. None of those
+-- proved reliable enough in practice. NE.scrollbar.SyncCustom is the deterministic fix: callers
+-- that already know exactly when their list's item count changed (every Refresh* function calls
+-- FauxScrollFrame_Update with the fresh total right there) call this immediately afterward,
+-- synchronously, in the SAME call stack as the data change — no hook/event/poll timing to trust.
+-- Optional total/numToDisplay (owner report 2026-07-17, persisted through the alwaysShow switch:
+-- "the thumb of the bar stays" after a Show Offline-style toggle shrinks the list back to fitting).
+-- Root cause: FauxScrollFrame_Update doesn't reliably reset its hidden slider's min/max to 0 on
+-- this client when a list shrinks from scrollable to fitting — stale drag/value state can leave
+-- GetMinMaxValues() reporting a nonzero range, so cbSync's range<=0 check never trips and the thumb
+-- (sized/positioned off that stale range) never hides. This mirrors the defensive clamp the
+-- Professions recipe list and Auction House Browse tab already use for the same reason: when the
+-- caller tells us the list fits, force the slider to (0, 0) directly before syncing rather than
+-- trusting FauxScrollFrame_Update's own write to have taken effect.
+function NE.scrollbar.SyncCustom(scrollFrame, total, numToDisplay)
+  if not scrollFrame then return end
+  if total ~= nil and numToDisplay ~= nil and total <= numToDisplay then
+    local bar = scrollFrame._neCustomBar
+    local slider = bar and bar._slider
+    if slider then
+      if slider.SetMinMaxValues then slider:SetMinMaxValues(0, 0) end
+      if slider.SetValue then slider:SetValue(0) end
+    end
+  end
+  if scrollFrame._neCustomBar then
+    cbSync(scrollFrame._neCustomBar)
+  end
+end
+
+-- Kept as a redundant safety net for any caller that doesn't (or can't) call SyncCustom directly.
+if not NE.scrollbar._neFauxUpdateHooked and _G.FauxScrollFrame_Update and hooksecurefunc then
+  NE.scrollbar._neFauxUpdateHooked = true
+  hooksecurefunc("FauxScrollFrame_Update", function(scrollFrame)
+    NE.scrollbar.SyncCustom(scrollFrame)
+  end)
+end
+
 -- Drag handler: convert the thumb's top Y (relative to the track) into a slider
 -- value and write it back (which scrolls the rows via OnVerticalScroll).
 local function cbOnThumbUpdate(thumb)
@@ -481,6 +523,30 @@ function NE.scrollbar.BuildCustom(scrollFrame, opts)
       downBtn:SetFrameLevel(bar:GetFrameLevel() + 1)
     end
     bar._upBtn, bar._downBtn = upBtn, downBtn
+
+    -- BUG FIX (owner report 2026-07-17, persisted through two prior fix attempts: "bars still
+    -- don't hide"). The stock slider gets a PERMANENT re-hide guard above (line ~466) regardless
+    -- of wantArrows, but upBtn/downBtn only got one when wantArrows was FALSE — every list in this
+    -- addon wants arrows, so neither button ever got that safety net. They're reparented off the
+    -- slider (onto scrollFrame's parent) specifically so they can survive the slider's own Hide(),
+    -- which means something in the stock FauxScrollFrame/UIPanelScrollBar machinery re-Show()-ing
+    -- them independently (e.g. on hover, or Blizzard's own internal update pass) was never caught
+    -- by cbSync afterward — explaining the exact asymmetry reported: showing worked (our own
+    -- cbSync Show() call), hiding didn't stick (something else's Show() call happened after ours).
+    -- Range-aware, not a blanket re-hide like the slider's: re-checks the CURRENT range on every
+    -- Show() and only hides if there's genuinely nothing to scroll.
+    local function guardArrow(btn)
+      if not (btn and btn.HookScript) then return end
+      btn:HookScript("OnShow", function(self)
+        local slider = bar._slider
+        if not slider then return end
+        local minV, maxV = slider:GetMinMaxValues()
+        minV = minV or 0; maxV = maxV or 0
+        if (maxV - minV) <= 0 and not bar._alwaysShow then self:Hide() end
+      end)
+    end
+    guardArrow(upBtn)
+    guardArrow(downBtn)
   end
 
   -- track: top cap + bottom cap + tiled middle

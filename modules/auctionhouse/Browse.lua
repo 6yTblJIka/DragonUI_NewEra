@@ -488,6 +488,14 @@ local function buildCategoryList(parent)
 
   refreshRows()
 
+  -- Deselect all three tiers. Used by the shift-click-to-search bridge: a "find this bag item"
+  -- search must not be constrained by (and then silently miss under) whatever category happened
+  -- to be selected from a previous browse.
+  function list:ClearSelection()
+    selectedCat, selectedSub, selectedInv = nil, nil, nil
+    refreshRows()
+  end
+
   list.Refresh = refreshRows
   list.Rows = rows
   return list
@@ -735,23 +743,84 @@ function AH.BuildBrowsePane(parent)
   headerStrip:SetPoint("TOPRIGHT", list, "TOPRIGHT", -22, -1)
   headerStrip:SetHeight(21)
 
+  -- Sortable column headers (issue #17: no way to sort results by price/quantity). Each header is
+  -- a click target: first click sorts the aggregated results by that column ascending, second click
+  -- flips direction. Sorting happens client-side over the fully-scanned aggregate (sortDisplayRows,
+  -- defined with the paging helpers below and forward-declared here because the header buttons are
+  -- built before the data pipeline exists).
+  local sortKey = nil
+  local sortAsc = true
+  local applySort -- assigned below once the paging helpers it drives exist
+  local headerButtons = {}
+
   local headers = {
-    { text = AUCTION_HOUSE_BROWSE_HEADER_PRICE or "Price", x = 10, w = 120, just = "LEFT" },
-    { text = AUCTION_HOUSE_BROWSE_HEADER_NAME or NAME or "Name", x = 180, w = 260, just = "LEFT" },
-    { text = AUCTION_HOUSE_BROWSE_HEADER_QUANTITY or "Available", x = -80, w = 72, just = "RIGHT", right = true },
+    { text = AUCTION_HOUSE_BROWSE_HEADER_PRICE or "Price", x = 10, w = 120, just = "LEFT", key = "price" },
+    { text = AUCTION_HOUSE_BROWSE_HEADER_NAME or NAME or "Name", x = 180, w = 260, just = "LEFT", key = "name" },
+    { text = AUCTION_HOUSE_BROWSE_HEADER_QUANTITY or "Available", x = -80, w = 72, just = "RIGHT", right = true, key = "qty" },
   }
 
   for i = 1, #headers do
     local h = headers[i]
-    local fs = list:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    fs:SetPoint("TOPLEFT", list, "TOPLEFT", h.x, -7)
+    local hb = CreateFrame("Button", nil, list)
+    hb:SetSize(h.w, 21)
     if h.right then
-      fs:ClearAllPoints()
-      fs:SetPoint("TOPRIGHT", list, "TOPRIGHT", h.x, -7)
+      hb:SetPoint("TOPRIGHT", list, "TOPRIGHT", h.x, -1)
+    else
+      hb:SetPoint("TOPLEFT", list, "TOPLEFT", h.x, -1)
     end
+
+    local fs = hb:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    fs:SetPoint("LEFT", hb, "LEFT", 0, 0)
     fs:SetWidth(h.w)
     fs:SetJustifyH(h.just)
     fs:SetText(h.text)
+    hb.Label = fs
+
+    -- Same sort-direction arrow sheet the stock Who/Guild column headers use; up = ascending.
+    local arrow = hb:CreateTexture(nil, "OVERLAY")
+    arrow:SetTexture("Interface\\Buttons\\UI-SortArrow")
+    arrow:SetSize(9, 8)
+    arrow:Hide()
+    hb.Arrow = arrow
+
+    hb:SetHighlightTexture("Interface\\Buttons\\WHITE8X8")
+    local hhl = hb:GetHighlightTexture()
+    if hhl then
+      hhl:SetVertexColor(1, 0.82, 0, 0.08)
+      hhl:SetBlendMode("ADD")
+    end
+
+    hb._sortKey = h.key
+    hb._just = h.just
+    hb:SetScript("OnClick", function(self)
+      if applySort then applySort(self._sortKey) end
+    end)
+    headerButtons[#headerButtons + 1] = hb
+  end
+
+  local function updateHeaderArrows()
+    for i = 1, #headerButtons do
+      local hb = headerButtons[i]
+      if hb._sortKey == sortKey then
+        -- Positioned off the label's live string width so the arrow hugs the text no matter the
+        -- localized header length. Right-justified labels get the arrow on their left instead.
+        local tw = (hb.Label.GetStringWidth and hb.Label:GetStringWidth()) or 40
+        hb.Arrow:ClearAllPoints()
+        if hb._just == "RIGHT" then
+          hb.Arrow:SetPoint("RIGHT", hb, "RIGHT", -(tw + 4), 0)
+        else
+          hb.Arrow:SetPoint("LEFT", hb, "LEFT", math.min(tw + 3, hb:GetWidth() - 9), 0)
+        end
+        if sortAsc then
+          hb.Arrow:SetTexCoord(0, 0.5625, 1.0, 0)
+        else
+          hb.Arrow:SetTexCoord(0, 0.5625, 0, 1.0)
+        end
+        hb.Arrow:Show()
+      else
+        hb.Arrow:Hide()
+      end
+    end
   end
 
   local empty = list:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -1357,6 +1426,57 @@ function AH.BuildBrowsePane(parent)
     if currentPage + 1 < totalDisplayPages() then showPage(currentPage + 1) end
   end)
 
+  -- The price a row DISPLAYS (min buyout, else min bid) is also the price it sorts by, so what the
+  -- user sees in the Price column is exactly what the column orders on. nil = no price shown ("-").
+  local function effectiveItemPrice(g)
+    if g.minBuyout and g.minBuyout > 0 then return g.minBuyout end
+    if g.minBid and g.minBid > 0 then return g.minBid end
+    return nil
+  end
+
+  -- In-place sort of the full aggregate (all pages of it) by the active header column. Called
+  -- after every buildDisplayRows so a mid-scan redraw and a finished scan both come out ordered.
+  local function sortDisplayRows()
+    if not sortKey then return end
+    local key, asc = sortKey, sortAsc
+    table.sort(displayRows, function(a, b)
+      local av, bv
+      if key == "price" then
+        av, bv = effectiveItemPrice(a), effectiveItemPrice(b)
+        -- Priceless rows ("-") always sink to the bottom, whichever direction is active.
+        if (av ~= nil) ~= (bv ~= nil) then return av ~= nil end
+        if av == nil then av, bv = 0, 0 end
+      elseif key == "qty" then
+        av, bv = a.count or 0, b.count or 0
+      else
+        av, bv = a.name or "", b.name or ""
+      end
+      if av ~= bv then
+        if asc then return av < bv else return av > bv end
+      end
+      -- Equal keys: fall back to name ascending (returns false on full ties, keeping the
+      -- comparator a valid strict order for table.sort).
+      return (a.name or "") < (b.name or "")
+    end)
+  end
+
+  applySort = function(key)
+    if sortKey == key then
+      sortAsc = not sortAsc
+    else
+      sortKey = key
+      sortAsc = true
+    end
+    updateHeaderArrows()
+    sortDisplayRows()
+    -- Reordering invalidates the current page slice; snap back to page 1 of the new order.
+    currentPage = 0
+    buildPageRows()
+    resetResultsScroll()
+    refreshResults()
+    updatePageControls()
+  end
+
   -- Exposed so Window.lua can clear this pane's search state when the WHOLE Auction House window
   -- closes (AH.frame:Hide(), via AUCTION_HOUSE_CLOSED/ESC/close-button) -- not the same as switching
   -- away from the Buy tab, which only hides `pane` itself and is already handled by the OnHide hook
@@ -1447,6 +1567,7 @@ function AH.BuildBrowsePane(parent)
     if not more then scanning = false end
 
     buildDisplayRows()
+    sortDisplayRows()
     buildPageRows()
     -- pcall-wrapped: refreshResults calls the stock FauxScrollFrame_Update, which errors if the
     -- scroll frame is ever anonymous again (see the naming comment above) -- don't let a future
@@ -1548,6 +1669,27 @@ function AH.BuildBrowsePane(parent)
   local detailCount = detail:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   detailCount:SetPoint("RIGHT", detailRefresh, "LEFT", -8, 0)
   detailCount:SetTextColor(1, 1, 1)
+
+  -- "Sort Per Item" toggle (issue #17): the listings arrive cheapest-TOTAL-first, which buries a
+  -- well-priced 20-stack under every cheap single. When checked, the list ranks by per-item buyout
+  -- instead. Display is unaffected -- the Buyout (total) and Per Item columns are both always
+  -- visible in the list, and the Bid/Buyout ACTION buttons always charge the listing's real total,
+  -- which is what the confirm popup shows.
+  -- Default ON: per-item price is the number that actually compares listings fairly, so it's the
+  -- default ranking; untick to fall back to cheapest-total-first.
+  local detailPerItem = true
+  local detailPerItemCheck = CreateFrame("CheckButton", nil, detail, "UICheckButtonTemplate")
+  detailPerItemCheck:SetSize(22, 22)
+  detailPerItemCheck:SetPoint("LEFT", detailBack, "RIGHT", 12, 0)
+  detailPerItemCheck:SetChecked(true)
+  local detailPerItemLabel = detail:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  detailPerItemLabel:SetPoint("LEFT", detailPerItemCheck, "RIGHT", 2, 0)
+  detailPerItemLabel:SetText("Sort Per Item")
+  detailPerItemCheck:SetScript("OnClick", function(self)
+    detailPerItem = self:GetChecked() and true or false
+    -- Re-read + re-sort the page the client already holds -- no fresh server query needed.
+    if refreshDetailRows then pcall(refreshDetailRows) end
+  end)
 
   -- Item header card (its own separate bordered box, not shared with the Back row above it). Real
   -- retail art per the reference addon's own atlas dump (ReferenceAddons/NewEra/Generated/
@@ -1667,11 +1809,18 @@ function AH.BuildBrowsePane(parent)
   detailHeaderStrip:SetPoint("TOPRIGHT", detailList, "TOPRIGHT", -22, -1)
   detailHeaderStrip:SetHeight(21)
 
+  -- Auctionator-style column order: the per-item price leads (it's the number listings are
+  -- compared by), then the whole-stack Buyout and Current Bid, then a Quantity column wide enough
+  -- for a grouped row's "6 stacks of 20" breakdown. Per Item and Buyout are BOTH always visible --
+  -- swapping one display into the other's column (an earlier iteration) made it impossible to see
+  -- what a whole stack costs while comparing unit prices. There is no Seller column anymore: a
+  -- grouped row can span several sellers, so seller info lives in the row hover tooltip instead
+  -- (see ensureDetailRow), where a group can list all of them.
   local detailCols = {
-    { text = AUCTION_HOUSE_HEADER_CURRENT_BID or BID or "Current Bid", x = 8,   w = 110, just = "RIGHT" },
+    { text = "Per Item",                                               x = 8,   w = 110, just = "RIGHT" },
     { text = AUCTION_HOUSE_HEADER_BUYOUT or BUYOUT or "Buyout",        x = 128, w = 110, just = "RIGHT" },
-    { text = AUCTION_HOUSE_HEADER_QUANTITY or "Qty",                   x = 248, w = 50,  just = "RIGHT" },
-    { text = AUCTION_HOUSE_HEADER_SELLER or SELLER or "Seller",        x = 308, w = 220, just = "LEFT" },
+    { text = AUCTION_HOUSE_HEADER_CURRENT_BID or BID or "Current Bid", x = 248, w = 110, just = "RIGHT" },
+    { text = AUCTION_HOUSE_HEADER_QUANTITY or "Quantity",              x = 372, w = 150, just = "LEFT" },
     { text = AUCTION_HOUSE_HEADER_TIME_LEFT or "Time Left",            x = -80, w = 72,  just = "RIGHT", right = true },
   }
   for i = 1, #detailCols do
@@ -1788,35 +1937,73 @@ function AH.BuildBrowsePane(parent)
       hl:SetBlendMode("ADD")
     end
 
-    local bid = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    bid:SetPoint("LEFT", row, "LEFT", 0, 0)
-    bid:SetWidth(118)
-    bid:SetJustifyH("RIGHT")
-    row.Bid = bid
+    local each = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    each:SetPoint("LEFT", row, "LEFT", 0, 0)
+    each:SetWidth(116)
+    each:SetJustifyH("RIGHT")
+    row.Each = each
 
     local buyout = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    buyout:SetPoint("LEFT", row, "LEFT", 120, 0)
-    buyout:SetWidth(118)
+    buyout:SetPoint("LEFT", row, "LEFT", 122, 0)
+    buyout:SetWidth(114)
     buyout:SetJustifyH("RIGHT")
     row.Buyout = buyout
 
-    local qty = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    qty:SetPoint("LEFT", row, "LEFT", 248, 0)
-    qty:SetWidth(50)
-    qty:SetJustifyH("RIGHT")
-    row.Qty = qty
+    local bid = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    bid:SetPoint("LEFT", row, "LEFT", 242, 0)
+    bid:SetWidth(114)
+    bid:SetJustifyH("RIGHT")
+    row.Bid = bid
 
-    local seller = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    seller:SetPoint("LEFT", row, "LEFT", 308, 0)
-    seller:SetPoint("RIGHT", row, "RIGHT", -84, 0)
-    seller:SetJustifyH("LEFT")
-    row.Seller = seller
+    local qty = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    qty:SetPoint("LEFT", row, "LEFT", 370, 0)
+    qty:SetPoint("RIGHT", row, "RIGHT", -84, 0)
+    qty:SetJustifyH("LEFT")
+    row.Qty = qty
 
     local time = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     time:SetPoint("RIGHT", row, "RIGHT", -8, 0)
     time:SetWidth(76)
     time:SetJustifyH("RIGHT")
     row.Time = time
+
+    -- Seller info moved off the row into this tooltip (a grouped row can span several sellers).
+    row:SetScript("OnEnter", function(self)
+      local d = self._data
+      if not d then return end
+      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+      GameTooltip:ClearLines()
+      if (d.num or 1) > 1 then
+        GameTooltip:AddLine(string.format("%d auctions", d.num), 1, 0.82, 0)
+      end
+      -- Unique sellers, capped so one mass-poster's wall of alts can't grow a giant tooltip.
+      -- owner can be nil on this client until the server fills it in; skip those.
+      local sellers = d.owners or { d.owner }
+      local seen, uniq = {}, {}
+      for i = 1, #sellers do
+        local s = sellers[i]
+        if s and s ~= "" and not seen[s] then
+          seen[s] = true
+          uniq[#uniq + 1] = s
+        end
+      end
+      if #uniq > 0 then
+        local MAX_SHOWN = 8
+        local label = (#uniq == 1) and (AUCTION_HOUSE_HEADER_SELLER or "Seller")
+          or ((AUCTION_HOUSE_HEADER_SELLER or "Seller") .. "s")
+        local names = table.concat(uniq, ", ", 1, math.min(#uniq, MAX_SHOWN))
+        if #uniq > MAX_SHOWN then
+          names = names .. string.format(" (+%d more)", #uniq - MAX_SHOWN)
+        end
+        GameTooltip:AddLine(label .. ": " .. names, 1, 1, 1, true)
+      end
+      if GameTooltip:NumLines() > 0 then
+        GameTooltip:Show()
+      else
+        GameTooltip:Hide()
+      end
+    end)
+    row:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     row:RegisterForClicks("LeftButtonUp")
     row:SetScript("OnClick", function(self)
@@ -1859,10 +2046,74 @@ function AH.BuildBrowsePane(parent)
           index = i, count = count or 1,
           curBid = cur, nextBid = (cur or 0) + (minInc or 0),
           buyout = buyout, owner = owner,
+          hasBid = (bidAmt and bidAmt > 0) and true or false,
           timeText = detailTimeLeftText(tl),
         }
       end
     end
+
+    -- Hybrid Auctionator-style condensing (issue #17 follow-up): listings that are identical from
+    -- a buyer's point of view -- same stack size, same buyout, same starting bid, and NO bid in
+    -- progress -- collapse into one row ("6 stacks of 1", "3 stacks of 2"), exactly how
+    -- Auctionator's own scan does it (AtrScan:AddScanItem's numAuctions counter). Listings with an
+    -- active bid (or no buyout at all) stay as individual rows: each carries its own bid state, so
+    -- grouping them would hide which specific auction you'd be bidding against. A grouped row
+    -- remembers every member's auction index (cheapest-index first); Bid/Buyout act on the first
+    -- one, and the AUCTION_ITEM_LIST_UPDATE that follows a purchase re-reads and re-groups, so the
+    -- stack count visibly ticks down with each buy. `key` identifies a row across those refreshes
+    -- (group identity for grouped rows, auction index for singles) so the selection can survive.
+    local groups = {}
+    local condensed = {}
+    for i = 1, #out do
+      local r = out[i]
+      if r.buyout and r.buyout > 0 and not r.hasBid then
+        local key = (r.count or 1) .. ":" .. r.buyout .. ":" .. (r.curBid or 0)
+        local g = groups[key]
+        if not g then
+          r.key = "g:" .. key
+          r.num = 1
+          r.indices = { r.index }
+          r.owners = { r.owner }
+          groups[key] = r
+          condensed[#condensed + 1] = r
+        else
+          g.num = g.num + 1
+          g.indices[#g.indices + 1] = r.index
+          g.owners[#g.owners + 1] = r.owner
+          -- Per-member fields only survive on the group while they're uniform across it.
+          if g.owner ~= r.owner then g.owner = nil end
+          if g.timeText ~= r.timeText then g.timeText = "" end
+        end
+      else
+        r.key = "i:" .. r.index
+        r.num = 1
+        condensed[#condensed + 1] = r
+      end
+    end
+    out = condensed
+
+    -- Explicit cheapest-first ordering (issue #17) instead of trusting whatever order the server
+    -- returned the page in: listings WITH a buyout first (ranked by total buyout, or by per-item
+    -- buyout when the Sort Per Item toggle is on), then bid-only listings ranked by current bid,
+    -- with the auction index as a stable final tiebreak.
+    local function rankPrice(r)
+      local bo = (r.buyout and r.buyout > 0) and r.buyout or nil
+      local bid = r.curBid or 0
+      if detailPerItem then
+        local c = (r.count and r.count > 0) and r.count or 1
+        if bo then bo = bo / c end
+        bid = bid / c
+      end
+      return bo, bid
+    end
+    table.sort(out, function(a, b)
+      local abo, abid = rankPrice(a)
+      local bbo, bbid = rankPrice(b)
+      if (abo ~= nil) ~= (bbo ~= nil) then return abo ~= nil end
+      if abo and bbo and abo ~= bbo then return abo < bbo end
+      if not abo and abid ~= bbid then return abid < bbid end
+      return a.index < b.index
+    end)
     return out
   end
 
@@ -1882,15 +2133,23 @@ function AH.BuildBrowsePane(parent)
       detailEmpty:Show()
       detailEmpty:SetText("No listings.")
     end
-    detailCount:SetText(tostring(drawCount))
+    -- Total AUCTIONS, not visible rows -- condensing collapses identical listings into one row,
+    -- but this readout should keep meaning "how many listings exist".
+    local totalAuctions = 0
+    for i = 1, drawCount do
+      totalAuctions = totalAuctions + (detailRowsData[i].num or 1)
+    end
+    detailCount:SetText(tostring(totalAuctions))
 
-    -- Selection survives a refresh only if the same auction index is still present -- buying an
-    -- auction removes it from the next update, so drop a stale selection instead of leaving the
-    -- footer buttons pointed at a listing that no longer exists.
+    -- Selection survives a refresh only if the same row identity is still present -- matched by
+    -- `key`, which for a grouped row is its (stack size, buyout, bid) identity rather than any one
+    -- auction index, so buying one stack out of "6 stacks of 20" keeps the shrunk group selected
+    -- for the next buy. When the identity is gone entirely (last one bought), drop the selection
+    -- instead of leaving the footer buttons pointed at a listing that no longer exists.
     if detailSelected then
       local stillThere = nil
       for i = 1, #detailRowsData do
-        if detailRowsData[i].index == detailSelected.index then
+        if detailRowsData[i].key == detailSelected.key then
           stillThere = detailRowsData[i]
           break
         end
@@ -1903,10 +2162,17 @@ function AH.BuildBrowsePane(parent)
       local data = detailRowsData[i + offset]
       if data then
         row._data = data
-        row.Bid:SetText(moneyText(data.curBid or 0))
+        -- Per Item = buyout / stack size, ceil'd so a fractional copper never understates the
+        -- cost. Display-only; the popup/purchase path uses the listing's real totals.
+        local per = (data.count and data.count > 0) and data.count or 1
+        row.Each:SetText(moneyText(math.ceil((data.buyout or 0) / per)))
         row.Buyout:SetText(moneyText(data.buyout or 0))
-        row.Qty:SetText(tostring(data.count or 1))
-        row.Seller:SetText(data.owner or "")
+        row.Bid:SetText(moneyText(data.curBid or 0))
+        if (data.num or 1) > 1 then
+          row.Qty:SetText(string.format("%d stacks of %d", data.num, data.count or 1))
+        else
+          row.Qty:SetText(tostring(data.count or 1))
+        end
         row.Time:SetText(data.timeText or "")
         if row.Sel then row.Sel:SetShown(data == detailSelected) end
         row:Show()
@@ -2034,6 +2300,42 @@ function AH.BuildBrowsePane(parent)
     pane.CategoryList = catList
   else
     pane.CategoryList = nil
+  end
+
+  -- Shift-clicking a bag item fills this search box (issue #17). On a stock client,
+  -- ChatEdit_InsertLink routes an item shift-click (no chat box open) into the legacy Browse tab's
+  -- BrowseName edit box -- but that whole frame is permanently alpha-cloaked here (Window.lua's
+  -- suppressLegacyAuctionFrame), so the name landed in an invisible box and the visible search bar
+  -- stayed empty. Post-hook the same entry point: when no chat edit box took the link and this
+  -- pane is the one on screen, mirror the item's name into our search box and run the search
+  -- immediately (Auctionator-style; one shift-click = results on screen). hooksecurefunc (not a
+  -- replacement) so the stock routing, other addons' hooks, and taint behavior are all untouched.
+  if not AH._browseChatLinkHooked and type(hooksecurefunc) == "function" then
+    AH._browseChatLinkHooked = true
+    hooksecurefunc("ChatEdit_InsertLink", function(text)
+      if type(text) ~= "string" or not string.find(text, "item:", 1, true) then return end
+      -- A shown chat edit box already consumed the link; 3.3.5a uses the single global
+      -- ChatFrameEditBox, but check the retail-style active-window API too in case this client
+      -- backports it.
+      if ChatEdit_GetActiveWindow and ChatEdit_GetActiveWindow() then return end
+      if ChatFrameEditBox and ChatFrameEditBox.IsShown and ChatFrameEditBox:IsShown() then return end
+      if not (pane:IsShown() and AH.frame and AH.frame:IsShown()) then return end
+      local name = GetItemInfo and GetItemInfo(text)
+      if not name or name == "" then
+        -- Item not in the local cache yet: fall back to the display name inside the link itself.
+        name = string.match(text, "%[(.-)%]")
+      end
+      if not name or name == "" then return end
+      searchBox:SetText(name)
+      searchBox:ClearFocus()
+      -- Name search only: drop any category selection, or a herb shift-clicked while "Weapons"
+      -- was highlighted would query Weapons-only and come back empty. The filter popup's level/
+      -- rarity/usable settings are left alone -- they're deliberate, visible-on-reopen choices.
+      if pane.CategoryList and pane.CategoryList.ClearSelection then
+        pane.CategoryList:ClearSelection()
+      end
+      runSearch()
+    end)
   end
 
   return pane

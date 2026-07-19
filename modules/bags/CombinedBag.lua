@@ -842,6 +842,7 @@ end
 
 function CB.Show()
   if not buildChrome() then return end
+  local wasShown = frame:IsShown()
   hideStockFrames()
   -- Open with a clean search: clear the box + filter and drop focus so the placeholder shows again.
   CB._searchText = ""
@@ -852,10 +853,20 @@ function CB.Show()
   frame:Show()
   frame:Raise()
   refresh()
+  -- Bag-open whoosh. The stock ContainerFrames play this on show, but the combined bag suppresses
+  -- them and replaces the open globals, so we have to play it ourselves (issue #12). Only on an
+  -- actual hidden->shown transition — a re-Show of an already-open bag (e.g. loot opening a
+  -- container while bags are up) must not re-trigger it.
+  if not wasShown and PlaySound then pcall(PlaySound, "igBackPackOpen") end
 end
 
 function CB.Hide()
-  if frame then frame:Hide() end
+  if not (frame and frame:IsShown()) then
+    if frame then frame:Hide() end
+    return
+  end
+  frame:Hide()
+  if PlaySound then pcall(PlaySound, "igBackPackClose") end
 end
 
 function CB.IsShown()
@@ -1653,6 +1664,7 @@ local function installWatcher()
     "BAG_UPDATE", "BAG_UPDATE_DELAYED", "ITEM_LOCK_CHANGED", "BAG_UPDATE_COOLDOWN",
     "PLAYER_MONEY", "CURRENCY_DISPLAY_UPDATE", "PLAYER_ENTERING_WORLD", "MERCHANT_SHOW", "MERCHANT_CLOSED",
     "QUEST_ACCEPTED", "UNIT_QUEST_LOG_CHANGED", "PLAYER_REGEN_ENABLED",
+    "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED",
   }) do
     pcall(function() w:RegisterEvent(ev) end)
   end
@@ -1660,6 +1672,20 @@ local function installWatcher()
     if event == "PLAYER_REGEN_ENABLED" then
       -- Combat ended: flush any bag re-parents that were queued during lockdown, then refresh.
       if grid and grid.FlushPendingParents then grid:FlushPendingParents() end
+    elseif event == "AUCTION_HOUSE_SHOW" then
+      -- Stock merchant/bank auto-open bags via OpenAllBags() (which we intercept), but the 3.3.5 AH
+      -- does not -- so the combined bag never opened with the AH (issue #12). Mirror the merchant
+      -- behaviour here. Owner-gated: only auto-open when the bag wasn't already up, and remember we
+      -- did, so we only auto-close it on AUCTION_HOUSE_CLOSED if we were the ones who opened it.
+      if not InCombatLockdown() and not CB.IsShown() then
+        CB._ahAutoOpened = true
+        CB.Show()
+      end
+    elseif event == "AUCTION_HOUSE_CLOSED" then
+      if CB._ahAutoOpened then
+        CB._ahAutoOpened = nil
+        CB.Hide()
+      end
     elseif event == "MERCHANT_SHOW" and CB._autoSellJunk and not InCombatLockdown() then
       -- Defer one tick so the MerchantFrame is fully open + item quality is resolved before selling.
       if C_Timer and C_Timer.After then
@@ -1686,8 +1712,8 @@ CB.Boot = boot
 if NE.modules and NE.modules.Register then
   NE.modules.Register{
     name    = MODULE,
-    default = true,    -- FORCED default bag UI: takes over bag opening, supersedes the per-window restyle.
-                       -- Its options toggle is hidden (integration/Options.lua) so players can't switch.
+    default = false,   -- Default OFF: players opt in via the options toggle (integration/Options.lua).
+                       -- When enabled it takes over bag opening and supersedes the per-window restyle.
     label   = NE.L["Combined bag (all-in-one)"],
     category = "Windows",
     desc    = NE.L["One movable window showing every bag slot in a Dragonflight-style grid. Takes over "
