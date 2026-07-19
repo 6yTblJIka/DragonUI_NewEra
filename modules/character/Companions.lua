@@ -48,7 +48,7 @@ local pane
 local topRow, petModeBtn, collectionModeBtn
 local collectionFrame, filterRow, mountFilterBtn, critterFilterBtn
 local scroll, content, emptyLabel
-local previewHost, previewModel, previewName, previewHint, previewFavBtn
+local previewHost, previewLayer, previewModel, previewName, previewHint, previewFavBtn
 local activeFilter = "MOUNT"     -- "MOUNT" or "CRITTER"
 local collectionActive = false
 local previewedData               -- the companion currently shown in the 3D preview (or nil)
@@ -204,7 +204,16 @@ local function buildPreview()
   if not host then return false end
   previewHost = host
 
-  local ok, m = pcall(CreateFrame, "PlayerModel", "DragonUI_NewEra_CompanionPreviewModel", host)
+  -- Everything below is parented to this wrapper rather than directly to host, and its frame level
+  -- is explicitly pushed well above host's - CP._sidebar (and InsetRight's own border/background
+  -- chrome) otherwise sit at a level that draws OVER a same-or-lower-level PlayerModel, which is
+  -- what was hiding the model behind the sidebar.
+  local layer = CreateFrame("Frame", nil, host)
+  layer:SetAllPoints(host)
+  layer:SetFrameLevel((host:GetFrameLevel() or 1) + 50)
+  previewLayer = layer
+
+  local ok, m = pcall(CreateFrame, "PlayerModel", "DragonUI_NewEra_CompanionPreviewModel", layer)
   if not ok or not m then log("buildPreview: PlayerModel creation failed"); return false end
   previewModel = m
   previewModel:SetPoint("TOPLEFT", host, "TOPLEFT", 3, -24)
@@ -230,12 +239,12 @@ local function buildPreview()
     C_Timer.After(0, function() pcall(resizePreviewBg, previewModel) end)
   end
 
-  previewName = host:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  previewName = layer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   previewName:SetPoint("TOP", host, "TOP", 0, -6)
   previewName:SetPoint("LEFT", host, "LEFT", 6, 0)
   previewName:SetPoint("RIGHT", host, "RIGHT", -26, 0) -- leave room for the favorite checkbox
 
-  previewFavBtn = CreateFrame("CheckButton", nil, host, "UICheckButtonTemplate")
+  previewFavBtn = CreateFrame("CheckButton", nil, layer, "UICheckButtonTemplate")
   previewFavBtn:SetSize(20, 20)
   previewFavBtn:SetPoint("TOPRIGHT", host, "TOPRIGHT", -2, -1)
   previewFavBtn:SetScript("OnClick", function(self)
@@ -252,7 +261,7 @@ local function buildPreview()
   previewFavBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
   previewFavBtn:Hide()
 
-  previewHint = host:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  previewHint = layer:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
   previewHint:SetPoint("CENTER", previewModel, "CENTER", 0, 0)
   previewHint:SetText("Left-click an icon to preview it here.\nRight-click to summon/dismiss.")
 
