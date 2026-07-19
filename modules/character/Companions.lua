@@ -265,7 +265,7 @@ local function buildPreview()
   previewFavBtn:SetScript("OnClick", function(self)
     if not previewedData then self:SetChecked(false); return end
     setFavorite(previewedData, self:GetChecked() and true or false)
-    refreshCollection()
+    if CP.RefreshCollection then pcall(CP.RefreshCollection) end
   end)
   previewFavBtn:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
@@ -579,10 +579,22 @@ end
 -- only/default view instead of an empty "You do not have a pet." pane the player can't do anything
 -- about. Re-checked on the same events TabButtons.lua watches, since a pet-capable state can appear
 -- mid-session (e.g. a temporary pet-granting trinket/spell on an otherwise petless class).
-local function refreshPetSectionAvailability()
+--
+-- isInitial (true only on the very first call, from buildToggle) also picks the RESTING default:
+-- pet-capable classes (Hunter/Warlock/DK/Mage-with-elemental) land on their actual pet, everyone else
+-- lands on Collection since there's nothing else to show them. Ongoing calls (UNIT_PET/PET_UI_UPDATE)
+-- only flip petless -> Collection when a pet disappears mid-session - they never yank a pet-capable
+-- class back to My Pet if the player is already intentionally browsing Collection.
+local hasSetInitialPetDefault = false
+local function refreshPetSectionAvailability(isInitial)
   local has = canHavePet()
   if petModeBtn then
     if has then petModeBtn:Show() else petModeBtn:Hide() end
+  end
+  if isInitial and not hasSetInitialPetDefault then
+    hasSetInitialPetDefault = true
+    showCollection(not has)
+    return
   end
   if not has and not collectionActive then
     showCollection(true)
@@ -608,9 +620,9 @@ local function buildToggle(host)
   petModeBtn:SetPoint("RIGHT", collectionModeBtn, "LEFT", -4, 0)
   petModeBtn:SetText(_G.PET or "My Pet")
   petModeBtn:SetScript("OnClick", function() showCollection(false) end)
-  setButtonEnabled(petModeBtn, false) -- resting state = Pet view
+  setButtonEnabled(petModeBtn, false) -- resting state = Pet view (overridden below if petless)
 
-  refreshPetSectionAvailability()
+  refreshPetSectionAvailability(true)
 end
 
 local function build()
