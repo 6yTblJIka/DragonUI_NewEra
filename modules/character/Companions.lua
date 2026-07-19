@@ -204,12 +204,14 @@ local function buildPreview()
   if not host then return false end
   previewHost = host
 
-  -- Everything below is parented to this wrapper rather than directly to host, and its frame level
-  -- is explicitly pushed well above host's - CP._sidebar (and InsetRight's own border/background
-  -- chrome) otherwise sit at a level that draws OVER a same-or-lower-level PlayerModel, which is
-  -- what was hiding the model behind the sidebar.
+  -- Everything below is parented to this wrapper rather than directly to host. A level bump alone
+  -- (host+50) wasn't enough - some sidebar element (likely a "sticky" category header that isn't
+  -- actually a child of CP._sidebar, so CP._sidebar:Hide() never touches it) kept drawing over the
+  -- bottom of the model. Bumping to DIALOG strata is the blunt-but-reliable fix: strata beats level
+  -- regardless of what else is in that frame subtree or how it's parented.
   local layer = CreateFrame("Frame", nil, host)
   layer:SetAllPoints(host)
+  layer:SetFrameStrata("DIALOG")
   layer:SetFrameLevel((host:GetFrameLevel() or 1) + 50)
   previewLayer = layer
 
