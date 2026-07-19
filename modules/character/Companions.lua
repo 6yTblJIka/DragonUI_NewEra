@@ -631,6 +631,22 @@ local function build()
     end)
   end
 
+  -- Second gap, opposite direction: TabButtons.lua's selectTab() (which is what actually re-syncs
+  -- previewLayer's visibility - see CP.SyncPetSidebarForCollection) only runs when you click between
+  -- tabs. It does NOT re-run just because the whole character panel is closed and reopened via
+  -- keybind - that only calls Show()/Hide() on the outer frame, which doesn't fire OnShow/OnHide on
+  -- child panes whose own Show()/Hide() wasn't directly called. So if you left on Pet+Collection,
+  -- closed the panel, and reopened it fresh, previewLayer's last-known state could be stale (hidden)
+  -- even though the Pet tab is what's actually showing. Re-assert it on every panel open.
+  if CP.frame and not CP.frame._neCompanionsPanelShowHooked then
+    CP.frame._neCompanionsPanelShowHooked = true
+    CP.frame:HookScript("OnShow", function()
+      if CP._activeTab == "Pet" and collectionActive then
+        applySidebarMode(true)
+      end
+    end)
+  end
+
   return true
 end
 
