@@ -643,6 +643,11 @@ local function build()
     CP.frame:HookScript("OnShow", function()
       if CP._activeTab == "Pet" and collectionActive then
         applySidebarMode(true)
+      elseif previewLayer then
+        -- Previously this branch did nothing, which left previewLayer showing if it happened to be
+        -- stale-shown from a prior session/state - e.g. opening straight onto the Character tab
+        -- still showed "Left-click an icon..." over the real character stats. Explicit hide here.
+        previewLayer:Hide()
       end
     end)
   end
