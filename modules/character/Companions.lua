@@ -618,6 +618,19 @@ local function build()
   if not host then return false end
   buildCollectionFrame(host)
   buildToggle(host)
+
+  -- Safety net independent of TabButtons.lua's own tab-switch bookkeeping: previewLayer lives on
+  -- CP.InsetRight, which is a SHARED region (Character tab uses it too, for its own stats sidebar),
+  -- not something scoped to the Pet tab. Tying the hide directly to this pane's own OnHide - which
+  -- fires no matter which other tab got selected - means we don't have to individually teach every
+  -- other tab's branch in TabButtons.lua about us to avoid leaking the preview into their space.
+  if not host._neCompanionsHideHooked then
+    host._neCompanionsHideHooked = true
+    host:HookScript("OnHide", function()
+      if previewLayer then previewLayer:Hide() end
+    end)
+  end
+
   return true
 end
 
