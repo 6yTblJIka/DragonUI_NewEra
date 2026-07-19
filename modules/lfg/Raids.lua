@@ -609,9 +609,12 @@ local function buildPane(host)
   pane.roleRow = roleRow
 
   -- Content inset (same rect as the Dungeons pane, same retail dark fill).
-  local inset = CreateFrame("Frame", nil, pane, "InsetFrameTemplate")
+  local inset = CreateFrame("Frame", nil, pane)
   inset:SetPoint("TOPLEFT", pane, "TOPLEFT", 0, -52)
   inset:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", 0, 34)
+  -- "InsetFrameTemplate" here is OUR custom Lua nineslice layout name (NineSliceLayouts.lua), not
+  -- a real Blizzard XML inherits template — must go through NE.nineslice.ApplyLayout.
+  if NE.nineslice and NE.nineslice.ApplyLayout then NE.nineslice.ApplyLayout(inset, "InsetFrameTemplate") end
   local insetBg = inset:CreateTexture(nil, "BACKGROUND", nil, -4)
   if NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(insetBg, "groupfinder-background", false) then
     insetBg:SetPoint("TOPLEFT", inset, "TOPLEFT", 2, -2)

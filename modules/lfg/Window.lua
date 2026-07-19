@@ -76,10 +76,12 @@ local RAIL = {
 }
 
 -- WotLK-real categories. Dungeons = a stock 3.3.5a icon (the reference's retail choice, 133076
--- INV_Helmet_08, exists here as a path); Raids = retail's UI-LFR-PORTRAIT (shipped, fdid 341547).
+-- INV_Helmet_08, exists here as a path); Raids = the native 3.3.5a Raid Browser's OWN portrait art
+-- (LFRFrame.xml's $parentIcon, file="Interface\LFGFrame\UI-LFR-PORTRAIT") — ships with the client,
+-- so referencing the path directly is both correct AND needs no custom BLP copy/registration.
 local CATEGORIES = {
   { key = "DUNGEONS", name = DUNGEONS or "Dungeons", icon = "Interface\\Icons\\INV_Helmet_08", default = true },
-  { key = "RAIDS",    name = RAIDS or "Raids", icon = 341547 },
+  { key = "RAIDS",    name = RAIDS or "Raids", icon = "Interface\\LFGFrame\\UI-LFR-PORTRAIT" },
 }
 
 local function railFile(code)
@@ -163,12 +165,19 @@ local function buildChrome(f)
   f.NineSlice = ns
 
   -- Eye portrait in the circular corner cutout: static groupfinder-eye-frame at rest…
-  -- DOWNPORT: parented to `ns` (the nineslice frame), not `f` directly — same pattern as
-  -- modules/professions/Window.lua's PortraitTex ("ringFrame = f.NineSlice or f") and
-  -- modules/spellbook. A portrait texture owned by `f` sat at a different effective stacking
-  -- position than the corner's OVERLAY-layer cutout piece (owned by `ns`), which visually read
-  -- as the eye sinking below the metal corner instead of sitting inside it.
-  local eye = ns:CreateTexture(nil, "OVERLAY")
+  -- DOWNPORT: lives on its OWN dedicated `portraitLayer` frame (not a texture directly on `ns`,
+  -- and not on `f`) — same original reasoning as before (a portrait texture owned by `f` sank
+  -- below the corner's OVERLAY cutout piece owned by `ns`), PLUS buildRail (below) re-elevates
+  -- this layer above the rail's blue panel frame once that exists, since the panel's top edge
+  -- overlaps the medallion's lower portion (retail's round-portrait-over-panel look) and would
+  -- otherwise cover it now that the rail is its own explicitly-elevated frame.
+  local portraitLayer = CreateFrame("Frame", nil, f)
+  portraitLayer:SetAllPoints(f)
+  portraitLayer:EnableMouse(false)
+  portraitLayer:SetFrameLevel((ns:GetFrameLevel() or 2) + 1)
+  f.PortraitLayer = portraitLayer
+
+  local eye = portraitLayer:CreateTexture(nil, "OVERLAY")
   if not (NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(eye, "groupfinder-eye-frame", false)) then
     eye:SetTexture("Interface\\LFGFrame\\UI-LFG-PORTRAIT")   -- native 3.3.5a eye as fail-safe
   end
@@ -176,12 +185,16 @@ local function buildChrome(f)
   eye:SetPoint("TOPLEFT", f, "TOPLEFT", -5, 8)
   f.Portrait = eye
 
-  -- …with the animated flipbook overlay on top while we're queued/listed (sized to the eye
-  -- aperture: retail eye art 44 within the 52 frame → 44/52 of our 60 ≈ 51).
-  local aeye = CreateFrame("Frame", nil, f)
-  aeye:SetFrameLevel(ns:GetFrameLevel() + 1)
-  aeye:SetSize(51, 51)
-  aeye:SetPoint("CENTER", eye, "CENTER", 0, 1)
+  -- …with the animated flipbook overlay on top while we're queued/listed. DOWNPORT: was sized to
+  -- 51x51 assuming the flipbook's 44px-native tiles needed scaling DOWN relative to the static
+  -- frame's 52px-native tile — but decoding both confirms each is a SELF-CONTAINED bezel+eye
+  -- circle that already fills its own tile edge-to-edge; the 44-vs-52 difference is just how
+  -- densely retail packed the two sheets, not a size cue. Matching the static eye's OWN display
+  -- size instead makes the animation replace it seamlessly instead of shrinking inside its ring.
+  local aeye = CreateFrame("Frame", nil, portraitLayer)
+  aeye:SetFrameLevel(portraitLayer:GetFrameLevel() + 1)
+  aeye:SetSize(eye:GetWidth(), eye:GetHeight())
+  aeye:SetPoint("CENTER", eye, "CENTER", 0, 0)
   local atex = aeye:CreateTexture(nil, "OVERLAY")
   atex:SetAllPoints(aeye); atex:SetBlendMode("BLEND")
   aeye.tex = atex
@@ -226,25 +239,55 @@ end
 
 -- ---------------------------------------------------------------------------
 -- Bluemenu category rail + left inset.
+--
+-- DOWNPORT FIX: RAIL's own art (BlueBg/corners/filigree/verts) used to be textures drawn DIRECTLY
+-- on `f` — the SAME frame that carries the window's own PortraitFrameTemplate nineslice (`ns`,
+-- buildChrome). Since `ns` is a CHILD FRAME of `f`, its content sits ABOVE any of f's own texture
+-- layers regardless of draw layer (confirmed by the eye-portrait bug fix above: content owned by
+-- `f` directly renders below content owned by `ns`). That silently blanked the whole rail. Fix:
+-- give the rail its OWN dedicated child frame, EXPLICITLY leveled above `ns` (not relying on
+-- same-level creation-order tie-breaking) — same recipe as modules/guild's WORKING
+-- FilligreeOverlay ("fo:SetFrameLevel(list:GetFrameLevel() + 5)").
+--
+-- Also fixes: `CreateFrame(..., "InsetFrameTemplate")` was passing OUR custom Lua nineslice layout
+-- NAME as if it were a real Blizzard XML inherits template — it isn't one (grep confirms every
+-- other user of "InsetFrameTemplate" in this codebase calls NE.nineslice.ApplyLayout instead), so
+-- the call silently no-opped and the inset never got its thin gold border.
 -- ---------------------------------------------------------------------------
 local function buildRail(f)
+  local ns = f.NineSlice
+  local rail = CreateFrame("Frame", FRAME_NAME .. "Rail", f)
+  rail:SetAllPoints(f)
+  rail:EnableMouse(false)
+  rail:SetFrameLevel((ns and ns:GetFrameLevel() or f:GetFrameLevel() + 1) + 1)
+  f.Rail = rail
+
   for _, r in ipairs(RAIL) do
-    local t = f:CreateTexture(nil, r.layer, nil, r.sub or 0)
+    local t = rail:CreateTexture(nil, r.layer, nil, r.sub or 0)
     t:SetTexture(railFile(r.f))
     t:SetSize(r.w, r.h)
     if r.hTile then t:SetHorizTile(true) end
     if r.vTile then t:SetVertTile(true) end
     t:SetTexCoord(r.tc[1], r.tc[2], r.tc[3], r.tc[4])
-    local rel = (r.a[2] == "f") and f or f[r.a[2]]
+    local rel = (r.a[2] == "f") and f or rail[r.a[2]]
     t:SetPoint(r.a[1], rel, r.a[3], r.a[4], r.a[5])
-    f[r.key] = t
+    rail[r.key] = t
   end
 
-  local inset = CreateFrame("Frame", FRAME_NAME .. "LeftInset", f, "InsetFrameTemplate")
+  local inset = CreateFrame("Frame", FRAME_NAME .. "LeftInset", rail)
   inset:SetPoint("TOPLEFT",    f, "TOPLEFT",    4, -24)
   inset:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 4, 4)
   inset:SetWidth(217)
+  if NE.nineslice and NE.nineslice.ApplyLayout then NE.nineslice.ApplyLayout(inset, "InsetFrameTemplate") end
   f.LeftInset = inset
+
+  -- The eye medallion (buildChrome's portraitLayer) intentionally overlaps the panel's rounded
+  -- top edge (retail's round-portrait-over-panel look) — re-elevate it above the rail NOW that
+  -- the rail frame exists, so the panel doesn't cover the medallion's lower half.
+  if f.PortraitLayer then
+    f.PortraitLayer:SetFrameLevel(rail:GetFrameLevel() + 1)
+    if f.AnimEye then f.AnimEye:SetFrameLevel(f.PortraitLayer:GetFrameLevel() + 1) end
+  end
 end
 
 -- The gold ring around each rail icon. DOWNPORT: retail's bluemenu-ring backing file (922034)
@@ -278,10 +321,15 @@ end
 -- Rail category button (retail GroupFinderGroupButtonTemplate look): bg plate 224x80 centered,
 -- ring + circular icon at LEFT, name to the right. DOWNPORT: no MaskTexture on 3.3.5a (returns
 -- nil on this client — see core/Portrait.lua) — the circular icon crop comes from
--- SetPortraitToTexture (native, and what the stock 3.3.5a LFD reward buttons use too).
+-- SetPortraitToTexture (native), appropriate HERE since this icon sits inside a round gold ring.
+-- NOTE: reward-slot icons (Dungeons.lua) are square (UI-Quickslot2 border) and must NOT use this —
+-- SetPortraitToTexture's circular crop there reads as a square-with-a-circle-cutout.
 local function buildCategoryButton(parent, def)
   local b = CreateFrame("Button", FRAME_NAME .. def.key .. "Button", parent)
   b:SetSize(203, 60)
+  -- Explicitly above the rail's own decorative textures (parent's level) — see buildRail's note
+  -- on why creation-order alone isn't trusted to settle this stacking.
+  b:SetFrameLevel(parent:GetFrameLevel() + 1)
 
   local bg = b:CreateTexture(nil, "BACKGROUND")
   bg:SetTexture(railFile("m"))
@@ -401,7 +449,7 @@ end
 local function buildCategoryButtons(f)
   local prev
   for i, def in ipairs(CATEGORIES) do
-    local b = buildCategoryButton(f, def)
+    local b = buildCategoryButton(f.Rail or f, def)
     if i == 1 then
       b:SetPoint("TOPLEFT", f, "TOPLEFT", 10, -110)
     else

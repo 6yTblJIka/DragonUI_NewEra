@@ -127,6 +127,18 @@ Standalone Dragonflight-style windows replacing the 3.3.5a `GuildFrame` and `Fri
 - **Chat** — the chat-channels tab: a grouped channel list (Group / World / Custom headers) on the left, a live roster for the selected channel on the right, and an Add-channel button.
 - **Raid** — a native raid roster grid with convert-to-raid and a full right-click context menu (promote, demote, assign main tank/assist, remove), permission-gated the same as stock.
 
+### Looking For Group
+
+![Looking For Group](screenshots/Dungeon-Raid-Finder.png)
+
+A unified Dragonflight-style Group Finder window merging the 3.3.5a Dungeon Finder (LFD) and Raid Browser (LFR) into one panel, replacing the two separate stock windows:
+
+- **Left-hand category rail** — Dungeons / Raids, bluemenu chrome, and an animated searching-eye portrait (idle when closed, an eye-opening/searching flipbook while you're queued, role-checking, in a proposal, or listed).
+- **Dungeons** — the full LFD queue: Random/type dropdown, specific-dungeon list with lock and reward icons, the random-dungeon reward panel (money/XP/loot), role selection, and join/backfill.
+- **Raids** — both LFR modes on one pane: **Queue** (multi-select raid list + comment, list/unlist) and **Browse** (raid dropdown plus a live results list with whisper/invite).
+- **Role selection** — modern round tank/healer/dps/leader medallions sharing one row component between the Dungeons and Raids panes.
+- Drives the same native `LFDParentFrame` / `LFRParentFrame` queue state under the hood — this is a modern view over 3.3.5a's real Dungeon Finder and Raid Browser APIs, not a reimplementation, so it works with whatever LFD/LFR rules the server actually runs.
+
 ## Roadmap
 
 Faithfully downporting the remaining NewEra panels to 3.3.5a:
@@ -138,6 +150,7 @@ Faithfully downporting the remaining NewEra panels to 3.3.5a:
 - [x] ~~**Auction House**~~ — *done* (Buy/Sell/Auctions panel, plus a full Auctionator embed + reskin when it's installed)
 - [x] ~~**Guild**~~ — *done* (Roster with member actions, Guild Info, Guild Chat with class-colored names + cross-session/cross-character history sync)
 - [x] ~~**Social**~~ — *done* (Friends + Ignore, Who, Chat channels, Raid roster; Guild tab opens the standalone Guild window)
+- [x] ~~**Looking For Group**~~ — *done* (unified Dungeon Finder + Raid Browser window: Dungeons/Raids category rail, role selection, raid queue + browse)
 - [ ] **Bags** — *work in progress* (retail combined bag + individual-bag restyle: grid, smart sort, separated specialty-bag sections, keyring row, rarity/usable cues, money + currency band)
 - [ ] **Quest Log**
 - [ ] **Merchant**

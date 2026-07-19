@@ -15,8 +15,10 @@
 --            medallions (+ disabled variants) for the role rows.
 --   985877   groupfinder sheet (2048x1024 raw BGRA) — micro role/lock/leader/friend/check icons
 --            used by the dungeon + raid-browse lists, and the dark groupfinder panel background.
---   341547   UI-LFR-PORTRAIT (64x64 DXT5) — retail's Raid Finder icon; our Raids rail button.
 --
+-- NOT needed: a retail Raid Finder portrait icon. The Raids rail button (Window.lua CATEGORIES)
+-- instead references the NATIVE 3.3.5a client texture directly (Interface\LFGFrame\UI-LFR-PORTRAIT,
+-- the exact art LFRParentFrame's own $parentIcon uses per LFRFrame.xml) — no BLP copy needed.
 -- NOT shipped here:
 --   * bluemenu-main/vert/goldborder (593918/593919/593917) — the category-rail chrome — already
 --     ship in Textures/Guild/ and are RegisterLocal'd by modules/guild/Assets.lua (loads before
@@ -38,7 +40,6 @@ local P = "Interface\\AddOns\\DragonUI_NewEra\\Textures\\LFG\\"
 NE.tex.RegisterLocal(4616456, P .. "4616456-groupfinder-eye.blp")
 NE.tex.RegisterLocal(5171843, P .. "5171843-roleicons.blp")
 NE.tex.RegisterLocal(985877,  P .. "985877-groupfinder.blp")
-NE.tex.RegisterLocal(341547,  P .. "341547-ui-lfr-portrait.blp")
 
 -- ============================================================================
 -- 2. atlas-name → texcoord rect  (NE.tex.RegisterAtlases)

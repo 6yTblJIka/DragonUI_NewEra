@@ -360,10 +360,13 @@ local function updateRandomPanel()
     btn.dungeonID = dungeonID
     btn.rewardIndex = i
     btn.name:SetText(name or RETRIEVING_ITEM_INFO or "…")
-    if SetPortraitToTexture and texture then
-      SetPortraitToTexture(btn.icon, texture)
-    elseif texture then
+    -- Reward icons sit inside a square UI-Quickslot2 border (like quest/vendor reward slots) —
+    -- SetPortraitToTexture crops to a CIRCLE, which reads as a square-with-a-circle-cutout inside
+    -- that square border. Plain SetTexture + the standard icon-border trim crop is what every
+    -- other item-icon slot in this codebase uses (bags, glyphs, professions).
+    if texture then
       btn.icon:SetTexture(texture)
+      btn.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     end
     btn.count:SetText(numItems and numItems > 1 and numItems or "")
     btn:Show()
@@ -541,9 +544,12 @@ local function buildPane(host)
   pane.roleRow = roleRow
 
   -- Content inset with the retail groupfinder dark fill.
-  local inset = CreateFrame("Frame", nil, pane, "InsetFrameTemplate")
+  local inset = CreateFrame("Frame", nil, pane)
   inset:SetPoint("TOPLEFT", pane, "TOPLEFT", 0, -52)
   inset:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", 0, 34)
+  -- "InsetFrameTemplate" here is OUR custom Lua nineslice layout name (NineSliceLayouts.lua), not
+  -- a real Blizzard XML inherits template — must go through NE.nineslice.ApplyLayout.
+  if NE.nineslice and NE.nineslice.ApplyLayout then NE.nineslice.ApplyLayout(inset, "InsetFrameTemplate") end
   local insetBg = inset:CreateTexture(nil, "BACKGROUND", nil, -4)
   if NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(insetBg, "groupfinder-background", false) then
     insetBg:SetPoint("TOPLEFT", inset, "TOPLEFT", 2, -2)

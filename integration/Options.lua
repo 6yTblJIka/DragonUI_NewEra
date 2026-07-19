@@ -62,6 +62,7 @@ local function builder(scroll)
             { id = "Professions", label = "Professions" },
             { id = "AuctionHouse", label = "Auction House" },
             { id = "Social",      label = "Social (Friends/Who/Guild/Chat/Raid)" },
+            { id = "LFG",         label = "Looking For Group (Dungeon/Raid Finder)" },
             { id = "combinedbag", label = "Combined bag (all-in-one)",
               desc = "Our all-in-one bag window. Turn OFF to use the stock Blizzard bags instead. Reload (/reload) to apply." },
         }
