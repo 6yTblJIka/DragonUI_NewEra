@@ -2,10 +2,11 @@
 -- NE_GuildFrame and suppress the native GuildFrame.
 --
 -- DOWNPORT of NewEra/Guild/Open.lua. On 3.3.5a the canonical entry point is the global
--- ToggleGuildFrame() (used by the guild keybind and the FriendsFrame Guild tab). We wrap it: when
--- the player is in a guild, toggle our modern window; otherwise fall through to the stock behaviour
--- (the Guild Registrar for a guildless player). Belt-and-suspenders: hook the native GuildFrame's
--- OnShow to hide it and open ours, in case something shows it directly.
+-- ToggleGuildFrame() (used by the guild keybind and the FriendsFrame Guild tab). We wrap it to
+-- toggle our modern window whenever the module is enabled — including when the player is guildless
+-- (the window degrades to an empty "Guild" state, owner steer: it should still be openable without a
+-- guild). Belt-and-suspenders: hook the native GuildFrame's OnShow to hide it and open ours, in case
+-- something shows it directly.
 
 local NE = DragonUI_NewEra
 if not NE then return end
@@ -38,11 +39,12 @@ local function wireRedirects()
   if wired then return end
   wired = true
 
-  -- (1) Wrap ToggleGuildFrame — the shared "open guild" verb.
+  -- (1) Wrap ToggleGuildFrame — the shared "open guild" verb. Opens our modern window whenever the
+  -- module is on, regardless of guild membership (guildless just shows an empty Guild window).
   if type(_G.ToggleGuildFrame) == "function" then
     local orig = _G.ToggleGuildFrame
     _G.ToggleGuildFrame = function(...)
-      if isModuleEnabled() and IsInGuild and IsInGuild() then
+      if isModuleEnabled() then
         if G.Toggle then G.Toggle() end
         return
       end
@@ -50,14 +52,14 @@ local function wireRedirects()
     end
   end
 
-  -- (2) Suppress the native GuildFrame: if anything shows it while our module is on and we're in a
-  -- guild, hide it and open ours instead. Guard for load order (GuildFrame is LoD in some builds).
+  -- (2) Suppress the native GuildFrame: if anything shows it while our module is on, hide it and open
+  -- ours instead (guildless included). Guard for load order (GuildFrame is LoD in some builds).
   local function hookNative()
     local gf = _G.GuildFrame
     if not gf or gf._neRedirectHooked then return end
     gf._neRedirectHooked = true
     gf:HookScript("OnShow", function(self)
-      if isModuleEnabled() and IsInGuild and IsInGuild() then
+      if isModuleEnabled() then
         self:Hide()
         if G.Show then G.Show() end
       end

@@ -158,6 +158,33 @@ local function buildTabs(f)
   end
 end
 
+-- The Guild bottom tab only makes sense while the player is in a guild. Hide it (and re-flow the
+-- remaining tabs so there's no gap) when guildless; show it again on join. This governs ONLY the
+-- Social window's tab — the guild WINDOW itself is still openable when guildless (keybind /
+-- ToggleGuildFrame, see modules/guild/Open.lua). Guarded so a chatty GUILD_ROSTER_UPDATE only
+-- re-anchors when membership actually flips.
+function SO.UpdateGuildTab()
+  local f = SO.frame
+  if not f then return end
+  local inGuild = (IsInGuild and IsInGuild()) and true or false
+  if f._guildTabInGuild == inGuild then return end
+  f._guildTabInGuild = inGuild
+
+  local names = {}
+  for i, t in ipairs(TABS) do
+    local tab = _G[FRAME_NAME .. "Tab" .. i]
+    if t.mode == "GUILD" and not inGuild then
+      if tab then tab:Hide() end
+    else
+      if tab then tab:Show() end
+      names[#names + 1] = FRAME_NAME .. "Tab" .. i
+    end
+  end
+  if NE.tabs and NE.tabs.SizeAndAnchorTabs then
+    NE.tabs.SizeAndAnchorTabs(f, names, { startX = 16, startY = 2, parentPoint = "BOTTOMLEFT" })
+  end
+end
+
 -- /who result routing. SetWhoToUI(1) makes the SERVER send who-results to the UI (firing
 -- WHO_LIST_UPDATE) instead of printing them to chat. It's a GLOBAL, sticky flag, so we only turn
 -- it on while our Who tab is actually the visible tab, and turn it back off otherwise — otherwise
@@ -256,6 +283,7 @@ local function createWindow()
     if ShowFriends then ShowFriends() end
     if SO.RefreshFriends then SO.RefreshFriends() end
     SO.SetWhoRouting(f._mode == "WHO")
+    SO.UpdateGuildTab()
   end)
   -- Stop hijacking /who once our window is closed (the flag is global + sticky).
   f:HookScript("OnHide", function() SO.SetWhoRouting(false) end)
@@ -277,6 +305,7 @@ local function createWindow()
   end
 
   SO.SetMode("FRIENDS")
+  SO.UpdateGuildTab()
   return f
 end
 
@@ -340,18 +369,27 @@ end
 
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
-eventFrame:SetScript("OnEvent", function()
-  if isModuleEnabled() then createWindow() end
-  wireRedirects()
-  if NE.RegisterPanel then
-    NE.RegisterPanel({
-      id = MODULE,
-      title = SOCIALS or FRIENDS or "Social",
-      desc = "Modern friends window (Friends / Ignore / Who) with a Guild tab.",
-      frame = SO.frame,
-      openFn = SO.Show,
-      closeFn = SO.Hide,
-      order = 55,
-    })
+-- Keep the Guild tab in sync with guild membership: PLAYER_GUILD_UPDATE fires on join/leave, and
+-- GUILD_ROSTER_UPDATE settles the initial IsInGuild() state after login (it can read false until
+-- the roster arrives). SO.UpdateGuildTab no-ops unless membership actually changed.
+eventFrame:RegisterEvent("PLAYER_GUILD_UPDATE")
+eventFrame:RegisterEvent("GUILD_ROSTER_UPDATE")
+eventFrame:SetScript("OnEvent", function(_, event)
+  if event == "PLAYER_LOGIN" then
+    if isModuleEnabled() then createWindow() end
+    wireRedirects()
+    if NE.RegisterPanel then
+      NE.RegisterPanel({
+        id = MODULE,
+        title = SOCIALS or FRIENDS or "Social",
+        desc = "Modern friends window (Friends / Ignore / Who) with a Guild tab.",
+        frame = SO.frame,
+        openFn = SO.Show,
+        closeFn = SO.Hide,
+        order = 55,
+      })
+    end
+    if GuildRoster then GuildRoster() end   -- prompt an initial roster so IsInGuild() settles
   end
+  if SO.UpdateGuildTab then SO.UpdateGuildTab() end
 end)
