@@ -213,7 +213,20 @@ local function buildPreview()
   layer:SetAllPoints(host)
   layer:SetFrameStrata("DIALOG")
   layer:SetFrameLevel((host:GetFrameLevel() or 1) + 50)
+  layer:Hide()
   previewLayer = layer
+
+  -- Full-bleed opaque backstop covering the ENTIRE layer (not just the model's own inset bounds).
+  -- CP._sidebar:Hide() below is still attempted, but this is the part that actually guarantees
+  -- nothing behind it - sidebar rows or otherwise - can bleed through the top/edge gaps around the
+  -- model that the race-bg quarters don't cover.
+  local backstop = layer:CreateTexture(nil, "BACKGROUND")
+  backstop:SetAllPoints(layer)
+  if backstop.SetColorTexture then
+    backstop:SetColorTexture(0.06, 0.06, 0.08, 1)
+  else
+    backstop:SetTexture(0.06, 0.06, 0.08, 1)
+  end
 
   local ok, m = pcall(CreateFrame, "PlayerModel", "DragonUI_NewEra_CompanionPreviewModel", layer)
   if not ok or not m then log("buildPreview: PlayerModel creation failed"); return false end
@@ -519,9 +532,11 @@ local function applySidebarMode(showCollectionSide)
   if showCollectionSide then
     if CP._sidebar then CP._sidebar:Hide() end
     if buildPreview() then
+      if previewLayer then previewLayer:Show() end
       showPreview(previewedData) -- re-show whatever was last previewed, or the hint if nothing was
     end
   else
+    if previewLayer then previewLayer:Hide() end
     if previewModel then previewModel:Hide() end
     if previewName then previewName:SetText("") end
     if previewHint then previewHint:Hide() end
