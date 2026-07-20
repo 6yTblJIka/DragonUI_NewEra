@@ -31,8 +31,11 @@ NE.ej = NE.ej or {}
 local FRAME_W, FRAME_H = 800, 496
 local MODULE = "EncounterJournal"
 
--- Pixel-perfect scale (pin to 768/physH, never raw SetScale numbers).
-local function pinScale(f) NE.FrameUtil.PinPixelPerfect(f) end
+-- Pixel-perfect scale (pin to 768/physH, never raw SetScale numbers). userScale=1.25 renders
+-- the whole window (chrome + every nested panel) 25% larger on screen without touching any of
+-- the internal layout math — PinPixelPerfect folds it into the frame's SetScale.
+local WINDOW_USER_SCALE = 1.25
+local function pinScale(f) NE.FrameUtil.PinPixelPerfect(f, WINDOW_USER_SCALE) end
 
 -- Options gate (same shape as guild/AH): profile.newera.modules.EncounterJournal.enabled.
 local function isModuleEnabled()
@@ -75,11 +78,26 @@ local EJ_PHASE_OPTS = {
 -- Expansion-tier grouping (the NE.flavor=="tbc" path — LIVE here). Each instance carries
 -- inst.tier (vanilla DATA has none → Classic/1; DataTBC tags its instances tier=2). Mirrors
 -- retail Cata's EJ_TIER_DATA (Blizzard_EncounterJournal.lua:89-96).
+-- tier 3 (Wrath) now has real instances (bosses + loot, hand-seeded from AtlasLoot — see
+-- DataWotLK.lua header for what's still missing), so tierHasInstances() below shows it.
+-- `bg` is nil (no shipped BLP yet); SetTierBackground no-ops gracefully on a nil bg.
 local EJ_TIER = {
   [1] = { label = EXPANSION_NAME0 or "Classic",             bg = 605327 },  -- UI-EJ-Classic
   [2] = { label = EXPANSION_NAME1 or "The Burning Crusade", bg = 605326 },  -- UI-EJ-BurningCrusade
+  [3] = { label = EXPANSION_NAME2 or "Wrath of the Lich King", bg = nil },  -- TODO(wotlk): ship UI-EJ-WrathoftheLichKing + set its FDID here
 }
 local EJ_DEFAULT_TIER = 1
+
+-- True once DataWotLK.lua (or any future tier) actually has at least one instance — keeps an
+-- empty scaffolded tier out of the dropdown instead of showing a permanently-blank grid.
+local function tierHasInstances(tier)
+  local D = NE.ej.DATA
+  if not D then return false end
+  for _, inst in ipairs(D.instances or {}) do
+    if (inst.tier or 1) == tier then return true end
+  end
+  return false
+end
 
 -- Window chrome — the AH/Guild recipe (modules/auctionhouse/Window.lua buildChrome), EJ
 -- portrait/title. The ClassicAPI PortraitFrameTemplate supplies rock body + f.portrait +
@@ -99,8 +117,10 @@ local function buildChrome(f)
   f.NineSlice = ns
 
   local title = ADVENTURE_JOURNAL or "Adventure Guide"
-  if NE.panelchrome and NE.panelchrome.SetTitle then
-    NE.panelchrome.SetTitle(f, title)
+  -- Pass the template's TitleText explicitly: PC.SetTitle only auto-finds
+  -- frame.TitleContainer.TitleText / frame.Title, neither of which PortraitFrameTemplate has.
+  if NE.panelchrome and NE.panelchrome.SetTitle and f.TitleText then
+    NE.panelchrome.SetTitle(f, title, f.TitleText)
   elseif f.TitleText and f.TitleText.SetText then
     f.TitleText:SetText(title)
   end
@@ -143,7 +163,7 @@ local function buildInstanceSelect(f)
   -- Per-tier background swap (tier dropdown). Both tier backgrounds are standalone
   -- full-image BLPs, so the crop matches the Classic default exactly.
   function page.SetTierBackground(tier)
-    local td = EJ_TIER[tier]; if not td then return end
+    local td = EJ_TIER[tier]; if not (td and td.bg) then return end   -- no bg yet (e.g. tier 3 scaffold) -> keep current art
     bg:SetTexture(NE.tex.localFiles[td.bg] or td.bg)
     bg:SetTexCoord(0, 1, 0, 1)
   end
@@ -169,6 +189,8 @@ local function buildInstanceSelect(f)
   local scrollFrame = CreateFrame("ScrollFrame", "NE_EJInstanceScroll", page, "UIPanelScrollFrameTemplate")
   scrollFrame:SetPoint("TOPLEFT", page, "TOPLEFT", 14, -50)
   scrollFrame:SetSize(748, 367)
+  -- DOWNPORT: the 3.3.5a template exposes the bar only as a $parentScrollBar global.
+  scrollFrame.ScrollBar = scrollFrame.ScrollBar or _G["NE_EJInstanceScrollScrollBar"]
   local scroll = CreateFrame("Frame", nil, scrollFrame)
   scroll:SetSize(748, 1)
   scrollFrame:SetScrollChild(scroll)
@@ -277,10 +299,11 @@ local function buildInstanceSelect(f)
     end
     page._activeEntries = out
     page.renderGrid(out)
-    -- keep the grid in sync with any live search text
+    -- keep the grid in sync with any live search text (NE.ej.ReadSearchText treats the
+    -- SearchBoxTemplate placeholder as "no search" -- see Support.lua).
     local sb = f._neSearchBox
-    local txt = sb and sb.GetText and sb:GetText()
-    if txt and txt ~= "" and NE.ej.FilterGrid then NE.ej.FilterGrid(txt) end
+    local txt = NE.ej.ReadSearchText and NE.ej.ReadSearchText(sb) or ""
+    if NE.ej.FilterGrid then NE.ej.FilterGrid(txt) end
   end
 
   -- Menu generator reads page state each open; one SetupMenu serves both categories.
@@ -289,17 +312,19 @@ local function buildInstanceSelect(f)
       if page._isTBC then
         for tier = 1, #EJ_TIER do
           local t = tier
-          root:CreateRadio(EJ_TIER[t].label,
-            function() return (page._tier or EJ_DEFAULT_TIER) == t end,
-            function()
-              page._tier = t
-              if NE.db then NE.db.ej = NE.db.ej or {}; NE.db.ej.tier = t end  -- persist the chosen tier
-              page.SetTierBackground(t)
-              page.applyInstanceFilter()
-              if C_Timer and C_Timer.After then
-                C_Timer.After(0, function() page.ExpansionDropdown:GenerateMenu() end)
-              end
-            end)
+          if tierHasInstances(t) then
+            root:CreateRadio(EJ_TIER[t].label,
+              function() return (page._tier or EJ_DEFAULT_TIER) == t end,
+              function()
+                page._tier = t
+                if NE.db then NE.db.ej = NE.db.ej or {}; NE.db.ej.tier = t end  -- persist the chosen tier
+                page.SetTierBackground(t)
+                page.applyInstanceFilter()
+                if C_Timer and C_Timer.After then
+                  C_Timer.After(0, function() page.ExpansionDropdown:GenerateMenu() end)
+                end
+              end)
+          end
         end
         return
       end
@@ -363,11 +388,10 @@ local function buildInstanceSelect(f)
     local base = f:GetFrameLevel()
     dunTab:SetFrameLevel(base + (isRaid and 4 or 10))
     raidTab:SetFrameLevel(base + (isRaid and 10 or 4))
-    -- active tab text shifts DOWN (-3), inactive UP (+2)
-    local dt = dunTab.Text or _G["NE_EJDungeonsTabText"]
-    local rt = raidTab.Text or _G["NE_EJRaidsTabText"]
-    if dt then dt:SetPoint("CENTER", dunTab, "CENTER", 0, isRaid and 2 or -3) end
-    if rt then rt:SetPoint("CENTER", raidTab, "CENTER", 0, isRaid and -3 or 2) end
+    -- DOWNPORT FIX: PanelTemplates_SelectTab/DeselectTab (called above) already reposition each
+    -- tab's Text on selection — CharacterFrameTabButtonTemplate's native "pushed in" look. A second
+    -- manual SetPoint here stacked on top of that native shift, sinking the active tab's label
+    -- further than intended. Let the native calls own the text position.
     if page.Title then page.Title:SetText(isRaid and (RAIDS or "Raids") or (DUNGEONS or "Dungeons")) end
   end
   dunTab:SetScript("OnClick",  function() if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_ABILITY_PAGE_TURN) end; selectCat(false) end)
@@ -486,10 +510,10 @@ function NE.ej.FilterGrid(text)
   page.renderGrid(filtered)
 end
 
--- Bindings.xml handler (BINDING_NAME_NEWERA_TOGGLEEJ).
-function NewEra_ToggleEncounterJournal()
-  NE.ej.Toggle()
-end
+-- Bindings.xml labels (the 3.3.5a Bindings.xml schema has no header/name text of its own;
+-- the guild module seeds the shared header the same way).
+BINDING_HEADER_DRAGONUI_NEWERA = BINDING_HEADER_DRAGONUI_NEWERA or "DragonUI New Era"
+BINDING_NAME_NEWERA_TOGGLEEJ = BINDING_NAME_NEWERA_TOGGLEEJ or "Toggle Adventure Guide"
 
 -- Boot: create the ToggleEncounterJournal global + slashes at login; lazy-build on first
 -- open. Re-pin on scale changes.

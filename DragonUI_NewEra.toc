@@ -159,5 +159,30 @@ modules\lfg\Dungeons.lua
 modules\lfg\Raids.lua
 modules\lfg\Open.lua
 
+# --- Encounter Journal / Adventure Guide (downport of NewEra/EncounterJournal) ---
+# Classic + TBC + WotLK (bosses/loot only — see DataWotLK.lua header for what's still missing:
+# lore, abilities, art, models). Load order: Support (dropdown/tooltip/item-cache shims) ->
+# Assets (chrome BLPs + NE.flavor) -> Slices (texcoord table) -> Data (vanilla seed) -> DataTBC
+# (appends TBC instances, tier=2) -> DataWotLK (appends WotLK instances, tier=3) -> overlays
+# (PortraitOverrides/AbilitiesEra/AbilitiesTBC/LootEra merge into NE.ej.DATA; must follow the
+# data they patch) -> ModelCam (generated per-boss cameras) -> EncounterItem (loot row builder)
+# -> EncounterPage (encounter view) -> NavBar (breadcrumb + search) -> EncounterJournal (window
+# shell + boot).
+modules\encounterjournal\Support.lua
+modules\encounterjournal\Assets.lua
+modules\encounterjournal\Slices.lua
+modules\encounterjournal\Data.lua
+modules\encounterjournal\DataTBC.lua
+modules\encounterjournal\DataWotLK.lua
+modules\encounterjournal\PortraitOverrides.lua
+modules\encounterjournal\AbilitiesEra.lua
+modules\encounterjournal\AbilitiesTBC.lua
+modules\encounterjournal\LootEra.lua
+modules\encounterjournal\ModelCam.lua
+modules\encounterjournal\EncounterItem.lua
+modules\encounterjournal\EncounterPage.lua
+modules\encounterjournal\NavBar.lua
+modules\encounterjournal\EncounterJournal.lua
+
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---
 core\_HelloDemo.lua

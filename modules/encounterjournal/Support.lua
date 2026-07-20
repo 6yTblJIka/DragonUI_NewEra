@@ -107,6 +107,19 @@ function NE.ej.CreateDropdown(parent, name, menuWidth)
 end
 
 -- ---------------------------------------------------------------------------------------
+-- Search box text: SearchBoxTemplate_OnLoad (!!!ClassicAPI/Templates/UIPanelTemplates.lua)
+-- sets the box's literal text to SEARCH as an old-style placeholder (no retail overlay
+-- watermark), and OnEditFocusLost restores it whenever the box is empty on blur. So an
+-- untouched/blurred box reads back as the localized "Search" string, not "" -- callers that
+-- filter the grid by GetText() must treat that placeholder the same as empty.
+-- ---------------------------------------------------------------------------------------
+function NE.ej.ReadSearchText(sb)
+  local t = sb and sb.GetText and sb:GetText()
+  if not t or t == "" or t == (SEARCH or "Search") then return "" end
+  return t
+end
+
+-- ---------------------------------------------------------------------------------------
 -- Item-cache warming (the GET_ITEM_INFO_RECEIVED substitute).
 -- ---------------------------------------------------------------------------------------
 local primeTip   -- hidden tooltip whose SetHyperlink forces the client to query the item

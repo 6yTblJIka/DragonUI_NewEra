@@ -83,7 +83,10 @@ function NE.ej.BuildNavBar(f)
 
   local navBar = CreateFrame("Frame", "NE_EncounterJournalNavBar", f)
   navBar:SetSize(500, 34)
-  navBar:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -24)
+  -- DOWNPORT FIX: PortraitFrameTemplate's round portrait (60x60 @ TOPLEFT(-6,7)) reaches out to
+  -- x~54 from the frame's top-left corner; a 14px navbar start sat the "Home" crumb text right on
+  -- top of that icon art. Start the crumb trail past the icon instead.
+  navBar:SetPoint("TOPLEFT", f, "TOPLEFT", 60, -24)
   local lvl = (f.NineSlice and f.NineSlice:GetFrameLevel() or f:GetFrameLevel()) + 6
   navBar:SetFrameLevel(lvl)
   navBar.crumbs = {}
@@ -100,8 +103,14 @@ function NE.ej.BuildNavBar(f)
     sb:SetSize(180, 20)
     sb:SetPoint("TOPRIGHT", f, "TOPRIGHT", -30, -32)
     sb:SetFrameLevel(lvl)
+    -- DOWNPORT: SearchBoxTemplate_OnLoad/OnEditFocusLost (!!!ClassicAPI) write the literal
+    -- SEARCH placeholder into the box's real text (no retail overlay watermark), so OnTextChanged
+    -- fires with that placeholder both on load and on every blur -- NE.ej.ReadSearchText treats
+    -- it as "no search" instead of a literal filter string that matches zero instances.
     sb:HookScript("OnTextChanged", function(self)
-      if NE.ej.FilterGrid then NE.ej.FilterGrid(self:GetText()) end
+      if NE.ej.FilterGrid then
+        NE.ej.FilterGrid(NE.ej.ReadSearchText and NE.ej.ReadSearchText(self) or self:GetText())
+      end
     end)
     sb:HookScript("OnEscapePressed", function(self) self:ClearFocus() end)
     f._neSearchBox = sb

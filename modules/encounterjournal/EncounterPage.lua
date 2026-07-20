@@ -4,8 +4,10 @@
 --
 -- DOWNPORT of NewEra/EncounterJournal/EncounterPage.lua (Classic 1.15) onto 3.3.5a:
 --   * ModelScene → gone (Cata+ widget). The PlayerModel FALLBACK path is now the PRIMARY:
---     boss models load via Model:SetDisplayInfo (custom-client API, pcall'd) or
---     Model:SetCreature(displayID) (proven on this client by ezCollections). The retail
+--     boss models load via Model:SetCreature(displayID) (proven on this client by
+--     ezCollections; NOT SetDisplayInfo — on this custom client that method takes a raw
+--     model M2 FileID, not a creatureDisplayID, per WeakAuras' own compat shim, so calling
+--     it with a displayID silently "succeeds" while rendering nothing). The retail
 --     auto-fit camera (SetPortraitZoom / SetCameraPosition — none exist here) is emulated by
 --     offsetting the MODEL from the fixed default camera using the generated per-boss
 --     MODEL_CAM table (cdist/ctz), with MODEL_TWEAKS + tunable globals for outliers.
@@ -118,6 +120,7 @@ local function buildLorePanel(enc)
   local loreScroll = CreateFrame("ScrollFrame", "NE_EJLoreScroll", p, "UIPanelScrollFrameTemplate")
   loreScroll:SetSize(315, 95)
   loreScroll:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 35, 5)
+  loreScroll.ScrollBar = loreScroll.ScrollBar or _G["NE_EJLoreScrollScrollBar"]   -- DOWNPORT
   local loreChild = CreateFrame("Frame", nil, loreScroll)
   loreChild:SetSize(315, 1)
   loreScroll:SetScrollChild(loreChild)
@@ -197,27 +200,46 @@ local function buildInfoPanel(enc)
     p.lootFilter = lootFilter
   end)
 
-  -- Difficulty dropdown — shown only for multi-difficulty instances (TBC dungeons:
-  -- Normal/Heroic; p.hasHeroic set in PopulateEncounter). Selecting re-renders the current
-  -- tab; loot/section rows carry an optional diff tag ("h"/"n").
+  -- Difficulty dropdown — shown for multi-difficulty instances. Two independent option sets
+  -- share this one dropdown widget:
+  --   * TBC/WotLK 5-man DUNGEONS: static Normal/Heroic (p.hasHeroic set in PopulateEncounter);
+  --     loot/section rows carry an optional diff="n"/"h" tag.
+  --   * WotLK RAIDS: data-driven 10/25-Player (+ Heroic variants on raidHeroic instances) —
+  --     p.diffOptions (built in PopulateEncounter from inst.isRaid/inst.raidHeroic) is a list of
+  --     { id, size, heroic, label }; loot rows carry size=10|25 and an optional diff="h" tag.
+  -- SetupMenu's generator re-runs every time the dropdown opens (UIDropDownMenu_Initialize),
+  -- so branching on p.diffOptions here stays correctly in sync as the selected instance changes.
   pcall(function()
     local diffText = _G.ENCOUNTER_JOURNAL_DIFF_TEXT or "%d Player (%s)"
-    local labels = {
+    local dungeonLabels = {
       [1] = diffText:format(5, _G.PLAYER_DIFFICULTY1 or "Normal"),
       [2] = diffText:format(5, _G.PLAYER_DIFFICULTY2 or "Heroic"),
     }
-    local dd = NE.ej.CreateDropdown(p, "NE_EJDifficultyDropdown", 120)
+    local dd = NE.ej.CreateDropdown(p, "NE_EJDifficultyDropdown", 150)
     dd:SetPoint("TOPRIGHT", p, "TOPRIGHT", -2, -10)
-    dd:SetDefaultText(labels[1])
+    dd:SetDefaultText(dungeonLabels[1])
     dd:SetupMenu(function(dropdown, root)
-      for _, id in ipairs({ 1, 2 }) do
-        root:CreateRadio(labels[id],
-          function() return (p.difficultyID or 1) == id end,
-          function()
-            p.difficultyID = id
-            if dropdown.SetDefaultText then dropdown:SetDefaultText(labels[id]) end
-            if NE.ej.SelectTab then NE.ej.SelectTab(p.selectedTab or 2) end
-          end)
+      if p.diffOptions then
+        for _, opt in ipairs(p.diffOptions) do
+          local optID = opt.id
+          root:CreateRadio(opt.label,
+            function() return (p.difficultyID or 1) == optID end,
+            function()
+              p.difficultyID = optID
+              if dropdown.SetDefaultText then dropdown:SetDefaultText(opt.label) end
+              if NE.ej.SelectTab then NE.ej.SelectTab(p.selectedTab or 2) end
+            end)
+        end
+      else
+        for _, id in ipairs({ 1, 2 }) do
+          root:CreateRadio(dungeonLabels[id],
+            function() return (p.difficultyID or 1) == id end,
+            function()
+              p.difficultyID = id
+              if dropdown.SetDefaultText then dropdown:SetDefaultText(dungeonLabels[id]) end
+              if NE.ej.SelectTab then NE.ej.SelectTab(p.selectedTab or 2) end
+            end)
+        end
       end
     end)
     dd:Hide()
@@ -256,6 +278,7 @@ local function buildInfoPanel(enc)
   local bossScroll = CreateFrame("ScrollFrame", "NE_EJBossScroll", p, "UIPanelScrollFrameTemplate")
   bossScroll:SetSize(330, 382)
   bossScroll:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 25, 1)
+  bossScroll.ScrollBar = bossScroll.ScrollBar or _G["NE_EJBossScrollScrollBar"]   -- DOWNPORT
   local bossChild = CreateFrame("Frame", nil, bossScroll)
   bossChild:SetSize(330, 1)
   bossScroll:SetScrollChild(bossChild)
@@ -266,6 +289,13 @@ local function buildInfoPanel(enc)
   local c = CreateFrame("Frame", nil, p)
   c:SetPoint("TOPLEFT", p, "TOPLEFT", 400, -44)
   c:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -16, 16)
+  -- DOWNPORT FIX: !!!ClassicAPI's SetClipsChildren shim (Util/WidgetAPI.lua) clips via a
+  -- ScrollFrame mask sized from Self:GetSize() AT CALL TIME. `c` is only anchor-positioned (two
+  -- opposite corners, no explicit SetSize) — GetSize() can read back 0 before the anchors resolve,
+  -- permanently pinning the clip mask to 0x0 and hiding EVERYTHING nested in `c` (abilities,
+  -- loot, model) forever after. Give it an explicit size (matches the anchor math: p is 785x425)
+  -- before clipping so the mask captures the real bounds.
+  c:SetSize(785 - 400 - 16, 425 - 44 - 16)
   if c.SetClipsChildren then c:SetClipsChildren(true) end
   c.text = c:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
   c.text:SetPoint("TOPLEFT"); c.text:SetWidth(360)
@@ -275,6 +305,7 @@ local function buildInfoPanel(enc)
   c.lootScroll = CreateFrame("ScrollFrame", "NE_EJLootScroll", c, "UIPanelScrollFrameTemplate")
   c.lootScroll:SetPoint("TOPLEFT", c, "TOPLEFT", 20, 0)
   c.lootScroll:SetPoint("BOTTOMRIGHT", c, "BOTTOMRIGHT", -22, 0)
+  c.lootScroll.ScrollBar = c.lootScroll.ScrollBar or _G["NE_EJLootScrollScrollBar"]   -- DOWNPORT
   c.lootFrame = CreateFrame("Frame", nil, c.lootScroll)
   c.lootFrame:SetSize(321, 1)
   c.lootScroll:SetScrollChild(c.lootFrame)
@@ -285,6 +316,7 @@ local function buildInfoPanel(enc)
   c.sectionScroll = CreateFrame("ScrollFrame", "NE_EJSectionScroll", c, "UIPanelScrollFrameTemplate")
   c.sectionScroll:SetPoint("TOPLEFT", c, "TOPLEFT", 0, 0)
   c.sectionScroll:SetPoint("BOTTOMRIGHT", c, "BOTTOMRIGHT", -22, 0)
+  c.sectionScroll.ScrollBar = c.sectionScroll.ScrollBar or _G["NE_EJSectionScrollScrollBar"]   -- DOWNPORT
   local sc = CreateFrame("Frame", nil, c.sectionScroll)
   sc:SetSize(340, 1)
   c.sectionScroll:SetScrollChild(sc)
@@ -580,6 +612,31 @@ local LOOT_TIERS = {
   { key = "bonus",    title = _G.BONUS_LOOT_TOOLTIP_TITLE or "Bonus" },
 }
 
+-- Difficulty filter shared by loot rows (size+diff) and ability sections (diff only).
+--   * Raids (info.diffOptions present, set in PopulateEncounter): a row's optional `size`
+--     (10|25) must match the selected option's size; a row's diff="h" must match the option's
+--     heroic-ness EXACTLY (WotLK raid loot is a hard split — a Normal-tagged/untagged item is
+--     never also a Heroic drop, unlike the 5-man "applies to both" convention below).
+--   * 5-man dungeons: legacy — an untagged row (dif=nil) applies to both Normal and Heroic.
+local function passesDifficulty(info, dif, size)
+  if info.diffOptions then
+    local sel
+    for _, opt in ipairs(info.diffOptions) do
+      if opt.id == (info.difficultyID or 1) then sel = opt; break end
+    end
+    sel = sel or info.diffOptions[1]
+    if not sel then return true end
+    if size and sel.size and size ~= sel.size then return false end
+    local heroicSel = sel.heroic and true or false
+    if (dif == "h") ~= heroicSel then return false end
+    return true
+  else
+    local heroicSel = info.hasHeroic and (info.difficultyID or 1) == 2 or false
+    if dif and (dif == "h") ~= heroicSel then return false end
+    return true
+  end
+end
+
 local function renderLoot(boss, preserveScroll)
   local info = NE.ej.frame.encounter.info
   local lf = info.content.lootFrame
@@ -588,9 +645,6 @@ local function renderLoot(boss, preserveScroll)
   -- stream in — both the boss page and the instance-landing aggregate.
   info.lootSource = items
   local filter = info.lootSlot or "ALL"
-  -- Difficulty filter (TBC dungeons): a row's optional diff tag ("h"/"n") must match the
-  -- selected difficulty; untagged rows drop on both.
-  local heroicSel = info.hasHeroic and (info.difficultyID or 1) == 2 or false
 
   -- Pass 1 — resolve + slot-filter, bucket into rarity tiers. Cold items are primed (server
   -- item query via hidden tooltip) and skipped; the poll below re-renders as answers arrive.
@@ -598,13 +652,15 @@ local function renderLoot(boss, preserveScroll)
   local count, unresolved = 0, 0
   for i = 1, #items do
     if count >= MAX_LOOT then break end
-    -- loot schema is { {id=ITEMID, pct=DROP%, diff="h"|"n"|nil}, ... }; tolerate a bare id.
+    -- loot schema is { {id=ITEMID, pct=DROP%, size=10|25|nil, diff="h"|"n"|nil}, ... }; tolerate
+    -- a bare id.
     local entry = items[i]
-    local id  = (type(entry) == "table") and entry.id  or entry
-    local pct = (type(entry) == "table") and entry.pct or 0
-    local dif = (type(entry) == "table") and entry.diff or nil
-    if dif and (dif == "h") ~= heroicSel then
-      -- wrong difficulty — filtered out before any item resolve
+    local id   = (type(entry) == "table") and entry.id   or entry
+    local pct  = (type(entry) == "table") and entry.pct  or 0
+    local dif  = (type(entry) == "table") and entry.diff or nil
+    local size = (type(entry) == "table") and entry.size or nil
+    if not passesDifficulty(info, dif, size) then
+      -- wrong difficulty/size — filtered out before any item resolve
     else
       local name, link, quality, _, _, itemType, itemSubType, _, equipLoc, icon = GetItemInfo(id)
       if not name then
@@ -798,12 +854,7 @@ NE.ej.FLAG_NAME = FLAG_NAME
 -- UI-EJ-Icons 8x2 grid. NOTE: NE.tex.SetAtlas IS the texcoord set — no trailing SetTexCoord.
 function NE.ej.SetFlagIcon(tex, i)
   local atlas = FLAG_ATLAS[i]
-  local ok = false
-  if atlas and NE.tex and NE.tex.SetAtlas then
-    ok = pcall(NE.tex.SetAtlas, tex, atlas, false)
-    ok = ok and (NE.tex.HasAtlas and NE.tex.HasAtlas(atlas)) or false
-  end
-  if not ok then
+  if not (atlas and NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(tex, atlas, false)) then
     tex:SetTexture(NE.tex.localFiles[521749] or 521749)
     tex:SetTexCoord(flagTexCoord(i))
   end
@@ -819,14 +870,20 @@ local function layoutSection(w, s, depth, exp)
   -- DOWNPORT: spell icons resolve via GetSpellInfo (GetSpellTexture can't take arbitrary
   -- ids on 3.3.5a); creature portraits need SetPortraitTextureFromCreatureDisplayID (absent
   -- on stock 3.3.5a → those sub-creature headers render without an icon).
-  local hasFDID = s.icon and s.icon > 0
-  local spellIcon = (not hasFDID) and s.spell and s.spell > 0 and GetSpellInfo
+  -- DOWNPORT FIX: 3.3.5a's SetTexture can't read a raw FileDataID (core/Texture.lua) — it
+  -- renders the client's "missing texture" glyph (a red square), not a blank. s.icon is a raw
+  -- modern FDID from the DB2-extracted dungeon data (Data/DataTBC) and is almost never one of
+  -- the 501 EJ BLPs we shipped locally, so only trust it when NE.tex.localFiles actually has an
+  -- entry; otherwise fall through to the spell icon (hand-seeded raid data always sets a real
+  -- spell id instead of icon) or hide the glyph rather than show a red square.
+  local mappedFDID = s.icon and s.icon > 0 and NE.tex.localFiles[s.icon]
+  local spellIcon = (not mappedFDID) and s.spell and s.spell > 0 and GetSpellInfo
     and select(3, GetSpellInfo(s.spell)) or nil
   if s.cdisp and s.cdisp > 0 and SetPortraitTextureFromCreatureDisplayID then
     SetPortraitTextureFromCreatureDisplayID(w.abilityIcon, s.cdisp)
     w.abilityIcon:Show(); w.title:SetPoint("LEFT", w.abilityIcon, "RIGHT", 5, 0)
-  elseif hasFDID or spellIcon then
-    w.abilityIcon:SetTexture(hasFDID and s.icon or spellIcon)
+  elseif mappedFDID or spellIcon then
+    w.abilityIcon:SetTexture(mappedFDID or spellIcon)
     w.abilityIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     w.abilityIcon:Show(); w.title:SetPoint("LEFT", w.abilityIcon, "RIGHT", 5, 0)
   else
@@ -885,10 +942,9 @@ local function renderSections(boss)
       c.leadDesc:SetPoint("TOPLEFT", c.sectionChild, "TOPLEFT", 6, y)
       y = y - (c.leadDesc:GetStringHeight() or 0) - 14   -- gap before the first ability band
     end
-    -- Difficulty filter (TBC dungeons, mirrors renderLoot): a section's optional diff tag
+    -- Difficulty filter (mirrors renderLoot's passesDifficulty): a section's optional diff tag
     -- must match the selected difficulty; skipping a section skips its subtree.
     local dinfo = NE.ej.frame.encounter.info
-    local heroicSel = dinfo.hasHeroic and (dinfo.difficultyID or 1) == 2 or false
     local idx, visited = 0, {}
     local function walk(startID, depth)
       local id = startID
@@ -896,7 +952,7 @@ local function renderSections(boss)
         visited[id] = true
         local s = byId[id]
         local dif = s.diff
-        if dif and (dif == "h") ~= heroicSel then
+        if not passesDifficulty(dinfo, dif, nil) then
           id = s.sib   -- wrong difficulty: drop this section and its subtree
         else
           idx = idx + 1
@@ -965,11 +1021,14 @@ function NE.ej.NormalizeModel(ma, displayID)
       if model.SetFacing and not ma._userRotated then model:SetFacing(model.rotation or 0) end
     end)
   end
-  -- Load the model: SetDisplayInfo (custom-client API) first, else SetCreature(displayID)
-  -- (proven on this client — ezCollections' mount/pet journals use it).
+  -- Load the model via SetCreature(displayID) — proven on this client (ezCollections' mount/
+  -- pet journals use it this way). NOT SetDisplayInfo: on this custom client that call takes a
+  -- raw model M2 FileID, not a creatureDisplayID (see WeakAuras.lua's own compat shim, which
+  -- passes a variable literally named model_fileId) — we only ever have a displayID here, so
+  -- calling SetDisplayInfo with it "succeeds" (no Lua error) while rendering nothing, which
+  -- silently swallowed the working SetCreature fallback.
   pcall(model.ClearModel, model)
-  local ok = model.SetDisplayInfo and pcall(model.SetDisplayInfo, model, displayID)
-  if not ok then pcall(model.SetCreature, model, displayID) end
+  pcall(model.SetCreature, model, displayID)
   applyCamera()
   -- Re-apply after the async model load settles (no OnModelLoaded script on 3.3.5a).
   if model.HasScript and model:HasScript("OnModelLoaded") then
@@ -1022,7 +1081,14 @@ local function refreshView()
     setShown(info.encounterTitle, (selBoss and not hideBossTitle) and true or false)
   end
   if info.rightHeader then setShown(info.rightHeader, tab ~= 4) end
-  if info.difficultyDropdown then setShown(info.difficultyDropdown, (info.hasHeroic and tab ~= 4) and true or false) end
+  if info.difficultyDropdown then
+    local hasDiff = info.hasHeroic or (info.diffOptions and #info.diffOptions > 0)
+    local showDiff = (hasDiff and tab ~= 4) and true or false
+    setShown(info.difficultyDropdown, showDiff)
+    -- keep the collapsed label in sync -- PopulateEncounter may have just swapped instances
+    -- (different diffOptions / a reset difficultyID) without the dropdown ever being opened.
+    if showDiff and info.difficultyDropdown.GenerateMenu then info.difficultyDropdown:GenerateMenu() end
+  end
   if info.lootFilter then
     setShown(info.lootFilter, tab == 2)   -- slot filter only on Loot
     -- The difficulty dropdown owns retail's top-right corner; slide the slot filter left
@@ -1110,9 +1176,29 @@ function NE.ej.PopulateEncounter(inst)
   local enc = NE.ej.frame.encounter
   enc.instance.title:SetText(inst.name or "")
   if enc.info.instanceTitle then enc.info.instanceTitle:SetText(inst.name or "") end
-  -- Multi-difficulty gate for the difficulty dropdown: TBC dungeons run Normal + Heroic;
-  -- Era instances and TBC raids are single-difficulty.
-  enc.info.hasHeroic = (NE.flavor == "tbc" and inst.tier == 2 and not inst.isRaid) or false
+  -- Multi-difficulty gate for the difficulty dropdown: TBC/WotLK dungeons run Normal + Heroic
+  -- (hasHeroic, static 2-option list built in buildInfoPanel); WotLK raids run 10/25-Player,
+  -- plus a separate Heroic mode on ICC/Ruby Sanctum/Trial of the Grand Crusader (inst.raidHeroic)
+  -- -- a data-driven diffOptions list instead, since the option COUNT varies per raid.
+  -- difficultyID always resets to 1 (Normal / 10-Player Normal) on entering a fresh instance.
+  enc.info.difficultyID = 1
+  if inst.isRaid and inst.tier == 3 then
+    enc.info.hasHeroic = false
+    local diffText = _G.ENCOUNTER_JOURNAL_DIFF_TEXT or "%d Player (%s)"
+    local normalLbl, heroicLbl = _G.PLAYER_DIFFICULTY1 or "Normal", _G.PLAYER_DIFFICULTY2 or "Heroic"
+    local opts = {
+      { id = 1, size = 10, heroic = false, label = diffText:format(10, normalLbl) },
+      { id = 2, size = 25, heroic = false, label = diffText:format(25, normalLbl) },
+    }
+    if inst.raidHeroic then
+      opts[3] = { id = 3, size = 10, heroic = true, label = diffText:format(10, heroicLbl) }
+      opts[4] = { id = 4, size = 25, heroic = true, label = diffText:format(25, heroicLbl) }
+    end
+    enc.info.diffOptions = opts
+  else
+    enc.info.hasHeroic = (NE.flavor == "tbc" and (inst.tier == 2 or inst.tier == 3) and not inst.isRaid) or false
+    enc.info.diffOptions = nil
+  end
   -- per-instance loading-screen lore background (LoreFileDataID)
   if inst.loreFDID and inst.loreFDID > 0 and enc.instance.loreBG then
     enc.instance.loreBG:SetTexture(NE.tex.localFiles[inst.loreFDID] or inst.loreFDID)

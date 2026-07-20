@@ -160,3 +160,21 @@ icon is not a shipped asset either — it references the native 3.3.5a client te
 - `Textures/Assets.lua` — 7 `RegisterLocal` calls + architect-decision comment block.
 - `Textures/Common/` — 7 BLP sheets (1,777,685 bytes).
 - `Textures/ASSETS.md` — this file.
+
+---
+
+## 7. Encounter Journal (Adventure Guide) — `Textures/EncounterJournal/` (501 BLPs, 33M)
+Copied wholesale from `ReferenceAddons/NewEra/Art/EncounterJournal/` for the EJ downport
+(modules/encounterjournal). Registration is split across the module (not this folder's
+`Textures/Assets.lua`):
+- `modules/encounterjournal/Assets.lua` — chrome sheets (522972/522973 master+tile, 521743/
+  521744/521748/521749/521750/521753, 527422/527690, tier bgs 605326/605327) + the Era
+  instance-button splashes + Era backdrops/lore loops.
+- `modules/encounterjournal/Data.lua` (tail) — 152 Era boss portraits (`Bosses/`) + lore loop.
+- `modules/encounterjournal/DataTBC.lua` (tail) — TBC button splashes, backdrops, lore,
+  ~98 TBC boss portraits.
+- `modules/encounterjournal/PortraitOverrides.lua` — 69 generated standin portraits
+  (`BossesGen/<displayID>.blp`, registered under their displayID as the key).
+Subfolders: `Backdrops/` (37), `Lore/` (37), `Bosses/` (304), `BossesGen/` (69), 54 root
+files (chrome + ejbutton splashes). All FDID-named per the extract pipeline; provenance is
+documented in the NewEra source headers (retail CASC 12.0.5.67451 via wago.tools).
