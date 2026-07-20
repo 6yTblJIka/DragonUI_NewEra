@@ -256,8 +256,14 @@ local function buildInfoPanel(enc)
   ib.icon:SetPoint("CENTER", ib, "CENTER", 0, 1)
   local ibN = sliceTex(ib, "UI-EJ-BossModelButton"); ibN:SetAllPoints(ib); ib:SetNormalTexture(ibN)
   local ibH = sliceTex(ib, "UI-EJ-BossModelButton"); ibH:SetAllPoints(ib); ibH:SetBlendMode("ADD"); ib:SetHighlightTexture(ibH)
-  -- step back ONE level (boss → instance overview), not all the way to the dungeon grid.
-  ib:SetScript("OnClick", function() if selInst and NE.ej.ShowInstance then NE.ej.ShowInstance(selInst) end end)
+  -- step back ONE level: boss → instance overview, instance overview → dungeon grid.
+  ib:SetScript("OnClick", function()
+    if selBoss and selInst and NE.ej.ShowInstance then
+      NE.ej.ShowInstance(selInst)
+    elseif NE.ej.ShowList then
+      NE.ej.ShowList()
+    end
+  end)
   NE.tooltip.Wire(ib, BACK or "Back")
   p.instanceButton = ib
 
@@ -534,7 +540,11 @@ local function fillLootRow(r, it)
     r.name:SetTextColor(1, 1, 1); r.iconBorder:Hide()
   end
   r.slot:SetText((it.equipLoc and it.equipLoc ~= "" and _G[it.equipLoc]) or "")
-  r.armorType:SetText(it.itemSubType or it.itemType or "")
+  local typeText = it.itemSubType or it.itemType or ""
+  if typeText == "Money(OBSOLETE)" or typeText == "Money" then
+    typeText = _G.CURRENCY or "Currency"
+  end
+  r.armorType:SetText(typeText)
   -- drop% (NE addition): show only when AtlasLoot recorded a rate (pct>0)
   r.dropPct:SetText(it.pct and it.pct > 0 and string.format("%.1f%%", it.pct) or "")
 end
@@ -647,11 +657,12 @@ local function renderLoot(boss, preserveScroll)
   local filter = info.lootSlot or "ALL"
 
   -- Pass 1 — resolve + slot-filter, bucket into rarity tiers. Cold items are primed (server
-  -- item query via hidden tooltip) and skipped; the poll below re-renders as answers arrive.
+  -- item query via hidden tooltip) UNCONDITIONALLY, regardless of the current difficulty/size
+  -- filter — otherwise switching Normal<->Heroic or 10<->25 leaves the newly-relevant items
+  -- never queried, so loot stays empty until the player toggles the filter back and forth.
   local buckets = { extreme = {}, veryrare = {}, uncommon = {}, common = {}, bonus = {} }
   local count, unresolved = 0, 0
   for i = 1, #items do
-    if count >= MAX_LOOT then break end
     -- loot schema is { {id=ITEMID, pct=DROP%, size=10|25|nil, diff="h"|"n"|nil}, ... }; tolerate
     -- a bare id.
     local entry = items[i]
@@ -659,16 +670,14 @@ local function renderLoot(boss, preserveScroll)
     local pct  = (type(entry) == "table") and entry.pct  or 0
     local dif  = (type(entry) == "table") and entry.diff or nil
     local size = (type(entry) == "table") and entry.size or nil
-    if not passesDifficulty(info, dif, size) then
-      -- wrong difficulty/size — filtered out before any item resolve
-    else
+    if id and not GetItemInfo(id) then
+      if NE.ej.PrimeItem then NE.ej.PrimeItem(id) end
+      if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
+    end
+    if count < MAX_LOOT and passesDifficulty(info, dif, size) then
       local name, link, quality, _, _, itemType, itemSubType, _, equipLoc, icon = GetItemInfo(id)
       if not name then
         unresolved = unresolved + 1
-        if id then
-          if NE.ej.PrimeItem then NE.ej.PrimeItem(id) end
-          if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
-        end
       elseif filter == "ALL" or lootCategory(equipLoc or "") == filter then
         count = count + 1
         local b = buckets[lootTier(equipLoc, pct)]
@@ -1250,6 +1259,16 @@ function NE.ej.PopulateEncounter(inst)
     NE.ej.SetButtonTexCoord(ib.icon, inst.buttonFDID, true)
   end
   fillBossList(inst)
+  -- Prime the whole instance's loot up front so the very first Loot-tab view of a fresh
+  -- session (before any difficulty toggle has run renderLoot's priming loop) isn't empty.
+  if NE.ej.PrimeItem and inst.encounters then
+    for _, e in ipairs(inst.encounters) do
+      for _, entry in ipairs(e.loot or {}) do
+        local id = (type(entry) == "table") and entry.id or entry
+        if id then NE.ej.PrimeItem(id) end
+      end
+    end
+  end
   enc.info.selectedTab = 1
   refreshView()
 end

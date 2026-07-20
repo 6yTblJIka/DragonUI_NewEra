@@ -37,12 +37,17 @@ local MODULE = "EncounterJournal"
 local WINDOW_USER_SCALE = 1.25
 local function pinScale(f) NE.FrameUtil.PinPixelPerfect(f, WINDOW_USER_SCALE) end
 
--- Options gate (same shape as guild/AH): profile.newera.modules.EncounterJournal.enabled.
+-- Options gate. Reads profile.modules["ne_"..MODULE].enabled -- the SAME flag DragonUI
+-- Options' Modules tab -> "Advanced - Individual Module Control" section actually writes for
+-- every module registered via ModuleRegistry (see integration/Register.lua's
+-- dragon.ModuleRegistry:Register("ne_"..id, ...) call). profile.newera.modules[id].enabled
+-- (what NE.RegisterPanel's own internal isEnabled() closure reads) is a separate, parallel
+-- flag that no visible options UI currently writes to -- reading it here made the "Adventure
+-- Guide" toggle in Options silently do nothing.
 local function isModuleEnabled()
   local dragon = NE.dragon
-  if not (dragon and dragon.db and dragon.db.profile and dragon.db.profile.newera) then return true end
-  local modules = dragon.db.profile.newera.modules
-  local m = modules and modules[MODULE]
+  if not (dragon and dragon.db and dragon.db.profile and dragon.db.profile.modules) then return true end
+  local m = dragon.db.profile.modules["ne_" .. MODULE]
   if type(m) == "table" and m.enabled == false then return false end
   return true
 end
@@ -131,12 +136,29 @@ local function buildChrome(f)
     NE.panelchrome.ModernizeCloseButton(close, { frameLevelBump = 10 })
   end
 
-  -- Round portrait: the journal book icon (UI-EJ-PortraitIcon) into the template's portrait
-  -- slot; the PortraitMetal corner art frames it.
-  local portrait = f.portrait or f.Portrait or f.PortraitTex
-  if portrait and portrait.SetTexture then
-    portrait:SetTexture(NE.tex.localFiles[521753] or "Interface\\Icons\\INV_Misc_Book_09")
+  -- Round portrait: the journal book icon (UI-EJ-PortraitIcon), seated in the metal corner
+  -- cutout. CORRECTION: a prior attempt hosted this on its own frame leveled ABOVE `ns` — that
+  -- put the square icon ON TOP of the ring with nothing left to crop its corners (confirmed
+  -- worse in-game: a fully exposed square over the ring, not a partial crop). The ring can only
+  -- mask the icon's corners if the icon is BELOW the ring's corner art within the SAME frame —
+  -- exactly the pattern spellbook/Window.lua uses ("host the portrait on f.NineSlice too, at
+  -- ARTWORK (< BORDER): that puts it over the wood yet under the ring. A separate high-level
+  -- holder drew it OVER the ring."). NineSliceLayouts.lua's PortraitFrameTemplate.TopLeftCorner
+  -- is layer OVERLAY, so ARTWORK on the same frame (`ns`) sits under it. Size/anchor come from
+  -- NE.portrait.ApplyCutout's own defaults (60x60 @ TOPLEFT -5,8), matching every other window's
+  -- corner portrait so the ring's opaque corner pixels line up with the icon's edges.
+  if not f.portrait then
+    f.portrait = ns:CreateTexture(nil, "ARTWORK")
   end
+  if NE.portrait and NE.portrait.ApplyCutout then
+    NE.portrait.ApplyCutout(f.portrait, f)
+  else
+    f.portrait:ClearAllPoints()
+    f.portrait:SetSize(60, 60)
+    f.portrait:SetPoint("TOPLEFT", f, "TOPLEFT", -5, 8)
+  end
+  f.portrait:SetTexture(NE.tex.localFiles[521753] or "Interface\\Icons\\INV_Misc_Book_09")
+  f.Portrait = f.portrait
 end
 
 -- Instance-select page (the dungeon/raid grid landing).
@@ -223,8 +245,14 @@ local function buildInstanceSelect(f)
     b = CreateFrame("Button", nil, scroll)
     b:SetSize(BW, BH)
     -- per-instance splash at BACKGROUND (the dominant visual). Crop texcoord (0,0.6836,0,0.7422).
+    -- Inset 1px left/right + 3px off the bottom: the "Up" frame border art's opaque edge is a
+    -- touch narrower/shorter than the button's full 174x96 rect, so a full SetAllPoints splash
+    -- peeked out past the card border on the sides and into the row gap below. Pulling the
+    -- splash's edges in hides the overhang behind the border, which still covers the full
+    -- button rect at ARTWORK on top.
     b.bgImage = b:CreateTexture(nil, "BACKGROUND")
-    b.bgImage:SetAllPoints(b)
+    b.bgImage:SetPoint("TOPLEFT", b, "TOPLEFT", 1, 0)
+    b.bgImage:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 3)
     b.bgImage:SetTexCoord(0, 0.68359375, 0, 0.7421875)
     -- UI-EJ-DungeonButton frame at ARTWORK (over the splash; its center is transparent).
     b.up = b:CreateTexture(nil, "ARTWORK"); NE.ej.ApplySlice(b.up, "UI-EJ-DungeonButton-Up");        b.up:SetAllPoints(b); b:SetNormalTexture(b.up)
