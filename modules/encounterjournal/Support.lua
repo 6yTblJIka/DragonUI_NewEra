@@ -22,6 +22,41 @@ if not NE then return end
 NE.ej = NE.ej or {}
 
 -- ---------------------------------------------------------------------------------------
+-- Instance button splash art: retail's bgFDID/buttonFDID textures are 256x128 widescreen
+-- splashes with padding baked in, hence the shared 0.68x0.74 TexCoord crop every call site
+-- used to hardcode. The 23 WotLK button BLPs hand-shipped into Textures/EncounterJournal
+-- (Textures/ASSETS.md) are a DIFFERENT source (128x128 square dungeon-finder-style icons,
+-- confirmed via BLP2 header dims) — reusing that same crop over-crops them into a near-square
+-- sliver and then stretches it to fill the widescreen 174x96 grid button, producing visible
+-- horizontal stretching. This set lists exactly those 23 square FDIDs so callers can pick the
+-- correct crop per texture instead of one hardcoded constant.
+-- ---------------------------------------------------------------------------------------
+NE.ej.SQUARE_BUTTON_FDID = {
+  [237592] = true, [237593] = true, [237594] = true, [237595] = true, [237596] = true,
+  [237598] = true, [237599] = true, [237600] = true, [237601] = true, [237602] = true,
+  [237603] = true, [237604] = true, [237605] = true, [237606] = true, [303841] = true,
+  [304502] = true, [311220] = true, [311221] = true, [336389] = true, [336390] = true,
+  [336391] = true, [336392] = true, [366689] = true,
+}
+
+-- Apply the right TexCoord for an instance button splash texture given its fileID: retail's
+-- widescreen crop for old-format art, or a centered "cover" crop (full width, vertical band)
+-- for the square WotLK icons so a 174x96-ish widescreen target isn't stretched. Square-source
+-- textures placed into a roughly-square target (e.g. the 40x40 back-button portrait) get the
+-- full, uncropped texture instead — no crop needed when source and target aspect already match.
+function NE.ej.SetButtonTexCoord(tex, fdid, targetIsSquare)
+  if NE.ej.SQUARE_BUTTON_FDID[fdid] then
+    if targetIsSquare then
+      tex:SetTexCoord(0, 1, 0, 1)
+    else
+      tex:SetTexCoord(0, 1, 0.2241379, 0.7758621)
+    end
+  else
+    tex:SetTexCoord(0, 0.68359375, 0, 0.7421875)
+  end
+end
+
+-- ---------------------------------------------------------------------------------------
 -- Tooltip wiring (subset of NewEra Core/Tooltip.lua used by the EJ: text or callback form).
 -- ---------------------------------------------------------------------------------------
 NE.tooltip = NE.tooltip or {}

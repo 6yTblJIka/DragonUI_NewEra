@@ -24,11 +24,12 @@ local NE = DragonUI_NewEra
 -- sections (no rootSection/sections table — the Abilities tab shows the honest "No abilities
 -- recorded" placeholder until hand-seeded, same as AbilitiesTBC.lua did for TBC raids), LORE
 -- (no `desc` on instances or encounters), MAP DATA (no mapID/uiMapID/x/y — unused by this port
--- anyway, no dungeon maps on 3.3.5a), and ART (no loreFDID/bgFDID/buttonFDID, no creature
--- display/portrait ids — an instance renders with the default tier background and no splash
--- art/boss portraits/3D model until FDIDs are sourced from retail's EJ DB2 and the BLPs are
--- actually shipped into Textures/EncounterJournal, same as the original port). All of these
--- degrade gracefully in the renderer (EncounterPage.lua) rather than erroring or faking data.
+-- anyway, no dungeon maps on 3.3.5a), and remaining ART (no loreFDID/bgFDID, no creature
+-- display/portrait ids — instance buttons are wired at the tail of this file; backdrop/lore/
+-- boss-portrait BLPs are not yet shipped; an instance renders with the default tier background
+-- until those FDIDs are sourced from retail's EJ DB2 and the BLPs are shipped into
+-- Textures/EncounterJournal). All of these degrade gracefully in the renderer (EncounterPage.lua)
+-- rather than erroring or faking data.
 --
 -- isRaid / minLevel are NOT from AtlasLoot either — they're well-established, stable WotLK
 -- facts (dungeon/raid entry levels), the same category of "general knowledge" DataTBC.lua cited
@@ -52,21 +53,24 @@ local function add(t)
   I[#I + 1] = t
 end
 
-add{ id=90001, name="Utgarde Keep", isRaid=false, minLevel=68,
+add{ id=90001, name="Utgarde Keep", isRaid=false, minLevel=68, buttonFDID=237605, bgFDID=608187, loreFDID=608265,
   encounters = {
     { id=9000101, name="Prince Keleseth", order=1,
+      creatures = { {display=0, file=607743, name="Prince Keleseth"} },
       loot = {
         {id=35570, pct=28, diff="n"}, {id=35571, pct=31, diff="n"}, {id=35572, pct=28, diff="n"}, {id=37177, pct=21, diff="h"}, {id=37178, pct=22, diff="h"}, {id=37179, pct=21, diff="h"},
         {id=37180, pct=21, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000102, name="Skarvald the Constructor & Dalronn the Controller", order=2,
+      creatures = { {display=0, file=607774, name="Skarvald the Constructor & Dalronn the Controller"} },
       loot = {
         {id=35573, pct=30, diff="n"}, {id=35574, pct=28, diff="n"}, {id=35575, pct=31, diff="n"}, {id=37181, pct=21, diff="h"}, {id=37182, pct=21, diff="h"}, {id=37183, pct=21, diff="h"},
         {id=37184, pct=21, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000103, name="Ingvar the Plunderer", order=3,
+      creatures = { {display=0, file=607659, name="Ingvar the Plunderer"} },
       loot = {
         {id=33330, pct=0, diff="n"}, {id=35576, pct=27, diff="n"}, {id=35577, pct=28, diff="n"}, {id=35578, pct=26, diff="n"}, {id=37186, pct=20, diff="h"}, {id=37188, pct=20, diff="h"},
         {id=37189, pct=19, diff="h"}, {id=37190, pct=20, diff="h"}, {id=37191, pct=19, diff="h"}, {id=37192, pct=18, diff="h"}, {id=37193, pct=18, diff="h"}, {id=37194, pct=20, diff="h"},
@@ -76,32 +80,37 @@ add{ id=90001, name="Utgarde Keep", isRaid=false, minLevel=68,
   },
 }
 
-add{ id=90002, name="The Nexus", isRaid=false, minLevel=71,
+add{ id=90002, name="The Nexus", isRaid=false, minLevel=71, buttonFDID=237602, bgFDID=608182, loreFDID=608260,
   encounters = {
     { id=9000201, name="Ormorok the Tree-Shaper", order=1,
+      creatures = { {display=0, file=607735, name="Ormorok the Tree-Shaper"} },
       loot = {
         {id=35601, pct=33, diff="n"}, {id=35602, pct=30, diff="n"}, {id=35603, pct=32, diff="n"}, {id=37151, pct=22, diff="h"}, {id=37152, pct=22, diff="h"}, {id=37153, pct=21, diff="h"},
         {id=37155, pct=22, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000202, name="Anomalus", order=2,
+      creatures = { {display=0, file=607540, name="Anomalus"} },
       loot = {
         {id=35598, pct=29, diff="n"}, {id=35599, pct=31, diff="n"}, {id=35600, pct=29, diff="n"}, {id=37141, pct=21, diff="h"}, {id=37144, pct=22, diff="h"}, {id=37149, pct=21, diff="h"},
         {id=37150, pct=22, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000203, name="Grand Magus Telestra", order=3,
+      creatures = { {display=0, file=607623, name="Grand Magus Telestra"} },
       loot = {
         {id=21524, pct=0, diff="n"}, {id=21524, pct=0, diff="h"}, {id=35604, pct=29, diff="n"}, {id=35605, pct=29, diff="n"}, {id=35617, pct=28, diff="n"}, {id=37134, pct=20, diff="h"},
         {id=37135, pct=21, diff="h"}, {id=37138, pct=21, diff="h"}, {id=37139, pct=21, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000204, name="Commander Kolurg", order=4,
+      creatures = { {display=0, file=607568, name="Commander Kolurg"} },
       loot = {
         {id=37728, pct=20, diff="h"}, {id=37729, pct=20, diff="h"}, {id=37730, pct=19, diff="h"}, {id=37731, pct=20, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000205, name="Keristrasza", order=5,
+      creatures = { {display=0, file=607671, name="Keristrasza"} },
       loot = {
         {id=35595, pct=30, diff="n"}, {id=35596, pct=29, diff="n"}, {id=35597, pct=30, diff="n"}, {id=37162, pct=20, diff="h"}, {id=37165, pct=20, diff="h"}, {id=37166, pct=20, diff="h"},
         {id=37167, pct=20, diff="h"}, {id=37169, pct=18, diff="h"}, {id=37170, pct=20, diff="h"}, {id=37171, pct=19, diff="h"}, {id=37172, pct=19, diff="h"}, {id=41794, pct=9, diff="h"},
@@ -111,21 +120,24 @@ add{ id=90002, name="The Nexus", isRaid=false, minLevel=71,
   },
 }
 
-add{ id=90003, name="Azjol-Nerub", isRaid=false, minLevel=72,
+add{ id=90003, name="Azjol-Nerub", isRaid=false, minLevel=72, buttonFDID=237593, bgFDID=608155, loreFDID=608233,
   encounters = {
     { id=9000301, name="Krik'thir the Gatewatcher", order=1,
+      creatures = { {display=0, file=607678, name="Krik'thir the Gatewatcher"} },
       loot = {
         {id=35655, pct=30, diff="n"}, {id=35656, pct=32, diff="n"}, {id=35657, pct=30, diff="n"}, {id=37216, pct=22, diff="h"}, {id=37217, pct=22, diff="h"}, {id=37218, pct=21, diff="h"},
         {id=37219, pct=21, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000302, name="Hadronox", order=2,
+      creatures = { {display=0, file=607633, name="Hadronox"} },
       loot = {
         {id=35658, pct=29, diff="n"}, {id=35659, pct=30, diff="n"}, {id=35660, pct=30, diff="n"}, {id=37220, pct=20, diff="h"}, {id=37221, pct=20, diff="h"}, {id=37222, pct=21, diff="h"},
         {id=37230, pct=21, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000303, name="Anub'arak", order=3,
+      creatures = { {display=0, file=607542, name="Anub'arak"} },
       loot = {
         {id=35661, pct=28, diff="n"}, {id=35662, pct=29, diff="n"}, {id=35663, pct=29, diff="n"}, {id=37232, pct=19, diff="h"}, {id=37235, pct=21, diff="h"}, {id=37236, pct=20, diff="h"},
         {id=37237, pct=20, diff="h"}, {id=37238, pct=19, diff="h"}, {id=37240, pct=19, diff="h"}, {id=37241, pct=19, diff="h"}, {id=37242, pct=19, diff="h"}, {id=41796, pct=12, diff="h"},
@@ -135,32 +147,37 @@ add{ id=90003, name="Azjol-Nerub", isRaid=false, minLevel=72,
   },
 }
 
-add{ id=90004, name="Ahn'kahet: The Old Kingdom", isRaid=false, minLevel=72,
+add{ id=90004, name="Ahn'kahet: The Old Kingdom", isRaid=false, minLevel=72, buttonFDID=237592, bgFDID=608153, loreFDID=608231,
   encounters = {
     { id=9000401, name="Elder Nadox", order=1,
+      creatures = { {display=0, file=607593, name="Elder Nadox"} },
       loot = {
         {id=35606, pct=31, diff="n"}, {id=35607, pct=30, diff="n"}, {id=35608, pct=29, diff="n"}, {id=37591, pct=22, diff="h"}, {id=37592, pct=22, diff="h"}, {id=37593, pct=23, diff="h"},
         {id=37594, pct=22, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000402, name="Prince Taldaram", order=2,
+      creatures = { {display=0, file=607744, name="Prince Taldaram"} },
       loot = {
         {id=35609, pct=29, diff="n"}, {id=35610, pct=31, diff="n"}, {id=35611, pct=30, diff="n"}, {id=37595, pct=21, diff="h"}, {id=37612, pct=20, diff="h"}, {id=37613, pct=21, diff="h"},
         {id=37614, pct=21, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000403, name="Amanitar", order=3,
+      creatures = { {display=0, file=607534, name="Amanitar"} },
       loot = {
         {id=43284, pct=22, diff="h"}, {id=43285, pct=22, diff="h"}, {id=43286, pct=23, diff="h"}, {id=43287, pct=21, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000404, name="Jedoga Shadowseeker", order=4,
+      creatures = { {display=0, file=607667, name="Jedoga Shadowseeker"} },
       loot = {
         {id=21524, pct=0, diff="n"}, {id=21524, pct=0, diff="h"}, {id=43277, pct=28, diff="n"}, {id=43278, pct=30, diff="n"}, {id=43279, pct=29, diff="n"}, {id=43280, pct=21, diff="h"},
         {id=43281, pct=22, diff="h"}, {id=43282, pct=22, diff="h"}, {id=43283, pct=21, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000405, name="Herald Volazj", order=5,
+      creatures = { {display=0, file=607639, name="Herald Volazj"} },
       loot = {
         {id=35612, pct=29, diff="n"}, {id=35613, pct=31, diff="n"}, {id=35614, pct=31, diff="n"}, {id=37615, pct=19, diff="h"}, {id=37616, pct=19, diff="h"}, {id=37617, pct=19, diff="h"},
         {id=37618, pct=20, diff="h"}, {id=37619, pct=18, diff="h"}, {id=37620, pct=18, diff="h"}, {id=37622, pct=19, diff="h"}, {id=37623, pct=19, diff="h"}, {id=41790, pct=17, diff="h"},
@@ -170,27 +187,31 @@ add{ id=90004, name="Ahn'kahet: The Old Kingdom", isRaid=false, minLevel=72,
   },
 }
 
-add{ id=90005, name="Drak'Tharon Keep", isRaid=false, minLevel=74,
+add{ id=90005, name="Drak'Tharon Keep", isRaid=false, minLevel=74, buttonFDID=237595, bgFDID=608162, loreFDID=608240,
   encounters = {
     { id=9000501, name="Trollgore", order=1,
+      creatures = { {display=0, file=607798, name="Trollgore"} },
       loot = {
         {id=35618, pct=30, diff="n"}, {id=35619, pct=28, diff="n"}, {id=35620, pct=33, diff="n"}, {id=37712, pct=22, diff="h"}, {id=37714, pct=22, diff="h"}, {id=37715, pct=21, diff="h"},
         {id=37717, pct=22, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000502, name="Novos the Summoner", order=2,
+      creatures = { {display=0, file=607727, name="Novos the Summoner"} },
       loot = {
         {id=35630, pct=30, diff="n"}, {id=35631, pct=28, diff="n"}, {id=35632, pct=32, diff="n"}, {id=37718, pct=21, diff="h"}, {id=37721, pct=22, diff="h"}, {id=37722, pct=22, diff="h"},
         {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000503, name="King Dred", order=3,
+      creatures = { {display=0, file=607672, name="King Dred"} },
       loot = {
         {id=35633, pct=31, diff="n"}, {id=35634, pct=28, diff="n"}, {id=35635, pct=28, diff="n"}, {id=37723, pct=21, diff="h"}, {id=37724, pct=21, diff="h"}, {id=37725, pct=21, diff="h"},
         {id=37726, pct=21, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000504, name="The Prophet Tharon'ja", order=4,
+      creatures = { {display=0, file=607790, name="The Prophet Tharon'ja"} },
       loot = {
         {id=35636, pct=30, diff="n"}, {id=35637, pct=28, diff="n"}, {id=35638, pct=33, diff="n"}, {id=37732, pct=20, diff="h"}, {id=37733, pct=21, diff="h"}, {id=37734, pct=21, diff="h"},
         {id=37735, pct=21, diff="h"}, {id=37784, pct=19, diff="h"}, {id=37788, pct=21, diff="h"}, {id=37791, pct=20, diff="h"}, {id=37798, pct=19, diff="h"}, {id=41795, pct=14, diff="h"},
@@ -200,39 +221,46 @@ add{ id=90005, name="Drak'Tharon Keep", isRaid=false, minLevel=74,
   },
 }
 
-add{ id=90006, name="The Violet Hold", isRaid=false, minLevel=75,
+add{ id=90006, name="The Violet Hold", isRaid=false, minLevel=75, buttonFDID=237604, bgFDID=608189, loreFDID=608312,
   encounters = {
     { id=9000601, name="Erekem", order=1,
+      creatures = { {display=0, file=607597, name="Erekem"} },
       loot = {
         {id=43363, pct=43, diff="n"}, {id=43375, pct=45, diff="n"}, {id=43405, pct=29, diff="h"}, {id=43406, pct=29, diff="h"}, {id=43407, pct=30, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000602, name="Zuramat the Obliterator", order=2,
+      creatures = { {display=0, file=607825, name="Zuramat the Obliterator"} },
       loot = {
         {id=43353, pct=44, diff="n"}, {id=43358, pct=41, diff="n"}, {id=43402, pct=28, diff="h"}, {id=43403, pct=28, diff="h"}, {id=43404, pct=28, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000603, name="Xevozz", order=3,
+      creatures = { {display=0, file=607821, name="Xevozz"} },
       loot = {
         {id=35642, pct=42, diff="n"}, {id=35644, pct=43, diff="n"}, {id=37861, pct=29, diff="h"}, {id=37867, pct=29, diff="h"}, {id=37868, pct=29, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000604, name="Ichoron", order=4,
+      creatures = { {display=0, file=607654, name="Ichoron"} },
       loot = {
         {id=35643, pct=40, diff="n"}, {id=35647, pct=44, diff="n"}, {id=37862, pct=28, diff="h"}, {id=37869, pct=28, diff="h"}, {id=43401, pct=28, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000605, name="Moragg", order=5,
+      creatures = { {display=0, file=607717, name="Moragg"} },
       loot = {
         {id=43382, pct=43, diff="n"}, {id=43387, pct=43, diff="n"}, {id=43408, pct=29, diff="h"}, {id=43409, pct=30, diff="h"}, {id=43410, pct=29, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000606, name="Lavanthor", order=6,
+      creatures = { {display=0, file=607685, name="Lavanthor"} },
       loot = {
         {id=35645, pct=45, diff="n"}, {id=35646, pct=44, diff="n"}, {id=37870, pct=30, diff="h"}, {id=37871, pct=29, diff="h"}, {id=37872, pct=30, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000607, name="Cyanigosa", order=7,
+      creatures = { {display=0, file=607573, name="Cyanigosa"} },
       loot = {
         {id=35649, pct=31, diff="n"}, {id=35650, pct=31, diff="n"}, {id=35651, pct=31, diff="n"}, {id=37873, pct=20, diff="h"}, {id=37874, pct=21, diff="h"}, {id=37875, pct=21, diff="h"},
         {id=37876, pct=22, diff="h"}, {id=37883, pct=21, diff="h"}, {id=37884, pct=20, diff="h"}, {id=37886, pct=21, diff="h"}, {id=41791, pct=9, diff="h"}, {id=43102, pct=100, diff="h"},
@@ -242,32 +270,37 @@ add{ id=90006, name="The Violet Hold", isRaid=false, minLevel=75,
   },
 }
 
-add{ id=90007, name="Gundrak", isRaid=false, minLevel=76,
+add{ id=90007, name="Gundrak", isRaid=false, minLevel=76, buttonFDID=237596, bgFDID=608164, loreFDID=608242,
   encounters = {
     { id=9000701, name="Slad'ran", order=1,
+      creatures = { {display=0, file=607776, name="Slad'ran"} },
       loot = {
         {id=35583, pct=28, diff="n"}, {id=35584, pct=28, diff="n"}, {id=35585, pct=29, diff="n"}, {id=37626, pct=20, diff="h"}, {id=37627, pct=20, diff="h"}, {id=37628, pct=20, diff="h"},
         {id=37629, pct=21, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000702, name="Drakkari Colossus", order=2,
+      creatures = { {display=0, file=607589, name="Drakkari Colossus"} },
       loot = {
         {id=35590, pct=26, diff="n"}, {id=35591, pct=25, diff="n"}, {id=35592, pct=26, diff="n"}, {id=37634, pct=20, diff="h"}, {id=37635, pct=20, diff="h"}, {id=37636, pct=21, diff="h"},
         {id=37637, pct=20, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000703, name="Moorabi", order=3,
+      creatures = { {display=0, file=607716, name="Moorabi"} },
       loot = {
         {id=35587, pct=30, diff="n"}, {id=35588, pct=29, diff="n"}, {id=35589, pct=29, diff="n"}, {id=37630, pct=21, diff="h"}, {id=37631, pct=22, diff="h"}, {id=37632, pct=22, diff="h"},
         {id=37633, pct=22, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000704, name="Eck the Ferocious", order=4,
+      creatures = { {display=0, file=607592, name="Eck the Ferocious"} },
       loot = {
         {id=43310, pct=23, diff="h"}, {id=43311, pct=22, diff="h"}, {id=43312, pct=23, diff="h"}, {id=43313, pct=23, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000705, name="Gal'darah", order=5,
+      creatures = { {display=0, file=607605, name="Gal'darah"} },
       loot = {
         {id=37638, pct=20, diff="h"}, {id=37639, pct=20, diff="h"}, {id=37640, pct=20, diff="h"}, {id=37641, pct=19, diff="h"}, {id=37642, pct=18, diff="h"}, {id=37643, pct=19, diff="h"},
         {id=37644, pct=19, diff="h"}, {id=37645, pct=19, diff="h"}, {id=43102, pct=100, diff="h"}, {id=43305, pct=28, diff="n"}, {id=43306, pct=30, diff="n"}, {id=43309, pct=31, diff="n"},
@@ -277,27 +310,31 @@ add{ id=90007, name="Gundrak", isRaid=false, minLevel=76,
   },
 }
 
-add{ id=90008, name="Halls of Stone", isRaid=false, minLevel=77,
+add{ id=90008, name="Halls of Stone", isRaid=false, minLevel=77, buttonFDID=237599, bgFDID=608167, loreFDID=608245,
   encounters = {
     { id=9000801, name="Maiden of Grief", order=1,
+      creatures = { {display=0, file=607706, name="Maiden of Grief"} },
       loot = {
         {id=38611, pct=29, diff="n"}, {id=38613, pct=29, diff="n"}, {id=38614, pct=28, diff="n"}, {id=38615, pct=21, diff="h"}, {id=38616, pct=21, diff="h"}, {id=38617, pct=22, diff="h"},
         {id=38618, pct=22, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000802, name="Krystallus", order=2,
+      creatures = { {display=0, file=607679, name="Krystallus"} },
       loot = {
         {id=35670, pct=26, diff="n"}, {id=35672, pct=30, diff="n"}, {id=35673, pct=29, diff="n"}, {id=37650, pct=27, diff="h"}, {id=37651, pct=27, diff="h"}, {id=37652, pct=28, diff="h"},
         {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000803, name="Tribunal of Ages", order=3,
+      creatures = { {display=0, file=607797, name="Tribunal of Ages"} },
       loot = {
         {id=35675, pct=24, diff="n"}, {id=35676, pct=26, diff="n"}, {id=35677, pct=25, diff="n"}, {id=37653, pct=16, diff="h"}, {id=37654, pct=14, diff="h"}, {id=37655, pct=16, diff="h"},
         {id=37656, pct=16, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000804, name="Sjonnir the Ironshaper", order=4,
+      creatures = { {display=0, file=607772, name="Sjonnir the Ironshaper"} },
       loot = {
         {id=35678, pct=28, diff="n"}, {id=35679, pct=28, diff="n"}, {id=35680, pct=29, diff="n"}, {id=37657, pct=19, diff="h"}, {id=37658, pct=19, diff="h"}, {id=37660, pct=18, diff="h"},
         {id=37666, pct=19, diff="h"}, {id=37667, pct=18, diff="h"}, {id=37668, pct=18, diff="h"}, {id=37669, pct=18, diff="h"}, {id=37670, pct=18, diff="h"}, {id=41792, pct=15, diff="h"},
@@ -307,27 +344,31 @@ add{ id=90008, name="Halls of Stone", isRaid=false, minLevel=77,
   },
 }
 
-add{ id=90009, name="Halls of Lightning", isRaid=false, minLevel=80,
+add{ id=90009, name="Halls of Lightning", isRaid=false, minLevel=80, buttonFDID=237598, bgFDID=608165, loreFDID=608243,
   encounters = {
     { id=9000901, name="General Bjarngrim", order=1,
+      creatures = { {display=0, file=607611, name="General Bjarngrim"} },
       loot = {
         {id=36979, pct=22, diff="n"}, {id=36980, pct=22, diff="n"}, {id=36981, pct=23, diff="n"}, {id=36982, pct=22, diff="n"}, {id=37814, pct=21, diff="h"}, {id=37818, pct=21, diff="h"},
         {id=37825, pct=21, diff="h"}, {id=37826, pct=22, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000902, name="Volkhan", order=2,
+      creatures = { {display=0, file=607809, name="Volkhan"} },
       loot = {
         {id=36983, pct=22, diff="n"}, {id=36984, pct=22, diff="n"}, {id=36985, pct=23, diff="n"}, {id=36986, pct=22, diff="n"}, {id=37840, pct=21, diff="h"}, {id=37841, pct=21, diff="h"},
         {id=37842, pct=21, diff="h"}, {id=37843, pct=21, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000903, name="Ionar", order=3,
+      creatures = { {display=0, file=607663, name="Ionar"} },
       loot = {
         {id=37826, pct=22, diff="h"}, {id=37844, pct=21, diff="h"}, {id=37845, pct=21, diff="h"}, {id=37846, pct=20, diff="h"}, {id=39534, pct=21, diff="n"}, {id=39535, pct=21, diff="n"},
         {id=39536, pct=22, diff="n"}, {id=39657, pct=21, diff="n"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9000904, name="Loken", order=4,
+      creatures = { {display=0, file=607690, name="Loken"} },
       loot = {
         {id=36988, pct=22, diff="n"}, {id=36989, pct=21, diff="n"}, {id=36991, pct=22, diff="n"}, {id=36992, pct=22, diff="n"}, {id=36993, pct=18, diff="n"}, {id=36994, pct=21, diff="n"},
         {id=36995, pct=22, diff="n"}, {id=36996, pct=22, diff="n"}, {id=37848, pct=18, diff="h"}, {id=37849, pct=19, diff="h"}, {id=37850, pct=19, diff="h"}, {id=37851, pct=19, diff="h"},
@@ -338,32 +379,37 @@ add{ id=90009, name="Halls of Lightning", isRaid=false, minLevel=80,
   },
 }
 
-add{ id=90010, name="The Culling of Stratholme", isRaid=false, minLevel=80,
+add{ id=90010, name="The Culling of Stratholme", isRaid=false, minLevel=80, buttonFDID=237601, bgFDID=608180, loreFDID=608258,
   encounters = {
     { id=9001001, name="Meathook", order=1,
+      creatures = { {display=0, file=607711, name="Meathook"} },
       loot = {
         {id=37079, pct=23, diff="n"}, {id=37081, pct=22, diff="n"}, {id=37082, pct=22, diff="n"}, {id=37083, pct=23, diff="n"}, {id=37675, pct=23, diff="h"}, {id=37678, pct=22, diff="h"},
         {id=37679, pct=21, diff="h"}, {id=37680, pct=22, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9001002, name="Salramm the Fleshcrafter", order=2,
+      creatures = { {display=0, file=607763, name="Salramm the Fleshcrafter"} },
       loot = {
         {id=37084, pct=22, diff="n"}, {id=37086, pct=23, diff="n"}, {id=37088, pct=22, diff="n"}, {id=37095, pct=23, diff="n"}, {id=37681, pct=22, diff="h"}, {id=37682, pct=22, diff="h"},
         {id=37683, pct=22, diff="h"}, {id=37684, pct=22, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9001003, name="Chrono-Lord Epoch", order=3,
+      creatures = { {display=0, file=607567, name="Chrono-Lord Epoch"} },
       loot = {
         {id=37096, pct=22, diff="n"}, {id=37099, pct=22, diff="n"}, {id=37105, pct=24, diff="n"}, {id=37106, pct=23, diff="n"}, {id=37685, pct=23, diff="h"}, {id=37686, pct=23, diff="h"},
         {id=37687, pct=23, diff="h"}, {id=37688, pct=23, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9001004, name="Infinite Corruptor", order=4,
+      creatures = { {display=0, file=607658, name="Infinite Corruptor"} },
       loot = {
         {id=43951, pct=100, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9001005, name="Mal'Ganis", order=5,
+      creatures = { {display=0, file=607708, name="Mal'Ganis"} },
       loot = {
         {id=37107, pct=18, diff="n"}, {id=37108, pct=16, diff="n"}, {id=37109, pct=18, diff="n"}, {id=37110, pct=18, diff="n"}, {id=37111, pct=14, diff="n"}, {id=37112, pct=19, diff="n"},
         {id=37113, pct=16, diff="n"}, {id=37114, pct=19, diff="n"}, {id=37689, pct=14, diff="h"}, {id=37690, pct=14, diff="h"}, {id=37691, pct=14, diff="h"}, {id=37692, pct=14, diff="h"},
@@ -374,27 +420,31 @@ add{ id=90010, name="The Culling of Stratholme", isRaid=false, minLevel=80,
   },
 }
 
-add{ id=90011, name="Utgarde Pinnacle", isRaid=false, minLevel=80,
+add{ id=90011, name="Utgarde Pinnacle", isRaid=false, minLevel=80, buttonFDID=237606, bgFDID=608188, loreFDID=608266,
   encounters = {
     { id=9001101, name="Svala Sorrowgrave", order=1,
+      creatures = { {display=0, file=607778, name="Svala Sorrowgrave"} },
       loot = {
         {id=37037, pct=22, diff="n"}, {id=37038, pct=21, diff="n"}, {id=37040, pct=23, diff="n"}, {id=37043, pct=24, diff="n"}, {id=37367, pct=22, diff="h"}, {id=37368, pct=22, diff="h"},
         {id=37369, pct=22, diff="h"}, {id=37370, pct=21, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9001102, name="Gortok Palehoof", order=2,
+      creatures = { {display=0, file=607620, name="Gortok Palehoof"} },
       loot = {
         {id=37048, pct=24, diff="n"}, {id=37050, pct=24, diff="n"}, {id=37051, pct=21, diff="n"}, {id=37052, pct=21, diff="n"}, {id=37371, pct=22, diff="h"}, {id=37373, pct=21, diff="h"},
         {id=37374, pct=22, diff="h"}, {id=37376, pct=21, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9001103, name="Skadi the Ruthless", order=3,
+      creatures = { {display=0, file=607773, name="Skadi the Ruthless"} },
       loot = {
         {id=37053, pct=20, diff="n"}, {id=37055, pct=23, diff="n"}, {id=37056, pct=22, diff="n"}, {id=37057, pct=23, diff="n"}, {id=37377, pct=21, diff="h"}, {id=37379, pct=22, diff="h"},
         {id=37384, pct=21, diff="h"}, {id=37389, pct=21, diff="h"}, {id=44151, pct=1, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9001104, name="King Ymiron", order=4,
+      creatures = { {display=0, file=607674, name="King Ymiron"} },
       loot = {
         {id=37058, pct=22, diff="n"}, {id=37060, pct=20, diff="n"}, {id=37061, pct=23, diff="n"}, {id=37062, pct=21, diff="n"}, {id=37064, pct=24, diff="n"}, {id=37065, pct=20, diff="n"},
         {id=37066, pct=23, diff="n"}, {id=37067, pct=19, diff="n"}, {id=37390, pct=20, diff="h"}, {id=37395, pct=20, diff="h"}, {id=37397, pct=20, diff="h"}, {id=37398, pct=20, diff="h"},
@@ -405,27 +455,31 @@ add{ id=90011, name="Utgarde Pinnacle", isRaid=false, minLevel=80,
   },
 }
 
-add{ id=90012, name="The Oculus", isRaid=false, minLevel=80,
+add{ id=90012, name="The Oculus", isRaid=false, minLevel=80, buttonFDID=237603, bgFDID=608183, loreFDID=608261,
   encounters = {
     { id=9001201, name="Drakos the Interrogator", order=1,
+      creatures = { {display=0, file=607590, name="Drakos the Interrogator"} },
       loot = {
         {id=36943, pct=21, diff="n"}, {id=36944, pct=25, diff="n"}, {id=36945, pct=21, diff="n"}, {id=36946, pct=23, diff="n"}, {id=37255, pct=23, diff="h"}, {id=37256, pct=23, diff="h"},
         {id=37257, pct=23, diff="h"}, {id=37258, pct=22, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9001202, name="Varos Cloudstrider", order=2,
+      creatures = { {display=0, file=607802, name="Varos Cloudstrider"} },
       loot = {
         {id=36947, pct=21, diff="n"}, {id=36948, pct=22, diff="n"}, {id=36949, pct=21, diff="n"}, {id=36950, pct=23, diff="n"}, {id=37260, pct=21, diff="h"}, {id=37261, pct=22, diff="h"},
         {id=37262, pct=21, diff="h"}, {id=37263, pct=21, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9001203, name="Urom", order=3,
+      creatures = { {display=0, file=607702, name="Mage-Lord Urom"} },
       loot = {
         {id=21525, pct=0, diff="n"}, {id=21525, pct=0, diff="h"}, {id=36951, pct=20, diff="n"}, {id=36952, pct=18, diff="n"}, {id=36953, pct=21, diff="n"}, {id=36954, pct=21, diff="n"},
         {id=37195, pct=20, diff="h"}, {id=37264, pct=20, diff="h"}, {id=37288, pct=18, diff="h"}, {id=37289, pct=18, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
     { id=9001204, name="Ley-Guardian Eregos", order=4,
+      creatures = { {display=0, file=607687, name="Ley-Guardian Eregos"} },
       loot = {
         {id=36961, pct=17, diff="n"}, {id=36962, pct=17, diff="n"}, {id=36969, pct=14, diff="n"}, {id=36971, pct=17, diff="n"}, {id=36972, pct=15, diff="n"}, {id=36973, pct=18, diff="n"},
         {id=36974, pct=18, diff="n"}, {id=36975, pct=17, diff="n"}, {id=37291, pct=14, diff="h"}, {id=37292, pct=15, diff="h"}, {id=37293, pct=15, diff="h"}, {id=37294, pct=14, diff="h"},
@@ -436,9 +490,10 @@ add{ id=90012, name="The Oculus", isRaid=false, minLevel=80,
   },
 }
 
-add{ id=90013, name="Vault of Archavon", isRaid=true, minLevel=80,
+add{ id=90013, name="Vault of Archavon", isRaid=true, minLevel=80, buttonFDID=303841, bgFDID=1396470, loreFDID=1396515,
   encounters = {
     { id=9001301, name="Archavon the Stone Watcher", order=1,
+      creatures = { {display=0, file=1385715, name="Archavon the Stone Watcher"} },
       loot = {
         {id=39492, pct=0, size=10}, {id=39493, pct=0, size=10}, {id=39495, pct=0, size=10}, {id=39497, pct=0, size=10}, {id=39498, pct=0, size=10}, {id=39500, pct=0, size=10},
         {id=39515, pct=0, size=10}, {id=39517, pct=0, size=10}, {id=39519, pct=0, size=10}, {id=39523, pct=0, size=10}, {id=39528, pct=0, size=10}, {id=39530, pct=0, size=10},
@@ -479,6 +534,7 @@ add{ id=90013, name="Vault of Archavon", isRaid=true, minLevel=80,
       },
     },
     { id=9001302, name="Emalon the Storm Watcher", order=2,
+      creatures = { {display=0, file=1385727, name="Emalon the Storm Watcher"} },
       loot = {
         {id=40804, pct=0, size=10}, {id=40805, pct=0, size=10}, {id=40806, pct=0, size=10}, {id=40844, pct=0, size=10}, {id=40845, pct=0, size=10}, {id=40846, pct=0, size=10},
         {id=40879, pct=0, size=10}, {id=40880, pct=0, size=10}, {id=40888, pct=0, size=10}, {id=40926, pct=0, size=10}, {id=40938, pct=0, size=10}, {id=40974, pct=0, size=10},
@@ -523,6 +579,7 @@ add{ id=90013, name="Vault of Archavon", isRaid=true, minLevel=80,
       },
     },
     { id=9001303, name="Koralon the Flame Watcher", order=3,
+      creatures = { {display=0, file=1385748, name="Koralon the Flame Watcher"} },
       loot = {
         {id=40807, pct=0, size=10}, {id=40808, pct=0, size=10}, {id=40809, pct=0, size=10}, {id=40847, pct=0, size=10}, {id=40848, pct=0, size=10}, {id=40849, pct=0, size=10},
         {id=40881, pct=0, size=10}, {id=40882, pct=0, size=10}, {id=40889, pct=0, size=10}, {id=40927, pct=0, size=10}, {id=40939, pct=0, size=10}, {id=40976, pct=0, size=10},
@@ -581,6 +638,7 @@ add{ id=90013, name="Vault of Archavon", isRaid=true, minLevel=80,
       },
     },
     { id=9001304, name="Toravon the Ice Watcher", order=4,
+      creatures = { {display=0, file=1385767, name="Toravon the Ice Watcher"} },
       loot = {
         {id=40810, pct=0, size=10}, {id=40811, pct=0, size=10}, {id=40812, pct=0, size=10}, {id=40850, pct=0, size=10}, {id=40851, pct=0, size=10}, {id=40852, pct=0, size=10},
         {id=40883, pct=0, size=10}, {id=40884, pct=0, size=10}, {id=40890, pct=0, size=10}, {id=40928, pct=0, size=10}, {id=40940, pct=0, size=10}, {id=40978, pct=0, size=10},
@@ -628,9 +686,10 @@ add{ id=90013, name="Vault of Archavon", isRaid=true, minLevel=80,
   },
 }
 
-add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80,
+add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80, buttonFDID=1396587, bgFDID=1396461, loreFDID=1396506,
   encounters = {
     { id=9001401, name="Patchwerk", order=1,
+      creatures = { {display=0, file=1379005, name="Patchwerk"} },
       loot = {
         {id=39261, pct=13, size=10}, {id=39262, pct=24, size=10}, {id=39267, pct=13, size=10}, {id=39270, pct=13, size=10}, {id=39271, pct=10, size=10}, {id=39272, pct=10, size=10},
         {id=39273, pct=10, size=10}, {id=39274, pct=10, size=10}, {id=39275, pct=10, size=10}, {id=40064, pct=11, size=25}, {id=40065, pct=11, size=25}, {id=40069, pct=11, size=25},
@@ -641,6 +700,7 @@ add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80,
       },
     },
     { id=9001402, name="Grobbulus", order=2,
+      creatures = { {display=0, file=1378981, name="Grobbulus"} },
       loot = {
         {id=39276, pct=9, size=10}, {id=39277, pct=9, size=10}, {id=39278, pct=9, size=10}, {id=39279, pct=9, size=10}, {id=39280, pct=10, size=10}, {id=39281, pct=19, size=10},
         {id=39282, pct=10, size=10}, {id=39283, pct=10, size=10}, {id=39284, pct=18, size=10}, {id=39285, pct=10, size=10}, {id=40250, pct=11, size=25}, {id=40251, pct=11, size=25},
@@ -651,6 +711,7 @@ add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80,
       },
     },
     { id=9001403, name="Gluth", order=3,
+      creatures = { {display=0, file=1378977, name="Gluth"} },
       loot = {
         {id=39146, pct=10, size=10}, {id=39188, pct=10, size=10}, {id=39191, pct=11, size=10}, {id=39193, pct=11, size=10}, {id=39194, pct=10, size=10}, {id=39200, pct=11, size=10},
         {id=39215, pct=11, size=10}, {id=39232, pct=10, size=10}, {id=39237, pct=10, size=10}, {id=39248, pct=10, size=10}, {id=39251, pct=10, size=10}, {id=39272, pct=10, size=10},
@@ -669,6 +730,7 @@ add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80,
       },
     },
     { id=9001404, name="Thaddius", order=4,
+      creatures = { {display=0, file=1379019, name="Thaddius"} },
       loot = {
         {id=39291, pct=9, size=10}, {id=39292, pct=9, size=10}, {id=39293, pct=9, size=10}, {id=39294, pct=9, size=10}, {id=39295, pct=9, size=10}, {id=40619, pct=27, size=10},
         {id=40620, pct=28, size=10}, {id=40621, pct=36, size=10}, {id=40294, pct=8, size=25}, {id=40296, pct=8, size=25}, {id=40297, pct=17, size=25}, {id=40298, pct=9, size=25},
@@ -677,6 +739,7 @@ add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80,
       },
     },
     { id=9001405, name="Anub'Rekhan", order=5,
+      creatures = { {display=0, file=1378964, name="Anub'Rekhan"} },
       loot = {
         {id=39139, pct=11, size=10}, {id=39140, pct=11, size=10}, {id=39141, pct=10, size=10}, {id=39146, pct=10, size=10}, {id=39188, pct=10, size=10}, {id=39189, pct=10, size=10},
         {id=39190, pct=10, size=10}, {id=39191, pct=11, size=10}, {id=39192, pct=10, size=10}, {id=39193, pct=11, size=10}, {id=39701, pct=19, size=25}, {id=39702, pct=8, size=25},
@@ -687,6 +750,7 @@ add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80,
       },
     },
     { id=9001406, name="Grand Widow Faerlina", order=6,
+      creatures = { {display=0, file=1378980, name="Grand Widow Faerlina"} },
       loot = {
         {id=39194, pct=10, size=10}, {id=39195, pct=11, size=10}, {id=39196, pct=11, size=10}, {id=39197, pct=10, size=10}, {id=39198, pct=10, size=10}, {id=39199, pct=11, size=10},
         {id=39200, pct=11, size=10}, {id=39215, pct=11, size=10}, {id=39216, pct=10, size=10}, {id=39217, pct=11, size=10}, {id=39723, pct=23, size=25}, {id=39724, pct=0, size=25},
@@ -697,6 +761,7 @@ add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80,
       },
     },
     { id=9001407, name="Maexxna", order=7,
+      creatures = { {display=0, file=1378994, name="Maexxna"} },
       loot = {
         {id=39221, pct=10, size=10}, {id=39224, pct=10, size=10}, {id=39225, pct=10, size=10}, {id=39226, pct=10, size=10}, {id=39228, pct=10, size=10}, {id=39229, pct=11, size=10},
         {id=39230, pct=11, size=10}, {id=39231, pct=10, size=10}, {id=39232, pct=10, size=10}, {id=39233, pct=10, size=10}, {id=39758, pct=9, size=25}, {id=39759, pct=8, size=25},
@@ -707,6 +772,7 @@ add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80,
       },
     },
     { id=9001408, name="Instructor Razuvious", order=8,
+      creatures = { {display=0, file=1378988, name="Instructor Razuvious"} },
       loot = {
         {id=39296, pct=10, size=10}, {id=39297, pct=10, size=10}, {id=39298, pct=10, size=10}, {id=39299, pct=10, size=10}, {id=39306, pct=10, size=10}, {id=39307, pct=10, size=10},
         {id=39308, pct=10, size=10}, {id=39309, pct=10, size=10}, {id=39310, pct=10, size=10}, {id=39311, pct=10, size=10}, {id=40064, pct=11, size=25}, {id=40065, pct=11, size=25},
@@ -717,6 +783,7 @@ add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80,
       },
     },
     { id=9001409, name="Gothik the Harvester", order=9,
+      creatures = { {display=0, file=1378979, name="Gothik the Harvester"} },
       loot = {
         {id=39344, pct=10, size=10}, {id=39345, pct=20, size=10}, {id=39369, pct=10, size=10}, {id=39379, pct=10, size=10}, {id=39386, pct=19, size=10}, {id=39388, pct=10, size=10},
         {id=39389, pct=10, size=10}, {id=39390, pct=10, size=10}, {id=39391, pct=11, size=10}, {id=39392, pct=10, size=10}, {id=40250, pct=11, size=25}, {id=40251, pct=11, size=25},
@@ -727,6 +794,7 @@ add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80,
       },
     },
     { id=9001410, name="The Four Horsemen", order=10,
+      creatures = { {display=0, file=1385732, name="The Four Horsemen"} },
       loot = {
         {id=39393, pct=12, size=10}, {id=39394, pct=12, size=10}, {id=39395, pct=12, size=10}, {id=39396, pct=12, size=10}, {id=39397, pct=12, size=10}, {id=40610, pct=18, size=10},
         {id=40611, pct=19, size=10}, {id=40612, pct=25, size=10}, {id=40343, pct=9, size=25}, {id=40344, pct=10, size=25}, {id=40345, pct=10, size=25}, {id=40346, pct=10, size=25},
@@ -735,6 +803,7 @@ add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80,
       },
     },
     { id=9001411, name="Noth the Plaguebringer", order=11,
+      creatures = { {display=0, file=1379004, name="Noth the Plaguebringer"} },
       loot = {
         {id=39234, pct=10, size=10}, {id=39235, pct=10, size=10}, {id=39236, pct=10, size=10}, {id=39237, pct=10, size=10}, {id=39239, pct=10, size=10}, {id=39240, pct=10, size=10},
         {id=39241, pct=10, size=10}, {id=39242, pct=10, size=10}, {id=39243, pct=10, size=10}, {id=39244, pct=10, size=10}, {id=40064, pct=11, size=25}, {id=40065, pct=11, size=25},
@@ -745,6 +814,7 @@ add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80,
       },
     },
     { id=9001412, name="Heigan the Unclean", order=12,
+      creatures = { {display=0, file=1378984, name="Heigan the Unclean"} },
       loot = {
         {id=39245, pct=9, size=10}, {id=39246, pct=9, size=10}, {id=39247, pct=9, size=10}, {id=39248, pct=10, size=10}, {id=39249, pct=9, size=10}, {id=39250, pct=10, size=10},
         {id=39251, pct=10, size=10}, {id=39252, pct=9, size=10}, {id=39254, pct=10, size=10}, {id=39255, pct=9, size=10}, {id=40201, pct=9, size=25}, {id=40203, pct=18, size=25},
@@ -755,6 +825,7 @@ add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80,
       },
     },
     { id=9001413, name="Loatheb", order=13,
+      creatures = { {display=0, file=1378991, name="Loatheb"} },
       loot = {
         {id=39256, pct=10, size=10}, {id=39257, pct=10, size=10}, {id=39258, pct=10, size=10}, {id=39259, pct=10, size=10}, {id=39260, pct=10, size=10}, {id=40622, pct=29, size=10},
         {id=40623, pct=30, size=10}, {id=40624, pct=38, size=10}, {id=40239, pct=19, size=25}, {id=40240, pct=9, size=25}, {id=40241, pct=10, size=25}, {id=40242, pct=19, size=25},
@@ -763,6 +834,7 @@ add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80,
       },
     },
     { id=9001414, name="Sapphiron", order=14,
+      creatures = { {display=0, file=1379010, name="Sapphiron"} },
       loot = {
         {id=39398, pct=19, size=10}, {id=39399, pct=17, size=10}, {id=39401, pct=19, size=10}, {id=39403, pct=17, size=10}, {id=39404, pct=18, size=10}, {id=39405, pct=18, size=10},
         {id=39407, pct=18, size=10}, {id=39408, pct=19, size=10}, {id=39409, pct=18, size=10}, {id=39415, pct=19, size=10}, {id=44569, pct=91, size=10}, {id=44582, pct=0, size=10},
@@ -773,6 +845,7 @@ add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80,
       },
     },
     { id=9001415, name="Kel'Thuzad", order=15,
+      creatures = { {display=0, file=1378989, name="Kel'Thuzad"} },
       loot = {
         {id=39416, pct=18, size=10}, {id=39417, pct=18, size=10}, {id=39419, pct=19, size=10}, {id=39420, pct=18, size=10}, {id=39421, pct=19, size=10}, {id=39422, pct=19, size=10},
         {id=39423, pct=18, size=10}, {id=39424, pct=19, size=10}, {id=39425, pct=19, size=10}, {id=39426, pct=19, size=10}, {id=40616, pct=28, size=10}, {id=40617, pct=28, size=10},
@@ -785,9 +858,10 @@ add{ id=90014, name="Naxxramas", isRaid=true, minLevel=80,
   },
 }
 
-add{ id=90015, name="Obsidian Sanctum", isRaid=true, minLevel=80,
+add{ id=90015, name="Obsidian Sanctum", isRaid=true, minLevel=80, buttonFDID=237594, bgFDID=1396462, loreFDID=1396507,
   encounters = {
     { id=9001501, name="Sartharion", order=1,
+      creatures = { {display=0, file=1385765, name="Sartharion"} },
       loot = {
         {id=40426, pct=19, size=10}, {id=40427, pct=18, size=10}, {id=40428, pct=18, size=10}, {id=40429, pct=18, size=10}, {id=40430, pct=18, size=10}, {id=40433, pct=7, size=10},
         {id=40613, pct=28, size=10}, {id=40614, pct=29, size=10}, {id=40615, pct=37, size=10}, {id=43345, pct=100, size=10}, {id=43347, pct=100, size=10}, {id=43986, pct=100, size=10},
@@ -802,9 +876,10 @@ add{ id=90015, name="Obsidian Sanctum", isRaid=true, minLevel=80,
   },
 }
 
-add{ id=90016, name="The Eye of Eternity", isRaid=true, minLevel=80,
+add{ id=90016, name="The Eye of Eternity", isRaid=true, minLevel=80, buttonFDID=237600, bgFDID=1396455, loreFDID=1396500,
   encounters = {
     { id=9001601, name="Malygos", order=1,
+      creatures = { {display=0, file=1385753, name="Malygos"} },
       loot = {
         {id=40474, pct=10, size=10}, {id=40475, pct=11, size=10}, {id=40486, pct=12, size=10}, {id=40488, pct=12, size=10}, {id=40489, pct=12, size=10}, {id=40491, pct=11, size=10},
         {id=40497, pct=10, size=10}, {id=40511, pct=13, size=10}, {id=40519, pct=12, size=10}, {id=40526, pct=12, size=10}, {id=43952, pct=1, size=10}, {id=44569, pct=91, size=10},
@@ -819,9 +894,10 @@ add{ id=90016, name="The Eye of Eternity", isRaid=true, minLevel=80,
   },
 }
 
-add{ id=90017, name="Ulduar", isRaid=true, minLevel=80,
+add{ id=90017, name="Ulduar", isRaid=true, minLevel=80, buttonFDID=304502, bgFDID=1396469, loreFDID=1396514,
   encounters = {
     { id=9001701, name="Flame Leviathan", order=1,
+      creatures = { {display=0, file=1385731, name="Flame Leviathan"} },
       loot = {
         {id=45282, pct=19, size=10}, {id=45283, pct=19, size=10}, {id=45284, pct=19, size=10}, {id=45285, pct=18, size=10}, {id=45286, pct=17, size=10}, {id=45287, pct=17, size=10},
         {id=45288, pct=22, size=10}, {id=45289, pct=22, size=10}, {id=45291, pct=17, size=10}, {id=45292, pct=18, size=10}, {id=45293, pct=0.18, size=10}, {id=45295, pct=0.25, size=10},
@@ -833,6 +909,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80,
       },
     },
     { id=9001702, name="Razorscale", order=2,
+      creatures = { {display=0, file=1385763, name="Razorscale"} },
       loot = {
         {id=45298, pct=20, size=10}, {id=45299, pct=19, size=10}, {id=45301, pct=20, size=10}, {id=45302, pct=19, size=10}, {id=45303, pct=20, size=10}, {id=45304, pct=19, size=10},
         {id=45305, pct=19, size=10}, {id=45306, pct=20, size=10}, {id=45307, pct=20, size=10}, {id=45308, pct=21, size=10}, {id=45038, pct=40, size=25}, {id=45137, pct=18, size=25},
@@ -842,6 +919,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80,
       },
     },
     { id=9001703, name="Ignis the Furnace Master", order=3,
+      creatures = { {display=0, file=1385742, name="Ignis the Furnace Master"} },
       loot = {
         {id=45309, pct=19, size=10}, {id=45310, pct=20, size=10}, {id=45311, pct=20, size=10}, {id=45312, pct=20, size=10}, {id=45313, pct=19, size=10}, {id=45314, pct=19, size=10},
         {id=45316, pct=19, size=10}, {id=45317, pct=20, size=10}, {id=45318, pct=19, size=10}, {id=45321, pct=21, size=10}, {id=45038, pct=40, size=25}, {id=45157, pct=20, size=25},
@@ -851,6 +929,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80,
       },
     },
     { id=9001704, name="XT-002 Deconstructor", order=4,
+      creatures = { {display=0, file=1385773, name="XT-002 Deconstructor"} },
       loot = {
         {id=45675, pct=20, size=10}, {id=45676, pct=19, size=10}, {id=45677, pct=19, size=10}, {id=45679, pct=19, size=10}, {id=45680, pct=18, size=10}, {id=45682, pct=14, size=10},
         {id=45685, pct=22, size=10}, {id=45686, pct=21, size=10}, {id=45687, pct=21, size=10}, {id=45694, pct=21, size=10}, {id=45867, pct=2, size=10}, {id=45868, pct=2, size=10},
@@ -862,6 +941,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80,
       },
     },
     { id=9001705, name="Assembly of Iron", order=5,
+      creatures = { {display=0, file=1390439, name="Assembly of Iron"} },
       loot = {
         {id=45322, pct=18, size=10}, {id=45324, pct=19, size=10}, {id=45329, pct=19, size=10}, {id=45330, pct=23, size=10}, {id=45331, pct=19, size=10}, {id=45332, pct=23, size=10},
         {id=45333, pct=22, size=10}, {id=45378, pct=17, size=10}, {id=45418, pct=21, size=10}, {id=45423, pct=24, size=10}, {id=45447, pct=18, size=10}, {id=45448, pct=17, size=10},
@@ -873,6 +953,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80,
       },
     },
     { id=9001706, name="Kologarn", order=6,
+      creatures = { {display=0, file=1385747, name="Kologarn"} },
       loot = {
         {id=45695, pct=21, size=10}, {id=45696, pct=19, size=10}, {id=45697, pct=18, size=10}, {id=45698, pct=18, size=10}, {id=45699, pct=17, size=10}, {id=45700, pct=19, size=10},
         {id=45701, pct=21, size=10}, {id=45702, pct=18, size=10}, {id=45703, pct=17, size=10}, {id=45704, pct=19, size=10}, {id=45038, pct=40, size=25}, {id=45261, pct=16, size=25},
@@ -882,6 +963,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80,
       },
     },
     { id=9001707, name="Algalon the Observer", order=7,
+      creatures = { {display=0, file=1385713, name="Algalon the Observer"} },
       loot = {
         {id=46037, pct=0, size=10}, {id=46038, pct=0, size=10}, {id=46039, pct=0, size=10}, {id=46040, pct=40, size=10}, {id=46041, pct=0, size=10}, {id=46042, pct=0, size=10},
         {id=46043, pct=0, size=10}, {id=46044, pct=0, size=10}, {id=46045, pct=40, size=10}, {id=46046, pct=0, size=10}, {id=46047, pct=0, size=10}, {id=46048, pct=0, size=10},
@@ -893,6 +975,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80,
       },
     },
     { id=9001708, name="Auriaya", order=8,
+      creatures = { {display=0, file=1385717, name="Auriaya"} },
       loot = {
         {id=45707, pct=19, size=10}, {id=45708, pct=20, size=10}, {id=45709, pct=19, size=10}, {id=45711, pct=19, size=10}, {id=45712, pct=20, size=10}, {id=45713, pct=21, size=10},
         {id=45832, pct=19, size=10}, {id=45864, pct=20, size=10}, {id=45865, pct=20, size=10}, {id=45866, pct=19, size=10}, {id=45038, pct=40, size=25}, {id=45315, pct=19, size=25},
@@ -902,6 +985,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80,
       },
     },
     { id=9001709, name="Hodir", order=9,
+      creatures = { {display=0, file=1385740, name="Hodir"} },
       loot = {
         {id=45458, pct=17, size=10}, {id=45464, pct=20, size=10}, {id=45650, pct=29, size=10}, {id=45651, pct=29, size=10}, {id=45652, pct=34, size=10}, {id=45786, pct=23, size=10},
         {id=45872, pct=22, size=10}, {id=45873, pct=15, size=10}, {id=45874, pct=16, size=10}, {id=45876, pct=16, size=10}, {id=45877, pct=17, size=10}, {id=45886, pct=20, size=10},
@@ -912,6 +996,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80,
       },
     },
     { id=9001710, name="Thorim", order=10,
+      creatures = { {display=0, file=1385770, name="Thorim"} },
       loot = {
         {id=45659, pct=25, size=10}, {id=45660, pct=28, size=10}, {id=45661, pct=34, size=10}, {id=45784, pct=5, size=10}, {id=45892, pct=18, size=10}, {id=45893, pct=19, size=10},
         {id=45894, pct=17, size=10}, {id=45895, pct=18, size=10}, {id=45927, pct=17, size=10}, {id=45928, pct=5, size=10}, {id=45929, pct=4, size=10}, {id=45930, pct=5, size=10},
@@ -922,6 +1007,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80,
       },
     },
     { id=9001711, name="Freya", order=11,
+      creatures = { {display=0, file=1385733, name="Freya"} },
       loot = {
         {id=45294, pct=1, size=10}, {id=45644, pct=25, size=10}, {id=45645, pct=23, size=10}, {id=45646, pct=30, size=10}, {id=45788, pct=4, size=10}, {id=45934, pct=18, size=10},
         {id=45935, pct=17, size=10}, {id=45936, pct=15, size=10}, {id=45940, pct=15, size=10}, {id=45941, pct=15, size=10}, {id=45943, pct=2, size=10}, {id=45945, pct=2, size=10},
@@ -932,6 +1018,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80,
       },
     },
     { id=9001712, name="Mimiron", order=12,
+      creatures = { {display=0, file=1385754, name="Mimiron"} },
       loot = {
         {id=45647, pct=28, size=10}, {id=45648, pct=75, size=10}, {id=45649, pct=37, size=10}, {id=45787, pct=2, size=10}, {id=45972, pct=0.13, size=10}, {id=45973, pct=19, size=10},
         {id=45974, pct=75, size=10}, {id=45975, pct=11, size=10}, {id=45976, pct=20, size=10}, {id=45982, pct=0.34, size=10}, {id=45988, pct=0, size=10}, {id=45989, pct=0.34, size=10},
@@ -942,6 +1029,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80,
       },
     },
     { id=9001713, name="General Vezax", order=13,
+      creatures = { {display=0, file=1385735, name="General Vezax"} },
       loot = {
         {id=45996, pct=22, size=10}, {id=45997, pct=17, size=10}, {id=46008, pct=18, size=10}, {id=46009, pct=17, size=10}, {id=46010, pct=21, size=10}, {id=46011, pct=19, size=10},
         {id=46012, pct=20, size=10}, {id=46013, pct=20, size=10}, {id=46014, pct=22, size=10}, {id=46015, pct=18, size=10}, {id=46032, pct=2, size=10}, {id=46033, pct=4, size=10},
@@ -953,6 +1041,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80,
       },
     },
     { id=9001714, name="Yogg-Saron", order=14,
+      creatures = { {display=0, file=1385774, name="Yogg-Saron"} },
       loot = {
         {id=45635, pct=52, size=10}, {id=45636, pct=50, size=10}, {id=45637, pct=27, size=10}, {id=46016, pct=17, size=10}, {id=46018, pct=35, size=10}, {id=46019, pct=12, size=10},
         {id=46021, pct=12, size=10}, {id=46022, pct=8, size=10}, {id=46024, pct=10, size=10}, {id=46025, pct=23, size=10}, {id=46028, pct=17, size=10}, {id=46030, pct=17, size=10},
@@ -966,9 +1055,10 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80,
   },
 }
 
-add{ id=90018, name="Trial of the Champion", isRaid=false, minLevel=80,
+add{ id=90018, name="Trial of the Champion", isRaid=false, minLevel=80, buttonFDID=311220, bgFDID=608185, loreFDID=608263,
   encounters = {
     { id=9001801, name="The Grand Champions", order=1,
+      creatures = { {display=0, file=607621, name="The Grand Champions (Alliance)"}, {display=0, file=607622, name="The Grand Champions (Horde)"} },
       loot = {
         {id=44990, pct=100, diff="h"}, {id=47170, pct=0, diff="n"}, {id=47171, pct=0, diff="n"}, {id=47172, pct=0, diff="n"}, {id=47173, pct=0, diff="n"}, {id=47174, pct=0, diff="n"},
         {id=47175, pct=0, diff="n"}, {id=47241, pct=100, diff="h"}, {id=47243, pct=0, diff="h"}, {id=47244, pct=0, diff="h"}, {id=47248, pct=0, diff="h"}, {id=47249, pct=0, diff="h"},
@@ -976,6 +1066,7 @@ add{ id=90018, name="Trial of the Champion", isRaid=false, minLevel=80,
       },
     },
     { id=9001802, name="Argent Confessor Paletress", order=2,
+      creatures = { {display=0, file=607547, name="Argent Confessor Paletress"} },
       loot = {
         {id=44990, pct=100, diff="h"}, {id=47176, pct=0, diff="n"}, {id=47177, pct=0, diff="n"}, {id=47178, pct=0, diff="n"}, {id=47181, pct=0, diff="n"}, {id=47185, pct=0, diff="n"},
         {id=47211, pct=0, diff="n"}, {id=47212, pct=0, diff="n"}, {id=47213, pct=0, diff="n"}, {id=47214, pct=0, diff="n"}, {id=47217, pct=0, diff="n"}, {id=47218, pct=0, diff="n"},
@@ -985,6 +1076,7 @@ add{ id=90018, name="Trial of the Champion", isRaid=false, minLevel=80,
       },
     },
     { id=9001803, name="Eadric the Pure", order=3,
+      creatures = { {display=0, file=607591, name="Eadric the Pure"} },
       loot = {
         {id=44990, pct=100, diff="h"}, {id=47176, pct=0, diff="n"}, {id=47177, pct=0, diff="n"}, {id=47178, pct=0, diff="n"}, {id=47181, pct=0, diff="n"}, {id=47185, pct=0, diff="n"},
         {id=47197, pct=0, diff="n"}, {id=47199, pct=0, diff="n"}, {id=47200, pct=0, diff="n"}, {id=47201, pct=0, diff="n"}, {id=47202, pct=0, diff="n"}, {id=47210, pct=0, diff="n"},
@@ -994,6 +1086,7 @@ add{ id=90018, name="Trial of the Champion", isRaid=false, minLevel=80,
       },
     },
     { id=9001804, name="The Black Knight", order=4,
+      creatures = { {display=0, file=607787, name="The Black Knight"} },
       loot = {
         {id=43102, pct=100, diff="h"}, {id=44990, pct=100, diff="h"}, {id=47215, pct=0, diff="n"}, {id=47216, pct=0, diff="n"}, {id=47220, pct=0, diff="n"}, {id=47221, pct=0, diff="n"},
         {id=47222, pct=0, diff="n"}, {id=47226, pct=0, diff="n"}, {id=47227, pct=0, diff="n"}, {id=47228, pct=0, diff="n"}, {id=47229, pct=0, diff="n"}, {id=47230, pct=0, diff="n"},
@@ -1005,9 +1098,10 @@ add{ id=90018, name="Trial of the Champion", isRaid=false, minLevel=80,
   },
 }
 
-add{ id=90019, name="Trial of the Crusader", isRaid=true, minLevel=80, raidHeroic=true,
+add{ id=90019, name="Trial of the Crusader", isRaid=true, minLevel=80, raidHeroic=true, buttonFDID=311221, bgFDID=1396468, loreFDID=1396513,
   encounters = {
     { id=9001901, name="Northrend Beasts", order=1,
+      creatures = { {display=0, file=1390440, name="The Northrend Beasts"} },
       loot = {
         {id=47578, pct=0, size=10}, {id=47607, pct=0, size=10}, {id=47608, pct=0, size=10}, {id=47609, pct=0, size=10}, {id=47610, pct=0, size=10}, {id=47611, pct=0, size=10},
         {id=47612, pct=0, size=10}, {id=47613, pct=0, size=10}, {id=47614, pct=0, size=10}, {id=47615, pct=0, size=10}, {id=47616, pct=0, size=10}, {id=47617, pct=0, size=10},
@@ -1031,6 +1125,7 @@ add{ id=90019, name="Trial of the Crusader", isRaid=true, minLevel=80, raidHeroi
       },
     },
     { id=9001902, name="Lord Jaraxxus", order=2,
+      creatures = { {display=0, file=1385752, name="Lord Jaraxxus"} },
       loot = {
         {id=47618, pct=0, size=10}, {id=47619, pct=0, size=10}, {id=47620, pct=0, size=10}, {id=47621, pct=0, size=10}, {id=47663, pct=0, size=10}, {id=47669, pct=0, size=10},
         {id=47676, pct=0, size=10}, {id=47679, pct=0, size=10}, {id=47680, pct=0, size=10}, {id=47683, pct=0, size=10}, {id=47703, pct=0, size=10}, {id=47711, pct=0, size=10},
@@ -1054,6 +1149,7 @@ add{ id=90019, name="Trial of the Crusader", isRaid=true, minLevel=80, raidHeroi
       },
     },
     { id=9001903, name="Faction Champions", order=3,
+      creatures = { {display=0, file=607621, name="Faction Champions (Alliance)"}, {display=0, file=607622, name="Faction Champions (Horde)"} },
       loot = {
         {id=47717, pct=0, size=10}, {id=47718, pct=0, size=10}, {id=47719, pct=0, size=10}, {id=47720, pct=0, size=10}, {id=47721, pct=0, size=10}, {id=47724, pct=0, size=10},
         {id=47725, pct=0, size=10}, {id=47726, pct=0, size=10}, {id=47727, pct=0, size=10}, {id=47728, pct=0, size=10}, {id=47873, pct=0, size=10}, {id=47874, pct=0, size=10},
@@ -1075,6 +1171,7 @@ add{ id=90019, name="Trial of the Crusader", isRaid=true, minLevel=80, raidHeroi
       },
     },
     { id=9001904, name="Twin Val'kyr", order=4,
+      creatures = { {display=0, file=1390443, name="Twin Val'kyr"} },
       loot = {
         {id=47700, pct=0, size=10}, {id=47736, pct=0, size=10}, {id=47737, pct=0, size=10}, {id=47738, pct=0, size=10}, {id=47739, pct=0, size=10}, {id=47740, pct=0, size=10},
         {id=47742, pct=0, size=10}, {id=47743, pct=0, size=10}, {id=47744, pct=0, size=10}, {id=47745, pct=0, size=10}, {id=47746, pct=0, size=10}, {id=47747, pct=0, size=10},
@@ -1098,6 +1195,7 @@ add{ id=90019, name="Trial of the Crusader", isRaid=true, minLevel=80, raidHeroi
       },
     },
     { id=9001905, name="Anub'arak", order=5,
+      creatures = { {display=0, file=607542, name="Anub'arak"} },
       loot = {
         {id=47741, pct=0, size=10}, {id=47808, pct=0, size=10}, {id=47809, pct=0, size=10}, {id=47810, pct=0, size=10}, {id=47811, pct=0, size=10}, {id=47812, pct=0, size=10},
         {id=47813, pct=0, size=10}, {id=47814, pct=0, size=10}, {id=47815, pct=0, size=10}, {id=47816, pct=0, size=10}, {id=47829, pct=0, size=10}, {id=47830, pct=0, size=10},
@@ -1130,9 +1228,10 @@ add{ id=90019, name="Trial of the Crusader", isRaid=true, minLevel=80, raidHeroi
   },
 }
 
-add{ id=90020, name="Onyxia's Lair", isRaid=true, minLevel=80,
+add{ id=90020, name="Onyxia's Lair", isRaid=true, minLevel=80, buttonFDID=1396589, bgFDID=1396463, loreFDID=1396508,
   encounters = {
     { id=9002001, name="Onyxia", order=1,
+      creatures = { {display=0, file=1379025, name="Onyxia"} },
       loot = {
         {id=49294, pct=0, size=10}, {id=49295, pct=0, size=10}, {id=49296, pct=0, size=10}, {id=49297, pct=0, size=10}, {id=49298, pct=0, size=10}, {id=49299, pct=0, size=10},
         {id=49301, pct=0, size=10}, {id=49302, pct=0, size=10}, {id=49303, pct=0, size=10}, {id=49304, pct=0, size=10}, {id=49305, pct=0, size=10}, {id=49306, pct=0, size=10},
@@ -1153,9 +1252,10 @@ add{ id=90020, name="Onyxia's Lair", isRaid=true, minLevel=80,
   },
 }
 
-add{ id=90021, name="The Forge of Souls", isRaid=false, minLevel=80,
+add{ id=90021, name="The Forge of Souls", isRaid=false, minLevel=80, buttonFDID=336392, bgFDID=608181, loreFDID=608259,
   encounters = {
     { id=9002101, name="Bronjahm", order=1,
+      creatures = { {display=0, file=607559, name="Bronjahm"} },
       loot = {
         {id=49783, pct=0, diff="n"}, {id=49784, pct=0, diff="n"}, {id=49785, pct=0, diff="n"}, {id=49786, pct=0, diff="n"}, {id=49787, pct=0, diff="n"}, {id=49788, pct=0, diff="n"},
         {id=50169, pct=0, diff="h"}, {id=50191, pct=0, diff="h"}, {id=50193, pct=0, diff="h"}, {id=50194, pct=0, diff="h"}, {id=50196, pct=0, diff="h"}, {id=50197, pct=0, diff="h"},
@@ -1163,6 +1263,7 @@ add{ id=90021, name="The Forge of Souls", isRaid=false, minLevel=80,
       },
     },
     { id=9002102, name="Devourer of Souls", order=2,
+      creatures = { {display=0, file=607585, name="Devourer of Souls"} },
       loot = {
         {id=49789, pct=0, diff="n"}, {id=49790, pct=0, diff="n"}, {id=49791, pct=0, diff="n"}, {id=49792, pct=0, diff="n"}, {id=49793, pct=0, diff="n"}, {id=49794, pct=0, diff="n"},
         {id=49795, pct=0, diff="n"}, {id=49796, pct=0, diff="n"}, {id=49797, pct=0, diff="n"}, {id=49798, pct=0, diff="n"}, {id=49799, pct=0, diff="n"}, {id=49800, pct=0, diff="n"},
@@ -1173,21 +1274,24 @@ add{ id=90021, name="The Forge of Souls", isRaid=false, minLevel=80,
   },
 }
 
-add{ id=90022, name="Pit of Saron", isRaid=false, minLevel=80,
+add{ id=90022, name="Pit of Saron", isRaid=false, minLevel=80, buttonFDID=336391, bgFDID=608171, loreFDID=608249,
   encounters = {
     { id=9002201, name="Forgemaster Garfrost", order=1,
+      creatures = { {display=0, file=607603, name="Forgemaster Garfrost"} },
       loot = {
         {id=49801, pct=0, diff="n"}, {id=49802, pct=0, diff="n"}, {id=49803, pct=0, diff="n"}, {id=49804, pct=0, diff="n"}, {id=49805, pct=0, diff="n"}, {id=49806, pct=0, diff="n"},
         {id=50227, pct=0, diff="h"}, {id=50228, pct=0, diff="h"}, {id=50229, pct=0, diff="h"}, {id=50230, pct=0, diff="h"}, {id=50233, pct=0, diff="h"}, {id=50234, pct=0, diff="h"},
       },
     },
     { id=9002202, name="Ick and Krick", order=2,
+      creatures = { {display=0, file=607655, name="Ick and Krick"} },
       loot = {
         {id=49807, pct=0, diff="n"}, {id=49808, pct=0, diff="n"}, {id=49809, pct=0, diff="n"}, {id=49810, pct=0, diff="n"}, {id=49811, pct=0, diff="n"}, {id=49812, pct=0, diff="n"},
         {id=50235, pct=0, diff="h"}, {id=50262, pct=0, diff="h"}, {id=50263, pct=0, diff="h"}, {id=50264, pct=0, diff="h"}, {id=50265, pct=0, diff="h"}, {id=50266, pct=0, diff="h"},
       },
     },
     { id=9002203, name="Tyrannus", order=3,
+      creatures = { {display=0, file=607765, name="Scourgelord Tyrannus"} },
       loot = {
         {id=49813, pct=0, diff="n"}, {id=49816, pct=0, diff="n"}, {id=49817, pct=0, diff="n"}, {id=49818, pct=0, diff="n"}, {id=49819, pct=0, diff="n"}, {id=49820, pct=0, diff="n"},
         {id=49821, pct=0, diff="n"}, {id=49822, pct=0, diff="n"}, {id=49823, pct=0, diff="n"}, {id=49824, pct=0, diff="n"}, {id=49825, pct=0, diff="n"}, {id=49826, pct=0, diff="n"},
@@ -1198,21 +1302,24 @@ add{ id=90022, name="Pit of Saron", isRaid=false, minLevel=80,
   },
 }
 
-add{ id=90023, name="Halls of Reflection", isRaid=false, minLevel=80,
+add{ id=90023, name="Halls of Reflection", isRaid=false, minLevel=80, buttonFDID=336389, bgFDID=608166, loreFDID=608244,
   encounters = {
     { id=9002301, name="Falric", order=1,
+      creatures = { {display=0, file=607601, name="Falric"} },
       loot = {
         {id=49827, pct=0, diff="n"}, {id=49828, pct=0, diff="n"}, {id=49829, pct=0, diff="n"}, {id=49830, pct=0, diff="n"}, {id=49831, pct=0, diff="n"}, {id=49832, pct=0, diff="n"},
         {id=50290, pct=0, diff="h"}, {id=50291, pct=0, diff="h"}, {id=50292, pct=0, diff="h"}, {id=50293, pct=0, diff="h"}, {id=50294, pct=0, diff="h"}, {id=50295, pct=0, diff="h"},
       },
     },
     { id=9002302, name="Marwyn", order=2,
+      creatures = { {display=0, file=607710, name="Marwyn"} },
       loot = {
         {id=49833, pct=0, diff="n"}, {id=49834, pct=0, diff="n"}, {id=49835, pct=0, diff="n"}, {id=49836, pct=0, diff="n"}, {id=49837, pct=0, diff="n"}, {id=49838, pct=0, diff="n"},
         {id=50260, pct=0, diff="h"}, {id=50296, pct=0, diff="h"}, {id=50297, pct=0, diff="h"}, {id=50298, pct=0, diff="h"}, {id=50299, pct=0, diff="h"}, {id=50300, pct=0, diff="h"},
       },
     },
     { id=9002303, name="The Lich King", order=3,
+      creatures = { {display=0, file=607688, name="The Lich King"} },
       loot = {
         {id=49839, pct=0, diff="n"}, {id=49840, pct=0, diff="n"}, {id=49841, pct=0, diff="n"}, {id=49842, pct=0, diff="n"}, {id=49843, pct=0, diff="n"}, {id=49844, pct=0, diff="n"},
         {id=49845, pct=0, diff="n"}, {id=49846, pct=0, diff="n"}, {id=49847, pct=0, diff="n"}, {id=49848, pct=0, diff="n"}, {id=49849, pct=0, diff="n"}, {id=49851, pct=0, diff="n"},
@@ -1223,9 +1330,10 @@ add{ id=90023, name="Halls of Reflection", isRaid=false, minLevel=80,
   },
 }
 
-add{ id=90024, name="Icecrown Citadel", isRaid=true, minLevel=80, raidHeroic=true,
+add{ id=90024, name="Icecrown Citadel", isRaid=true, minLevel=80, raidHeroic=true, buttonFDID=336390, bgFDID=1396457, loreFDID=1396502,
   encounters = {
     { id=9002401, name="Lord Marrowgar", order=1,
+      creatures = { {display=0, file=1378992, name="Lord Marrowgar"} },
       loot = {
         {id=50339, pct=0, size=10}, {id=50346, pct=0, size=10, diff="h"}, {id=50759, pct=0, size=10}, {id=50760, pct=0, size=10}, {id=50761, pct=0, size=10}, {id=50762, pct=0, size=10},
         {id=50763, pct=0, size=10}, {id=50764, pct=0, size=10}, {id=50771, pct=0, size=10}, {id=50772, pct=0, size=10}, {id=50773, pct=0, size=10}, {id=50774, pct=0, size=10},
@@ -1240,6 +1348,7 @@ add{ id=90024, name="Icecrown Citadel", isRaid=true, minLevel=80, raidHeroic=tru
       },
     },
     { id=9002402, name="Lady Deathwhisper", order=2,
+      creatures = { {display=0, file=1378990, name="Lady Deathwhisper"} },
       loot = {
         {id=50342, pct=0, size=10}, {id=50343, pct=0, size=10, diff="h"}, {id=50776, pct=0, size=10}, {id=50777, pct=0, size=10}, {id=50778, pct=0, size=10}, {id=50779, pct=0, size=10},
         {id=50780, pct=0, size=10}, {id=50781, pct=0, size=10}, {id=50782, pct=0, size=10}, {id=50783, pct=0, size=10}, {id=50784, pct=0, size=10}, {id=50785, pct=0, size=10},
@@ -1254,6 +1363,7 @@ add{ id=90024, name="Icecrown Citadel", isRaid=true, minLevel=80, raidHeroic=tru
       },
     },
     { id=9002403, name="The Gunship Battle", order=3,
+      creatures = { {display=0, file=1385737, name="The Gunship Battle"}, {display=0, file=1385736, name="The Gunship Battle"} },
       loot = {
         {id=50340, pct=0, size=10}, {id=50345, pct=0, size=10, diff="h"}, {id=50787, pct=0, size=10}, {id=50788, pct=0, size=10}, {id=50789, pct=0, size=10}, {id=50790, pct=0, size=10},
         {id=50791, pct=0, size=10}, {id=50792, pct=0, size=10}, {id=50793, pct=0, size=10}, {id=50794, pct=0, size=10}, {id=50795, pct=0, size=10}, {id=50796, pct=0, size=10},
@@ -1268,6 +1378,7 @@ add{ id=90024, name="Icecrown Citadel", isRaid=true, minLevel=80, raidHeroic=tru
       },
     },
     { id=9002404, name="Deathbringer Saurfang", order=4,
+      creatures = { {display=0, file=1378970, name="Deathbringer Saurfang"} },
       loot = {
         {id=50798, pct=0, size=10}, {id=50799, pct=0, size=10}, {id=50800, pct=0, size=10}, {id=50801, pct=0, size=10}, {id=50802, pct=0, size=10}, {id=50803, pct=0, size=10},
         {id=50804, pct=0, size=10}, {id=50805, pct=0, size=10}, {id=50806, pct=0, size=10}, {id=50807, pct=0, size=10}, {id=50808, pct=0, size=10}, {id=50809, pct=0, size=10},
@@ -1281,6 +1392,7 @@ add{ id=90024, name="Icecrown Citadel", isRaid=true, minLevel=80, raidHeroic=tru
       },
     },
     { id=9002405, name="Festergut", order=5,
+      creatures = { {display=0, file=1378972, name="Festergut"} },
       loot = {
         {id=50810, pct=0, size=10}, {id=50811, pct=0, size=10}, {id=50812, pct=0, size=10}, {id=50852, pct=0, size=10}, {id=50858, pct=0, size=10}, {id=50859, pct=0, size=10},
         {id=50966, pct=0, size=10}, {id=50967, pct=0, size=10}, {id=50985, pct=0, size=10}, {id=50986, pct=0, size=10}, {id=50988, pct=0, size=10}, {id=50990, pct=0, size=10},
@@ -1296,6 +1408,7 @@ add{ id=90024, name="Icecrown Citadel", isRaid=true, minLevel=80, raidHeroic=tru
       },
     },
     { id=9002406, name="Rotface", order=6,
+      creatures = { {display=0, file=1379009, name="Rotface"} },
       loot = {
         {id=50998, pct=0, size=10}, {id=50999, pct=0, size=10}, {id=51000, pct=0, size=10}, {id=51001, pct=0, size=10}, {id=51002, pct=0, size=10}, {id=51003, pct=0, size=10},
         {id=51004, pct=0, size=10}, {id=51005, pct=0, size=10}, {id=51006, pct=0, size=10}, {id=51007, pct=0, size=10}, {id=51008, pct=0, size=10}, {id=51009, pct=0, size=10},
@@ -1310,6 +1423,7 @@ add{ id=90024, name="Icecrown Citadel", isRaid=true, minLevel=80, raidHeroic=tru
       },
     },
     { id=9002407, name="Professor Putricide", order=7,
+      creatures = { {display=0, file=1379007, name="Professor Putricide"} },
       loot = {
         {id=50341, pct=0, size=10}, {id=50344, pct=0, size=10, diff="h"}, {id=51010, pct=0, size=10}, {id=51011, pct=0, size=10}, {id=51012, pct=0, size=10}, {id=51013, pct=0, size=10},
         {id=51014, pct=0, size=10}, {id=51015, pct=0, size=10}, {id=51016, pct=0, size=10}, {id=51017, pct=0, size=10}, {id=51018, pct=0, size=10}, {id=51019, pct=0, size=10},
@@ -1323,6 +1437,7 @@ add{ id=90024, name="Icecrown Citadel", isRaid=true, minLevel=80, raidHeroic=tru
       },
     },
     { id=9002408, name="Blood Prince Council", order=8,
+      creatures = { {display=0, file=1385721, name="Blood Prince Council"} },
       loot = {
         {id=51021, pct=0, size=10}, {id=51022, pct=0, size=10}, {id=51023, pct=0, size=10}, {id=51024, pct=0, size=10}, {id=51025, pct=0, size=10}, {id=51325, pct=0, size=10},
         {id=51326, pct=0, size=10}, {id=51379, pct=0, size=10}, {id=51380, pct=0, size=10}, {id=51381, pct=0, size=10}, {id=51382, pct=0, size=10}, {id=51383, pct=0, size=10},
@@ -1337,6 +1452,7 @@ add{ id=90024, name="Icecrown Citadel", isRaid=true, minLevel=80, raidHeroic=tru
       },
     },
     { id=9002409, name="Blood-Queen Lana'thel", order=9,
+      creatures = { {display=0, file=1378967, name="Blood-Queen Lana'thel"} },
       loot = {
         {id=51384, pct=0, size=10}, {id=51385, pct=0, size=10}, {id=51386, pct=0, size=10}, {id=51387, pct=0, size=10}, {id=51548, pct=0, size=10}, {id=51550, pct=0, size=10},
         {id=51551, pct=0, size=10}, {id=51552, pct=0, size=10}, {id=51553, pct=0, size=10}, {id=51554, pct=0, size=10}, {id=51555, pct=0, size=10}, {id=51556, pct=0, size=10},
@@ -1350,6 +1466,7 @@ add{ id=90024, name="Icecrown Citadel", isRaid=true, minLevel=80, raidHeroic=tru
       },
     },
     { id=9002410, name="Valithria Dreamwalker", order=10,
+      creatures = { {display=0, file=1379023, name="Valithria Dreamwalker"} },
       loot = {
         {id=51561, pct=0, size=10}, {id=51562, pct=0, size=10}, {id=51563, pct=0, size=10}, {id=51564, pct=0, size=10}, {id=51565, pct=0, size=10}, {id=51566, pct=0, size=10},
         {id=51582, pct=0, size=10}, {id=51583, pct=0, size=10}, {id=51584, pct=0, size=10}, {id=51585, pct=0, size=10}, {id=51586, pct=0, size=10}, {id=51777, pct=0, size=10},
@@ -1364,6 +1481,7 @@ add{ id=90024, name="Icecrown Citadel", isRaid=true, minLevel=80, raidHeroic=tru
       },
     },
     { id=9002411, name="Sindragosa", order=11,
+      creatures = { {display=0, file=1379014, name="Sindragosa"} },
       loot = {
         {id=51026, pct=0, size=10}, {id=51779, pct=0, size=10}, {id=51782, pct=0, size=10}, {id=51783, pct=0, size=10}, {id=51784, pct=0, size=10}, {id=51785, pct=0, size=10},
         {id=51786, pct=0, size=10}, {id=51787, pct=0, size=10}, {id=51788, pct=0, size=10}, {id=51789, pct=0, size=10}, {id=51790, pct=0, size=10}, {id=51791, pct=0, size=10},
@@ -1377,6 +1495,7 @@ add{ id=90024, name="Icecrown Citadel", isRaid=true, minLevel=80, raidHeroic=tru
       },
     },
     { id=9002412, name="The Lich King", order=12,
+      creatures = { {display=0, file=1379021, name="The Lich King"} },
       loot = {
         {id=49908, pct=0, size=10, diff="h"}, {id=51795, pct=0, size=10}, {id=51796, pct=0, size=10}, {id=51797, pct=0, size=10}, {id=51798, pct=0, size=10}, {id=51799, pct=0, size=10},
         {id=51800, pct=0, size=10}, {id=51801, pct=0, size=10}, {id=51802, pct=0, size=10}, {id=51803, pct=0, size=10}, {id=51939, pct=0, size=10, diff="h"}, {id=51940, pct=0, size=10, diff="h"},
@@ -1392,9 +1511,10 @@ add{ id=90024, name="Icecrown Citadel", isRaid=true, minLevel=80, raidHeroic=tru
   },
 }
 
-add{ id=90025, name="Ruby Sanctum", isRaid=true, minLevel=80, raidHeroic=true,
+add{ id=90025, name="Ruby Sanctum", isRaid=true, minLevel=80, raidHeroic=true, buttonFDID=366689, bgFDID=1396464, loreFDID=1396509,
   encounters = {
     { id=9002501, name="Halion", order=1,
+      creatures = { {display=0, file=1385738, name="Halion"} },
       loot = {
         {id=53103, pct=0, size=10}, {id=53110, pct=0, size=10}, {id=53111, pct=0, size=10}, {id=53112, pct=0, size=10}, {id=53113, pct=0, size=10}, {id=53114, pct=0, size=10},
         {id=53115, pct=0, size=10}, {id=53116, pct=0, size=10}, {id=53117, pct=0, size=10}, {id=53118, pct=0, size=10}, {id=53119, pct=0, size=10}, {id=53121, pct=0, size=10},
@@ -1410,6 +1530,77 @@ add{ id=90025, name="Ruby Sanctum", isRaid=true, minLevel=80, raidHeroic=true,
     },
   },
 }
+-- WotLK ejbutton splash art registration. FDIDs 1396587 (Naxxramas) and 1396589 (Onyxia) are
+-- shared with Classic-tier and already registered by Assets.lua — skip to avoid a second call.
+if NE.tex and NE.tex.RegisterLocal then
+  local _P = "Interface\\AddOns\\DragonUI_NewEra\\Textures\\EncounterJournal\\"
+  local BTN = {
+    { 237592, "237592-ejbutton-ahnkalet.blp" },          -- Ahn'kahet             (90004)
+    { 237593, "237593-ejbutton-azjolnerub.blp" },         -- Azjol-Nerub           (90003)
+    { 237594, "237594-ejbutton-chamberofaspects.blp" },   -- Obsidian Sanctum      (90015)
+    { 237595, "237595-ejbutton-draktharon.blp" },         -- Drak'Tharon Keep      (90005)
+    { 237596, "237596-ejbutton-gundrak.blp" },            -- Gundrak               (90007)
+    { 237598, "237598-ejbutton-hallsoflightning.blp" },   -- Halls of Lightning    (90009)
+    { 237599, "237599-ejbutton-hallsofstone.blp" },       -- Halls of Stone        (90008)
+    { 237600, "237600-ejbutton-malygos.blp" },            -- Eye of Eternity       (90016)
+    { 237601, "237601-ejbutton-oldstratholme.blp" },      -- Culling of Stratholme (90010)
+    { 237602, "237602-ejbutton-thenexus.blp" },           -- The Nexus             (90002)
+    { 237603, "237603-ejbutton-theoculus.blp" },          -- The Oculus            (90012)
+    { 237604, "237604-ejbutton-theviolethold.blp" },      -- Violet Hold           (90006)
+    { 237605, "237605-ejbutton-utgarde.blp" },            -- Utgarde Keep          (90001)
+    { 237606, "237606-ejbutton-utgardepinnacle.blp" },    -- Utgarde Pinnacle      (90011)
+    { 303841, "303841-ejbutton-vaultofarchavon.blp" },    -- Vault of Archavon     (90013)
+    { 304502, "304502-ejbutton-ulduarraid.blp" },         -- Ulduar                (90017)
+    { 311220, "311220-ejbutton-argentdungeon.blp" },      -- Trial of the Champion (90018)
+    { 311221, "311221-ejbutton-argentraid.blp" },         -- Trial of the Crusader (90019)
+    { 336389, "336389-ejbutton-hallsofreflection.blp" },  -- Halls of Reflection   (90023)
+    { 336390, "336390-ejbutton-icecrowncitadel.blp" },    -- Icecrown Citadel      (90024)
+    { 336391, "336391-ejbutton-pitofsaron.blp" },         -- Pit of Saron          (90022)
+    { 336392, "336392-ejbutton-theforgeofsouls.blp" },    -- Forge of Souls        (90021)
+    { 366689, "366689-ejbutton-rubysanctum.blp" },        -- Ruby Sanctum          (90025)
+  }
+  for _, e in ipairs(BTN) do
+    NE.tex.RegisterLocal(e[1], _P .. e[2])
+  end
+
+  -- Per-instance model-tab backdrops (JournalInstance.BGFileDataID). Naxxramas (1396461) and
+  -- Onyxia's Lair (1396463) reuse the retail-tier art already registered by Data.lua's tail —
+  -- skip to avoid a second call, same as the BTN skip above.
+  for _, fd in ipairs({ 1396455, 1396457, 1396462, 1396464, 1396468, 1396469, 1396470,
+                        608153, 608155, 608162, 608164, 608165, 608166, 608167, 608171,
+                        608180, 608181, 608182, 608183, 608185, 608187, 608188, 608189 }) do
+    NE.tex.RegisterLocal(fd, _P .. "Backdrops\\" .. fd .. ".blp")
+  end
+
+  -- Per-instance lore-panel splashes (JournalInstance.LoreFileDataID). Same Naxx/Onyxia reuse
+  -- note as above (1396506 / 1396508 already registered by Data.lua's tail).
+  for _, fd in ipairs({ 1396500, 1396502, 1396507, 1396509, 1396513, 1396514, 1396515,
+                        608231, 608233, 608240, 608242, 608243, 608244, 608245, 608249,
+                        608258, 608259, 608260, 608261, 608263, 608265, 608266, 608312 }) do
+    NE.tex.RegisterLocal(fd, _P .. "Lore\\" .. fd .. ".blp")
+  end
+
+  -- Per-boss portrait icons (creatures[].file), keyed by the boss FDID list the user sourced.
+  -- The 15 Naxxramas bosses are omitted here: those FDIDs are shared with Classic-tier Naxx and
+  -- already registered by Data.lua's own Bosses\ loop (same reuse pattern as buttonFDID above).
+  for _, fd in ipairs({ 607542, 607559, 607573, 607585, 607601, 607603, 607605, 607621, 607622,
+                        607623, 607633, 607639, 607659, 607667, 607671, 607672, 607674, 607679,
+                        607687, 607688, 607690, 607702, 607706, 607708, 607710, 607716, 607735,
+                        607743, 607744, 607765, 607773, 607778, 607787, 607790, 607809, 607821,
+                        1378967, 1378970, 1378972, 1378990, 1378992, 1379007, 1379009, 1379014,
+                        1379021, 1379023, 1385713, 1385717, 1385721, 1385731, 1385733, 1385735,
+                        1385736, 1385737, 1385738, 1385740, 1385742, 1385747, 1385752, 1385753,
+                        1385754, 1385763, 1385765, 1385770, 1385773, 1385774, 1390439, 1390440,
+                        1390443,
+                        -- second batch: remaining dungeon/raid bosses without portraits
+                        607534, 607540, 607547, 607567, 607568, 607589, 607590, 607591, 607592,
+                        607593, 607597, 607611, 607620, 607654, 607655, 607658, 607663, 607678,
+                        607685, 607711, 607717, 607727, 607763, 607772, 607774, 607776, 607797,
+                        607798, 607802, 607825, 1379025, 1385715, 1385727, 1385748, 1385767 }) do
+    NE.tex.RegisterLocal(fd, _P .. "Bosses\\" .. fd .. ".blp")
+  end
+end
+
 -- TEMPLATE for hand-seeding lore/abilities/art on top of the above once sourced (Wowhead for
 -- lore/mechanics, cmangos/TrinityCore WotLK boss scripts for real spell ids, retail EJ DB2 for
 -- FDIDs) — copy the relevant fields onto the matching `add{}`/encounter table above; don't

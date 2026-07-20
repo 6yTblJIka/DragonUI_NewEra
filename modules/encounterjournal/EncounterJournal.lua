@@ -80,11 +80,10 @@ local EJ_PHASE_OPTS = {
 -- retail Cata's EJ_TIER_DATA (Blizzard_EncounterJournal.lua:89-96).
 -- tier 3 (Wrath) now has real instances (bosses + loot, hand-seeded from AtlasLoot — see
 -- DataWotLK.lua header for what's still missing), so tierHasInstances() below shows it.
--- `bg` is nil (no shipped BLP yet); SetTierBackground no-ops gracefully on a nil bg.
 local EJ_TIER = {
   [1] = { label = EXPANSION_NAME0 or "Classic",             bg = 605327 },  -- UI-EJ-Classic
   [2] = { label = EXPANSION_NAME1 or "The Burning Crusade", bg = 605326 },  -- UI-EJ-BurningCrusade
-  [3] = { label = EXPANSION_NAME2 or "Wrath of the Lich King", bg = nil },  -- TODO(wotlk): ship UI-EJ-WrathoftheLichKing + set its FDID here
+  [3] = { label = EXPANSION_NAME2 or "Wrath of the Lich King", bg = 605329 },  -- UI-EJ-WrathoftheLichKing
 }
 local EJ_DEFAULT_TIER = 1
 
@@ -251,7 +250,7 @@ local function buildInstanceSelect(f)
       local fdid = e.buttonFDID or (e.inst and e.inst.buttonFDID)
       if fdid and fdid > 0 then
         b.bgImage:SetTexture(NE.tex.localFiles[fdid] or fdid)
-        b.bgImage:SetTexCoord(0, 0.68359375, 0, 0.7421875)
+        NE.ej.SetButtonTexCoord(b.bgImage, fdid, false)
         b.bgImage:SetDesaturated(e.deferred and true or false)
         b.bgImage:Show()
       else

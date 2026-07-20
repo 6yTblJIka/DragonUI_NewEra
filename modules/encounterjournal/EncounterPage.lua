@@ -992,7 +992,12 @@ NE.ej.CAM_X0 = NE.ej.CAM_X0 or 1.0    -- model X offset at cdist 0 (toward camer
 NE.ej.CAM_XK = NE.ej.CAM_XK or 0.55   -- X pushback per cdist unit
 NE.ej.CAM_ZK = NE.ej.CAM_ZK or 0.9    -- Z drop per ctz unit
 
-function NE.ej.NormalizeModel(ma, displayID)
+-- NE.ej.NormalizeModel(ma, displayID [, tier])
+-- tier: 1 = Classic (display = creature NPC ID → SetCreature), 2+ = TBC/WotLK
+--       (display = CreatureDisplayInfoID from retail EJ DB2 → SetDisplayInfo).
+-- ma MUST already be shown before this is called — the 3.3.5a engine silently skips
+-- model loads while the frame ancestor chain is hidden (cold-start, QuestNpcModel.lua).
+function NE.ej.NormalizeModel(ma, displayID, tier)
   if not ma then return end
   local model = ma.model
   if not model then return end
@@ -1021,21 +1026,44 @@ function NE.ej.NormalizeModel(ma, displayID)
       if model.SetFacing and not ma._userRotated then model:SetFacing(model.rotation or 0) end
     end)
   end
-  -- Load the model via SetCreature(displayID) — proven on this client (ezCollections' mount/
-  -- pet journals use it this way). NOT SetDisplayInfo: on this custom client that call takes a
-  -- raw model M2 FileID, not a creatureDisplayID (see WeakAuras.lua's own compat shim, which
-  -- passes a variable literally named model_fileId) — we only ever have a displayID here, so
-  -- calling SetDisplayInfo with it "succeeds" (no Lua error) while rendering nothing, which
-  -- silently swallowed the working SetCreature fallback.
-  pcall(model.ClearModel, model)
-  pcall(model.SetCreature, model, displayID)
+
+  -- API selection: Classic (tier 1) stores creature NPC IDs → SetCreature(npcID).
+  -- TBC+ (tier 2+) stores JournalEncounterCreature.CreatureDisplayInfoID from retail EJ DB2
+  -- → SetDisplayInfo(creatureDisplayInfoID), which is the standard WoW 3.3.5a API for loading
+  -- a model by display ID (confirmed via WeakAuras.lua which calls SetDisplayInfo with display
+  -- info IDs, not raw file IDs despite the misleading variable name in that shim).
+  -- SetCreature is NOT used for TBC+ because it takes creature NPC IDs, not display info IDs
+  -- (confirmed by DBM-GUI/QuestNpcModel usage, and by GetCompanionInfo returning NPC IDs which
+  -- ezCollections passes to SetCreature for mount previews).
+  local function loadModel()
+    pcall(model.ClearModel, model)
+    if tier and tier >= 2 then
+      pcall(model.SetDisplayInfo, model, displayID)
+    else
+      pcall(model.SetCreature, model, displayID)
+    end
+  end
+
+  ma._activeDisplayID = displayID   -- token to detect stale timer callbacks on boss switch
+  loadModel()
   applyCamera()
-  -- Re-apply after the async model load settles (no OnModelLoaded script on 3.3.5a).
   if model.HasScript and model:HasScript("OnModelLoaded") then
     model:SetScript("OnModelLoaded", applyCamera)
-  elseif C_Timer and C_Timer.After then
-    C_Timer.After(0.1, applyCamera)
-    C_Timer.After(0.4, applyCamera)
+  end
+  -- Belt-and-suspenders retry: the first load of a session can race the client's internal
+  -- data lookup and come back empty. Re-issue once after a short delay.
+  if C_Timer and C_Timer.After then
+    C_Timer.After(0.15, function()
+      if ma._activeDisplayID ~= displayID then return end   -- boss was switched, ignore
+      if model:IsShown() then
+        loadModel()
+        applyCamera()
+      end
+    end)
+    C_Timer.After(0.5, function()
+      if ma._activeDisplayID ~= displayID then return end
+      applyCamera()
+    end)
   end
   model:Show()
 end
@@ -1127,10 +1155,12 @@ local function refreshView()
       -- per-instance model backdrop (JournalInstance.BGFileDataID); default if unshipped
       local bgFD = selInst and selInst.bgFDID
       ma.bg:SetTexture(NE.tex.localFiles[bgFD] or NE.tex.localFiles[521743] or 521743)
-      local cr = selBoss.creatures and selBoss.creatures[1]
-      NE.ej.NormalizeModel(ma, cr and cr.display)
       ma.name:SetText(selBoss.name or "")
+      -- Show ma BEFORE NormalizeModel: the 3.3.5a engine silently skips SetCreature while the
+      -- frame ancestor chain is hidden, so the model would never load if we called it first.
       ma:Show()
+      local cr = selBoss.creatures and selBoss.creatures[1]
+      NE.ej.NormalizeModel(ma, cr and cr.display, selInst and selInst.tier)
     else
       c.text:SetText("(no model)"); c.text:Show()
     end
@@ -1217,7 +1247,7 @@ function NE.ej.PopulateEncounter(inst)
   local ib = enc.info and enc.info.instanceButton
   if ib and ib.icon and inst.buttonFDID and inst.buttonFDID > 0 then
     ib.icon:SetTexture(NE.tex.localFiles[inst.buttonFDID] or inst.buttonFDID)
-    ib.icon:SetTexCoord(0, 0.68359375, 0, 0.7421875)
+    NE.ej.SetButtonTexCoord(ib.icon, inst.buttonFDID, true)
   end
   fillBossList(inst)
   enc.info.selectedTab = 1

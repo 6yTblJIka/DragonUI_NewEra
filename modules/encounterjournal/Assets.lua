@@ -32,6 +32,7 @@ local A = {
   { 527690, "527690-ui-ej-bossmodelpaperframe.blp" },       -- model-tab paper frame
   { 605327, "605327-ui-ej-classic.blp" },                   -- Classic-tier instance-select bg
   { 605326, "605326-ui-ej-burningcrusade.blp" },            -- TBC-tier instance-select bg
+  { 605329, "605329-ui-ej-wrathofthelichking.blp" },        -- Wrath-tier instance-select bg
   { 521749, "521749-ui-ej-icons.blp" },                     -- legacy section flag icons (8x2)
   { 521753, "521753-ui-ej-portraiticon.blp" },              -- window portrait (journal book)
   { 521743, "521743-ui-ej-background-default.blp" },        -- model-scene backdrop default

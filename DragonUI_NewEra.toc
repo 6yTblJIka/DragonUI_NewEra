@@ -177,6 +177,7 @@ modules\encounterjournal\DataWotLK.lua
 modules\encounterjournal\PortraitOverrides.lua
 modules\encounterjournal\AbilitiesEra.lua
 modules\encounterjournal\AbilitiesTBC.lua
+modules\encounterjournal\AbilitiesWotLK.lua
 modules\encounterjournal\LootEra.lua
 modules\encounterjournal\ModelCam.lua
 modules\encounterjournal\EncounterItem.lua
