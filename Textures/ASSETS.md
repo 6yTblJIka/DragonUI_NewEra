@@ -136,6 +136,26 @@ shared `Textures/Assets.lua` when a Core consumer (Dialog layout, item grid, ven
 
 ---
 
+## 5b. LFG (Group Finder) — added 2026-07-19
+
+Copied from `ReferenceAddons/NewEra/Art/LFG/` into `Textures/LFG/`, registered by
+`modules/lfg/Assets.lua` (per-panel registration, same pattern as Guild):
+
+| FileDataID | File (`Textures/LFG/`) | Dimensions | Encoding | Bytes | Role |
+|---|---|---|---|---|---|
+| 4616456 | 4616456-groupfinder-eye.blp | 2048×1024 | BGRA (raw3) aDepth8 | 8,389,780 | eye-frame portrait + searching/initial flipbook strips |
+| 5171843 | 5171843-roleicons.blp | 2048×2048 | BGRA (raw3) aDepth8 | 16,778,388 | modern round role medallions (+disabled) |
+| 985877 | 985877-groupfinder.blp | 2048×1024 | BGRA (raw3) aDepth8 | 8,389,780 | micro role/lock/leader/check icons + dark panel bg |
+
+All BLP2, POT, 3.3.5a-loadable encodings (validated with the same header pass as §4).
+The bluemenu rail sheets (593917/593918/593919) are NOT duplicated here — `Textures/Guild/`
+ships them and `modules/guild/Assets.lua` registers the fdids globally. Retail's standalone
+`bluemenu-ring` file (922034) is not shipped anywhere (Era CASC-only); the rail buttons mirror
+the DF PortraitMetal ring quadrant out of `Textures/Common/2406979` instead. The Raids rail-button
+icon is not a shipped asset either — it references the native 3.3.5a client texture directly
+(`Interface\LFGFrame\UI-LFR-PORTRAIT`, the same art the game's own Raid Browser window uses).
+(`ne-lfg-ring-quadrant` in modules/lfg/Assets.lua).
+
 ## 6. Files delivered this sprint
 - `Textures/Assets.lua` — 7 `RegisterLocal` calls + architect-decision comment block.
 - `Textures/Common/` — 7 BLP sheets (1,777,685 bytes).

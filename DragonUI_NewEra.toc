@@ -145,5 +145,19 @@ modules\social\Who.lua
 modules\social\Channels.lua
 modules\social\Raid.lua
 
+# --- LFG (unified retail-style Group Finder over the 3.3.5a Dungeon Finder + Raid Browser) ---
+# Load order: Assets (BLPs + atlas rects) -> Window (shell + bluemenu rail + Dungeons/Raids
+# category buttons + animated eye) -> Roles (shared role-row factory) -> Dungeons (LFD queue
+# pane) -> Raids (LFR queue/browse pane) -> Open (route ToggleLFDParentFrame /
+# ToggleLFRParentFrame to NE_GroupFinderFrame). The native hidden LFD/LFR frames stay loaded as
+# the state machine; these panes are a modern view over the same shared FrameXML lists.
+# NOTE: loads after guild (Textures/Guild ships the bluemenu rail sheets we reuse).
+modules\lfg\Assets.lua
+modules\lfg\Window.lua
+modules\lfg\Roles.lua
+modules\lfg\Dungeons.lua
+modules\lfg\Raids.lua
+modules\lfg\Open.lua
+
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---
 core\_HelloDemo.lua
