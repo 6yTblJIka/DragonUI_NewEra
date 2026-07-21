@@ -184,6 +184,7 @@ modules\encounterjournal\EncounterItem.lua
 modules\encounterjournal\EncounterPage.lua
 modules\encounterjournal\NavBar.lua
 modules\encounterjournal\EncounterJournal.lua
+modules\encounterjournal\MicroButton.lua
 
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---
 core\_HelloDemo.lua

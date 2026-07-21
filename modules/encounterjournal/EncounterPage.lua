@@ -276,8 +276,11 @@ local function buildInfoPanel(enc)
   -- tab 3 created for index stability but never shown/enabled (collapsed into tab 1).
   local boss = makeTab(p, 3, "UI-EJ-Tab-AbilitiesIcon-Selected", "UI-EJ-Tab-AbilitiesIcon-UnSelected", ABILITIES or "Abilities")
   boss:Hide()
+  -- Model tab hidden for now (the boss model pane doesn't work reliably) -- still created for
+  -- index stability, same as tab 3, so p.tabs/refreshView's tabID-keyed logic doesn't shift.
   local model = makeTab(p, 4, "UI-EJ-Tab-ModelIcon-Selected",    "UI-EJ-Tab-ModelIcon-UnSelected", MODEL or "Model")
   model:SetPoint("TOP", loot, "BOTTOM", 0, 2)
+  model:Hide()
   p.tabs = { overview, loot, boss, model }
 
   -- Boss list (left page) — real scroll viewport + modern reskinned scrollbar.
@@ -361,6 +364,17 @@ local function buildInfoPanel(enc)
   ma.name:SetPoint("BOTTOM", pf, "BOTTOM", 0, 6)
   NE.font.Set(ma.name, NE.font.MORPHEUS, 18, "", GameFontNormalLarge)
   ma.name:SetShadowColor(0, 0, 0, 1); ma.name:SetShadowOffset(1, -1)
+
+  -- "Not seen yet" notice. DOWNPORT: on this client, SetCreature/SetDisplayInfo silently render
+  -- nothing for a creature the player hasn't encountered client-side this session (no server
+  -- push of unseen display data) — surface that instead of leaving the pane blank.
+  ma.unavailable = pf:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  ma.unavailable:SetPoint("CENTER", ma, "CENTER", 0, 10)
+  ma.unavailable:SetWidth(300)
+  ma.unavailable:SetJustifyH("CENTER")
+  ma.unavailable:SetJustifyV("MIDDLE")
+  ma.unavailable:SetText("Model will load once seen within this session due to client limitations.")
+  ma.unavailable:Hide()
 
   -- Drag-to-rotate. DOWNPORT: 3.3.5a's generic Model_OnMouseDown/_OnUpdate handlers don't
   -- exist — a cursor-delta OnUpdate drives Model:SetFacing. Mousedown is forwarded from every
@@ -1019,8 +1033,10 @@ function NE.ej.NormalizeModel(ma, displayID, tier)
   end
   if not (displayID and displayID > 0) then
     pcall(model.ClearModel, model); model:Hide()
+    if ma.unavailable then ma.unavailable:Hide() end
     return
   end
+  if ma.unavailable then ma.unavailable:Hide() end
   local t = NE.ej.MODEL_TWEAKS[displayID] or {}
   local cam = (NE.ej.MODEL_CAM and NE.ej.MODEL_CAM[displayID]) or {}
   model.rotation = t.facing or 0
@@ -1072,6 +1088,13 @@ function NE.ej.NormalizeModel(ma, displayID, tier)
     C_Timer.After(0.5, function()
       if ma._activeDisplayID ~= displayID then return end
       applyCamera()
+      -- Final verdict: if the client still has nothing loaded after both retries, this
+      -- creature's display data hasn't been seen client-side this session and never will
+      -- load on its own — tell the player instead of leaving the pane blank.
+      if ma.unavailable then
+        local loaded = model.GetModel and model:GetModel()
+        ma.unavailable:SetShown(not (loaded and loaded ~= ""))
+      end
     end)
   end
   model:Show()
@@ -1084,17 +1107,13 @@ local function refreshView()
   local enc, info = f.encounter, f.encounter.info
 
   -- Tab availability. Tab 3 (the separate abilities page) is collapsed into tab 1 and never
-  -- shown. Model(4) is BOSS-ONLY; on the instance landing only 1 + 2 are live.
-  local enabled
-  if not selBoss then
-    enabled = { [1] = true, [2] = true, [3] = false, [4] = false }
-  else
-    enabled = { [1] = true, [2] = true, [3] = false, [4] = true  }
-  end
+  -- shown. Model(4) is hidden for now (the boss model pane doesn't work reliably) -- both always
+  -- disabled regardless of boss selection.
+  local enabled = { [1] = true, [2] = true, [3] = false, [4] = false }
 
   local tab = info.selectedTab or 1
   if not enabled[tab] then               -- current tab ghosted → jump to first available
-    for _, id in ipairs({ 1, 2, 4 }) do if enabled[id] then tab = id; break end end
+    for _, id in ipairs({ 1, 2 }) do if enabled[id] then tab = id; break end end
     info.selectedTab = tab
   end
 

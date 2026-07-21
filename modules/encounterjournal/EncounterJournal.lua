@@ -565,7 +565,12 @@ eventFrame:SetScript("OnEvent", function(_, event)
         title = ADVENTURE_JOURNAL or "Adventure Guide",
         desc = "The Adventure Guide: bosses, abilities, and loot for Classic and Burning Crusade dungeons and raids (/aguide).",
         frame = frame,          -- nil until first open (lazy build); mover skipped silently
-        openFn = NE.ej.Open,
+        -- No openFn: RegisterPanel wires this into both NE.modules' onBoot dispatcher AND
+        -- DragonUI's ModuleRegistry Enable/Refresh hooks, either of which can end up calling
+        -- openFn() unconditionally as soon as the module's enabled flag is true (the default) --
+        -- which was popping the Adventure Guide window open on every login. The micro button
+        -- (MicroButton.lua) and the /aguide slash command both call NE.ej.Toggle()/Open()
+        -- directly, bypassing this registry entirely, so nothing user-facing needs openFn here.
         closeFn = NE.ej.Close,
         order = 70,
       })

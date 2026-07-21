@@ -75,9 +75,31 @@ local function builder(scroll)
                 setFunc = function(v)
                     if NE.modules.SetEnabled then pcall(NE.modules.SetEnabled, id, v) end
                 end,
+                requiresReload = true,
             })
         end
     end
+
+    -- Adventure Guide (Encounter Journal) doesn't go through the NE.modules registry above (it
+    -- wires into DragonUI's own ModuleRegistry as "ne_EncounterJournal", like every other DragonUI
+    -- module) -- add it here explicitly so it's visible on this tab too.
+    C:AddToggle(scroll, {
+        label   = "Adventure Guide (Encounter Journal)",
+        desc    = "Boss and loot browser. Requires a /reload to take effect (the micro button doesn't re-check this live).",
+        getFunc = function()
+            local modules = dragon.db.profile.modules
+            local m = modules and modules["ne_EncounterJournal"]
+            return not (type(m) == "table" and m.enabled == false)
+        end,
+        setFunc = function(v)
+            if not dragon.db.profile.modules then dragon.db.profile.modules = {} end
+            if not dragon.db.profile.modules["ne_EncounterJournal"] then
+                dragon.db.profile.modules["ne_EncounterJournal"] = {}
+            end
+            dragon.db.profile.modules["ne_EncounterJournal"].enabled = v
+        end,
+        requiresReload = true,
+    })
 
     -- ----------------------------------------------------------------------------
     -- Window scaling — a mode dropdown (UI scale / none / custom) + a custom-size slider per window.

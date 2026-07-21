@@ -139,6 +139,17 @@ A unified Dragonflight-style Group Finder window merging the 3.3.5a Dungeon Find
 - **Role selection** — modern round tank/healer/dps/leader medallions sharing one row component between the Dungeons and Raids panes.
 - Drives the same native `LFDParentFrame` / `LFRParentFrame` queue state under the hood — this is a modern view over 3.3.5a's real Dungeon Finder and Raid Browser APIs, not a reimplementation, so it works with whatever LFD/LFR rules the server actually runs.
 
+### Adventure Guide (Encounter Journal)
+
+![Adventure Guide](screenshots/dungeon-journal.png)
+
+A standalone Dragonflight-style **Adventure Guide**, downported from NewEra's Encounter Journal — 3.3.5a never shipped one natively (the Encounter Journal is a Cataclysm+ feature), so this is entirely new UI over hand-seeded boss/loot data. Open it with **`/aguide`** (aliases `/adventureguide`, `/ej`), the micro button next to the main menu icons, or the `ToggleEncounterJournal()` global this addon creates for other addons to hook into:
+
+- **Classic, Burning Crusade, and Wrath of the Lich King** instances — dungeons and raids, browsable by expansion tier.
+- **Per-boss pages** — abilities and full loot table, tabbed like retail's journal.
+- **Loot browsing** — every boss's drops with icon, name, and armor/weapon type, split correctly across 10/25-man and Normal/Heroic where the source data distinguishes them.
+- **Search + breadcrumb navigation** — filter the instance grid by name, drill into an instance and back out via the nav bar.
+
 ## Roadmap
 
 Faithfully downporting the remaining NewEra panels to 3.3.5a:
@@ -151,6 +162,7 @@ Faithfully downporting the remaining NewEra panels to 3.3.5a:
 - [x] ~~**Guild**~~ — *done* (Roster with member actions, Guild Info, Guild Chat with class-colored names + cross-session/cross-character history sync)
 - [x] ~~**Social**~~ — *done* (Friends + Ignore, Who, Chat channels, Raid roster; Guild tab opens the standalone Guild window)
 - [x] ~~**Looking For Group**~~ — *done* (unified Dungeon Finder + Raid Browser window: Dungeons/Raids category rail, role selection, raid queue + browse)
+- [x] ~~**Adventure Guide (Encounter Journal)**~~ — *done* (Classic/TBC/Wrath instances, per-boss abilities + loot pages, search + breadcrumb nav)
 - [ ] **Bags** — *work in progress* (retail combined bag + individual-bag restyle: grid, smart sort, separated specialty-bag sections, keyring row, rarity/usable cues, money + currency band)
 - [ ] **Quest Log**
 - [ ] **Merchant**
