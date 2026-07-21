@@ -182,12 +182,24 @@ local function reposition()
     return
   end
 
-  -- Live gap between two already-adjacent native buttons (PVP, MainMenu), measured fresh so it
-  -- tracks the user's current spacing/scale/grayscale settings. GetLeft()/GetRight() return
-  -- real/screen-space pixels; convert to pUiMicroMenu's own local coordinate space (SetPoint
-  -- offsets are scaled by the CALLING frame's effective scale). Our button is now parented to
-  -- pUiMicroMenu too (see create()), so this same local-space gap applies to it as well.
-  local realGap = mainMenu:GetLeft() - pvp:GetRight()
+  -- Live gap between two already-adjacent native buttons, measured fresh so it tracks the
+  -- user's current spacing/scale/grayscale settings. Deliberately measured from Help/MainMenu --
+  -- the two buttons this module NEVER moves -- not from PVP/MainMenu. PVP gets relocated by us
+  -- every call, so measuring off it fed our own prior output back into itself: each retry
+  -- (1s/3s/6s/10s) compounded the drift outward, since DragonUI doesn't re-run its own layout on
+  -- every one of our timers to reset PVP back to pristine in between. Help/MainMenu are a stable
+  -- ground truth immune to that feedback loop, however many times this runs.
+  local realGap = help:GetLeft() - mainMenu:GetRight()
+
+  -- Sanity guard: belt-and-suspenders in case DragonUI's skin hasn't applied yet at all (its
+  -- buttons still at stock Blizzard positions, spread across a much wider bar). A sane packed
+  -- gap is a handful of pixels either way; bail out and let the next scheduled retry (or the
+  -- next real DragonUI refresh) catch it once the skin has actually settled.
+  if realGap > 100 or realGap < -100 then
+    btn:Hide()
+    return
+  end
+
   local menuScale = menu:GetEffectiveScale()
   local localGap = menuScale ~= 0 and (realGap / menuScale) or realGap
 
@@ -221,9 +233,16 @@ f:RegisterEvent("UNIT_ENTERING_VEHICLE")
 f:RegisterEvent("UNIT_EXITING_VEHICLE")
 f:SetScript("OnEvent", function(_, event)
   if event == "PLAYER_LOGIN" then
-    -- DragonUI applies its micromenu skin on the same event; give it a beat to finish first.
+    -- DragonUI applies its micromenu skin on the same event, but how long that actually takes
+    -- to settle varies (more addons initializing on a cold login vs. a /reload) -- a single fixed
+    -- delay isn't reliable. Retry a few times over the first several seconds; reposition() is
+    -- idempotent (recomputes fresh from current button positions, with its own sanity guard
+    -- against an unsettled/stock layout), so repeated calls are harmless and self-correcting.
     if C_Timer and C_Timer.After then
       C_Timer.After(1, init)
+      C_Timer.After(3, reposition)
+      C_Timer.After(6, reposition)
+      C_Timer.After(10, reposition)
     else
       init()
     end
