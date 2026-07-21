@@ -16,7 +16,7 @@ A full custom replacement for the 3.3.5a `CharacterFrame`, styled to match Drago
 
 - Paperdoll (3D model + all equipment slots) with modern model controls (zoom, click-drag rotate / pan)
 - **Stats sidebar** (General / Attributes / Melee / Ranged / Spell / Defense / Resistances) with proper tooltips - compatible with [EnhancedCharStats](https://github.com/thezephyrsong/EnhancedCharStats/)
-- Tabs for **Character, Pet, Skills, Honor, Reputation**
+- Tabs for **Character, Pets (including Companions and Mounts), Skills, Honor, Reputation**
 - **Titles** picker — set your title from the panel; the window header shows `Name <Title>`
 - **Equipment Manager** — a fully client-side gear-set manager (works on any server, no reliance on the native equipment-manager API)
 
