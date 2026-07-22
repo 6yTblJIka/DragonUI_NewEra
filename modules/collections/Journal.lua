@@ -291,9 +291,8 @@ local function createJournal(kind)
   local isMount = (kind == "MOUNT")
 
   J.all      = {}   -- every KNOWN companion of this kind (learned + not-yet-learned): {index, creatureID,
-                    -- name, spellID, icon, issummoned, displayID} — index/creatureID are nil for
-                    -- not-yet-learned rows; displayID (DB row[1]) is set ONLY for those, purely for
-                    -- model preview — never used for identity (favKey keys off creatureID alone)
+                    -- name, spellID, icon, issummoned} — index/creatureID are nil for not-yet-learned
+                    -- rows (no 3D model preview for those — see showModel)
   J.list     = {}   -- the filtered+ordered view actually shown
   J.rows     = {}   -- recycled list-row buttons
   J.selected = nil  -- the currently-selected data row (drives the model + info panel)
@@ -344,9 +343,8 @@ local function createJournal(kind)
 
     -- Not-yet-learned entries from the bundled source DB (Data.lua), so the list reads like
     -- retail's full catalog rather than "only what you already have" — greyed out, info-only, no
-    -- summon/favourite (still requires a real learned companion) — but DOES get a 3D model preview
-    -- via row[1]'s displayID (see Data.lua's GetDisplayID; EZCollections' own Journal previews
-    -- uncollected mounts/pets the exact same way, so this isn't a client limitation).
+    -- summon/favourite/model preview (SetCreature needs a server-resolvable creature/unit
+    -- reference, not just a raw DB display ID — see showModel).
     -- SKIPPED when the spell doesn't even resolve client-side (GetSpellInfo fails): a hard signal
     -- that content genuinely isn't on THIS custom server, not just "you haven't gotten it yet" —
     -- showing a placeholder for something that can't possibly exist here would be pure clutter.
@@ -383,11 +381,6 @@ local function createJournal(kind)
               J.all[n] = {
                 index = nil, creatureID = nil, name = row[4] or sName,
                 spellID = spellID, icon = sIcon or C.tex.emptyIcon, issummoned = false,
-                -- Kept SEPARATE from creatureID (never populate that field here): favKey() below
-                -- hashes creatureID as the real per-companion identity for the favourites table, and
-                -- a displayID is a completely different id space — reusing the field risks a
-                -- coincidental collision reading some other companion's favourite as this row's.
-                displayID = NE.collections.GetDisplayID and NE.collections.GetDisplayID(kind, spellID),
               }
             end
           end
@@ -564,11 +557,11 @@ local function createJournal(kind)
       if J._favStar then J._favStar:Hide() end
       return
     end
-    -- Model preview: a learned row's real creatureID (from GetCompanionInfo), OR — matching retail
-    -- and EZCollections' own Journal — a not-yet-learned row's DB-sourced displayID. Only fall back
-    -- to the "Not yet collected" text hint when NEITHER is available (no DB row, or the DB row has
-    -- no displayID recorded for it).
-    local previewID = data.creatureID or data.displayID
+    -- Model preview only works for a learned row's real creatureID (from GetCompanionInfo) —
+    -- SetCreature on this client needs a server-resolvable creature/unit reference, not a raw
+    -- CreatureDisplayInfo.dbc id, so a not-yet-learned row (no creatureID) always falls back to
+    -- the "Not yet collected" text hint instead of attempting (and failing) a model preview.
+    local previewID = data.creatureID
     if model then
       if previewID then
         model:Show()

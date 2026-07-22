@@ -8,14 +8,10 @@
 -- and does NOT depend on EZCollections being installed/enabled at runtime.
 --
 -- ROW FORMAT (both tables), keyed by SPELL ID (the creatureSpellID GetCompanionInfo returns):
---   [1] creatureDisplayID   used to model-preview NOT-YET-LEARNED entries (GetDisplayID below) —
---                           EZCollections' own Mount/Pet Journal feeds this exact same value
---                           straight into ModelFrame:SetCreature(creatureDisplayID) for ANY mount,
---                           collected or not (Blizzard_MountCollection.lua/Blizzard_PetCollection.lua),
---                           so this is not a client limitation. Learned/collected rows still prefer
---                           the live GetCompanionInfo creatureID (kept distinct — see favKey in
---                           Journal.lua, which is keyed off that real creatureID; never conflate the
---                           two id spaces there).
+--   [1] creatureDisplayID   (unused — EZCollections' own Journal feeds this straight into
+--                           ModelFrame:SetCreature for not-yet-learned rows, but SetCreature on
+--                           THIS client only accepts a server-resolvable creature/unit reference,
+--                           not a raw CreatureDisplayInfo.dbc id; tried and reverted)
 --   [2] type/petTypeIcon    (unused)
 --   [3] flags               (unused)
 --   [4] name                (may be nil → fall back to the live API name)
@@ -620,17 +616,6 @@ function NE.collections.GetInfo(kind, spellID)
   local row = t and t[spellID]
   if not row then return nil end
   return row[4], row[5], row[7]
-end
-
--- Model-preview display ID (row[1]) for a NOT-YET-LEARNED entry — lets the 3D preview render
--- uncollected mounts/pets exactly like retail's own Journal does (see the ROW FORMAT note above).
--- Returns nil when there's no DB row or no display ID recorded for it.
-function NE.collections.GetDisplayID(kind, spellID)
-  if not spellID then return nil end
-  local t = (kind == "CRITTER") and NE.collections.PetData or NE.collections.MountData
-  local row = t and t[spellID]
-  local id = row and row[1]
-  return (id and id ~= 0) and id or nil
 end
 
 -- Mount type/flags bitfields (row[2]/row[3]) — EZCollections' non-blizzlike encoding, used for the
