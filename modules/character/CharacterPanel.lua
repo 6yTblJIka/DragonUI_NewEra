@@ -318,6 +318,16 @@ local function setSidebarExpanded(expanded)
   local wideTab = CP._wideTabActive and true or false
   if wideTab then expanded = false end
 
+  -- CONTEXTUAL PET TAB CONTROL: Only keep the sidebar expanded if the player is looking at the 
+  -- actual combat pet panel sheet. If on the Companions or Mounts sheet (i.e. PetPaperDollFramePetFrame
+  -- is hidden), force the sidebar to collapse so the collection grid remains clear.
+  if CP._activeTab == "Pet" then
+    local petSubFrame = _G.PetPaperDollFramePetFrame
+    if not (petSubFrame and petSubFrame:IsShown()) then
+      expanded = false
+    end
+  end
+
   CP._sidebarExpanded = expanded
 
   -- UNIFIED WIDTH: every tab uses the full panel width (FRAME_W_EXPANDED) so the window never resizes
@@ -339,6 +349,18 @@ local function setSidebarExpanded(expanded)
 end
 CP.SetSidebarExpanded = setSidebarExpanded
 CP.IsSidebarExpanded  = function() return CP._sidebarExpanded and true or false end
+
+-- Securely hook Blizzard's sub-tab layout switches so the sidebar collapses/expands dynamically
+local function hookPetUISubTabs()
+  if _G.PetPaperDollFrame_UpdateTabs and not CP._hookedPetTabsMain then
+    CP._hookedPetTabsMain = true
+    securehookfunc("PetPaperDollFrame_UpdateTabs", function()
+      if CP._activeTab == "Pet" then
+        setSidebarExpanded(CP._sidebarExpanded)
+      end
+    end)
+  end
+end
 
 -- DOWNPORT/REPORT: TabButtons.selectTab calls this on every tab change to drive the per-tab frame/
 -- inset width + paperdoll visibility + sidebar state. key == "Character" shows the player paperdoll;
@@ -542,7 +564,7 @@ CP.ReassertLayout = reassertLayout
 -- ----------------------------------------------------------------------------
 local BLIZ_TAB_TO_NAME = {
   PaperDollFrame    = "Character",
-  PetPaperDollFrame = "Pets",
+  PetPaperDollFrame = "Pet",
   ReputationFrame   = "Reputation",
   SkillFrame        = "Skills",
   HonorFrame        = "Honor",
@@ -625,6 +647,20 @@ local function boot()
   -- flag otherwise.
   guard("sidebarRest", function() setSidebarExpanded(CP._sidebarExpanded or false) end)
   guard("reassert", reassertLayout)
+
+  -- Wire up sub-tab monitoring safely for Load-on-Demand modules
+  if IsAddOnLoaded("Blizzard_PetUI") then
+    hookPetUISubTabs()
+  else
+    local watcher = CreateFrame("Frame")
+    watcher:RegisterEvent("ADDON_LOADED")
+    watcher:SetScript("OnEvent", function(self, event, addonName)
+      if addonName == "Blizzard_PetUI" then
+        hookPetUISubTabs()
+        self:UnregisterAllEvents()
+      end
+    end)
+  end
 end
 CP.Boot = boot
 
