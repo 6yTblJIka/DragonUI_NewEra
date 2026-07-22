@@ -16,7 +16,7 @@ A full custom replacement for the 3.3.5a `CharacterFrame`, styled to match Drago
 
 - Paperdoll (3D model + all equipment slots) with modern model controls (zoom, click-drag rotate / pan)
 - **Stats sidebar** (General / Attributes / Melee / Ranged / Spell / Defense / Resistances) with proper tooltips - compatible with [EnhancedCharStats](https://github.com/thezephyrsong/EnhancedCharStats/)
-- Tabs for **Character, Pets (including Companions and Mounts), Skills, Honor, Reputation**
+- Tabs for **Character, Pet, Skills, Honor, Reputation** (Mounts & Companions now live in the standalone Collections window — see below)
 - **Titles** picker — set your title from the panel; the window header shows `Name <Title>`
 - **Equipment Manager** — a fully client-side gear-set manager (works on any server, no reliance on the native equipment-manager API)
 
@@ -48,6 +48,17 @@ A standalone War-Within-style two-page spellbook, replacing the 3.3.5a `SpellBoo
 - **Search + options** — filter spells by name; a cog menu toggles *Hide Passives* and *Show All Ranks* (off = highest rank only).
 
 Built natively for 3.3.5a's index-based spellbook API (a compat shim maps the Cataclysm `GetSpellBookItem*` family onto it).
+
+![Collections](screenshots/collections.png)
+
+A standalone retail-style Collections journal (**Mounts** and **Pet Journal** bottom tabs), replacing the old Mounts & Companions grid that used to sit inside the Character panel's Pet tab:
+
+- **List + preview layout** — a scrollable icon+name list on the left (gold selection highlight, favourite star), a rotatable 3D model on the right over the retail model backdrop, and an info panel with the mount/pet's name, source (*Vendor / Zone / Cost*) and lore.
+- **Search, filter & favourites** — filter by name, toggle favourites-only, and star companions to keep them at the top; favourites are per-character and carry over from the old view.
+- **Summon** — a *Mount / Summon* button plus a *Summon Random Favourite* button; right-click a row to summon or dismiss.
+- **Opens on `Shift-P`** by default (rebindable under *Key Bindings → DragonUI New Era*).
+
+Driven by the raw 3.3.5a Companions API; the source/lore text comes from a bundled database, so no other addon is required. The retail-look art and the mount/companion source-info database are ported from **EZCollections** (see [Credits](#credits)).
 
 ### Talents
 
@@ -151,6 +162,7 @@ Faithfully downporting the remaining NewEra panels to 3.3.5a:
 - [x] ~~**Guild**~~ — *done* (Roster with member actions, Guild Info, Guild Chat with class-colored names + cross-session/cross-character history sync)
 - [x] ~~**Social**~~ — *done* (Friends + Ignore, Who, Chat channels, Raid roster; Guild tab opens the standalone Guild window)
 - [x] ~~**Looking For Group**~~ — *done* (unified Dungeon Finder + Raid Browser window: Dungeons/Raids category rail, role selection, raid queue + browse)
+- [x] ~~**Collections**~~ — *done* (standalone Mounts + Pet Journal window with list/model/info layout, search, filter, favourites, summon)
 - [ ] **Bags** — *work in progress* (retail combined bag + individual-bag restyle: grid, smart sort, separated specialty-bag sections, keyring row, rarity/usable cues, money + currency band)
 - [ ] **Quest Log**
 - [ ] **Merchant**
@@ -160,4 +172,5 @@ Faithfully downporting the remaining NewEra panels to 3.3.5a:
 
 - **[DragonUI](https://github.com/NeticSoul/DragonUI)** by NeticSoul — the base 3.3.5a Dragonflight UI port this builds on.
 - **NewEra** by Ashgaroth — the Classic Era Dragonflight-style addon these panels are downported from.
+- **EZCollections** by ZEUStiger — Mount & companion source-info database (name / lore / source strings) are ported from EZCollections.
 - Dragonflight UI © Blizzard Entertainment.

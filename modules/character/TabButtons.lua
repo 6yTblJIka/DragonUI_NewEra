@@ -81,17 +81,14 @@ local function resizeTab(tab)
   tab:SetWidth(math.max(TAB_MIN_W, math.floor(textW + TAB_TEXT_BREATHING)))
 end
 
--- Pet tab shows when the player either has a controllable pet UI (Blizzard PetTab_Update rule -
--- Hunter/Warlock/DK/Mage water elemental) OR has learned any mounts/companion pets to browse via
--- Companions.lua's Collection view. A Shaman has no combat pet but still has mounts, so this can't
--- gate on HasPetUI() alone anymore - that would hide the whole tab (and the Collection grid with it)
--- for every non-pet class.
+-- Pet tab shows only when the player has a controllable pet UI (Blizzard PetTab_Update rule -
+-- Hunter/Warlock/DK/Mage water elemental). Mounts & non-combat companions moved OUT of the Character
+-- panel into the standalone Collections window (modules/collections/*), so the Pet tab no longer
+-- needs to appear for petless classes just to browse them - gating on HasPetUI() alone again avoids
+-- showing an empty "you have no pet" pane to Shamans/Priests/etc.
 local function petTabShown()
   local ok, v = pcall(function() return HasPetUI and HasPetUI() end)
-  if ok and v then return true end
-  local okM, mounts = pcall(GetNumCompanions, "MOUNT")
-  local okC, critters = pcall(GetNumCompanions, "CRITTER")
-  return (okM and mounts and mounts > 0) or (okC and critters and critters > 0) or false
+  return ok and v and true or false
 end
 
 -- Show the Currency tab only when the player actually has currency. GetCurrencyListSize() counts
