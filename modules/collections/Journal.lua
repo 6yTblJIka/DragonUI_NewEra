@@ -201,9 +201,10 @@ end
 -- We do NOT try to make the in-window button itself draggable onto a bar: a plain non-secure
 -- Button doesn't hand off a macro pickup on OnDragStart the way retail's real (secure-templated)
 -- MountJournal button does — confirmed this doesn't work here, and EZCollections has the same
--- limitation. Instead, ensureFavoriteMacro is called eagerly when the button is built so the macro
--- always exists, and the button's tooltip just tells the player to drag it off their own Macros
--- window instead.
+-- limitation. Instead, ensureFavoriteMacro is called lazily on the button's first click (NOT eagerly
+-- at build time — that used to create the macro just from opening the Collections window, before
+-- the player ever asked for it), and the button's tooltip tells the player to drag it off their own
+-- Macros window afterward.
 --
 -- CAVEAT: CreateMacro's icon argument is a NUMERIC INDEX into the macro icon picker's list, NOT a
 -- texture path/name — it CANNOT take our custom MountUpFavourites.blp art. That custom texture is
@@ -235,14 +236,26 @@ end
 -- FindFavoriteMacro). Matching on body — which is a fixed, known string per kind — rather than
 -- name means the macro's Name field is free to be purely cosmetic; nothing here depends on what
 -- it's called, so it's safe to give it a blank display name (see ensureFavoriteMacro below).
+--
+-- Exact match is tried first, but GetMacroBody doesn't always return byte-for-byte what was
+-- passed to CreateMacro (e.g. a trailing newline the client appends) — an exact-only compare
+-- would miss our own previously-created macro every subsequent login, silently creating a NEW
+-- duplicate each time ("the macro keeps getting recreated"). EZCollections' real
+-- FindFavoriteMacro hits this too and falls back to a substring-containment match; do the same
+-- here. Uses the plain-find flag since our body contains literal parentheses/quotes
+-- (`SummonRandomFavorite("MOUNT")`) that would otherwise be parsed as Lua pattern syntax.
 local function findMacroByBody(body)
   if not GetMacroBody then return nil end
   local total = (MAX_ACCOUNT_MACROS or 0) + (MAX_CHARACTER_MACROS or 0)
+  local loose
   for i = 1, total do
     local okB, b = pcall(GetMacroBody, i)
-    if okB and b == body then return i end
+    if okB and b then
+      if b == body then return i end
+      if not loose and b:find(body, 1, true) then loose = i end
+    end
   end
-  return nil
+  return loose
 end
 
 local function ensureFavoriteMacro(kind)
@@ -683,16 +696,19 @@ local function createJournal(kind)
     slabel:SetText(isMount and "Summon Random\nFavorite Mount" or "Summon Random\nFavorite Companion")
     summonBtn:SetPushedTexture("Interface\\Buttons\\UI-Quickslot-Depress")
     summonBtn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    -- Dragging this button itself onto an action bar never worked reliably (matches EZCollections'
+    -- own behaviour, per user report) — plain non-secure Buttons don't hand off a macro pickup on
+    -- OnDragStart the way retail's real MountJournal button (a secure template) does. Instead, the
+    -- backing macro is created lazily on the button's FIRST click (not eagerly at build time — the
+    -- player never asked for it just by having the journal open, and eager creation meant a macro
+    -- appeared at login even if the player never touched this button) and the tooltip tells the
+    -- player where to find it afterward: drag it off their own Macros window (ESC > Macros, or
+    -- /macro) onto a bar, same as any other macro.
     summonBtn:SetScript("OnClick", function()
+      ensureFavoriteMacro(kind)
       NE.collections.SummonRandomFavorite(kind)
       if C_Timer and C_Timer.After then C_Timer.After(0.2, function() J:Refresh() end) end
     end)
-    -- Dragging this button itself onto an action bar never worked reliably (matches EZCollections'
-    -- own behaviour, per user report) — plain non-secure Buttons don't hand off a macro pickup on
-    -- OnDragStart the way retail's real MountJournal button (a secure template) does. Instead, make
-    -- sure the backing macro exists up front and just tell the player where to find it: drag it off
-    -- their own Macros window (ESC > Macros, or /macro) onto a bar, same as any other macro.
-    ensureFavoriteMacro(kind)
     summonBtn:SetScript("OnEnter", function(self)
       GameTooltip:SetOwner(self, "ANCHOR_LEFT")
       GameTooltip:SetText(isMount and "Summon Random Favorite Mount" or "Summon Random Favorite Companion", 1, 1, 1)
