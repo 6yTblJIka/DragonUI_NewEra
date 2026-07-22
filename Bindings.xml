@@ -17,4 +17,9 @@
       DragonUI_NewEra.social.Toggle()
     end
   </Binding>
+  <Binding name="NEWERA_TOGGLECOLLECTIONS" category="BINDING_HEADER_DRAGONUI_NEWERA">
+    if DragonUI_NewEra and DragonUI_NewEra.collections and DragonUI_NewEra.collections.Toggle then
+      DragonUI_NewEra.collections.Toggle()
+    end
+  </Binding>
 </Bindings>

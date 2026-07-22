@@ -80,6 +80,21 @@ modules\character\PetPaperDoll.lua
 modules\character\CloseButton.lua
 modules\character\EditModeRegister.lua
 
+# --- Collections (standalone retail-style Mounts & Pet Journal window) ---
+# Replaces the old Character-panel Pet-tab "Collection" view (modules/character/Companions.lua,
+# retired). Load order: Assets (art paths) -> Data (ported source-info DB) -> Window (shell + bottom
+# tabs + insets, registers the module) -> Journal (the shared Mounts/Pets pane factory, provides
+# C.BuildJournals which Window calls at login) -> Open (SHIFT-P binding + default) -> MicroButton
+# (standalone micromenu button, same shift-cluster technique as encounterjournal/MicroButton.lua).
+# Driven by the raw 3.3.5a Companions API, self-contained (no runtime dependency on the
+# EZCollections addon).
+modules\collections\Assets.lua
+modules\collections\Data.lua
+modules\collections\Window.lua
+modules\collections\Journal.lua
+modules\collections\Open.lua
+modules\collections\MicroButton.lua
+
 # --- Spellbook (standalone War-Within-style book; learned spells) ---
 modules\spellbook\Assets.lua
 modules\spellbook\Window.lua

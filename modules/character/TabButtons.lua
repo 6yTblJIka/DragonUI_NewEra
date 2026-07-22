@@ -81,8 +81,11 @@ local function resizeTab(tab)
   tab:SetWidth(math.max(TAB_MIN_W, math.floor(textW + TAB_TEXT_BREATHING)))
 end
 
--- Pet tab shows only when the player has a controllable pet UI (Blizzard PetTab_Update rule). For a
--- priest/mage there is no pet → the tab hides and the others pack contiguous (matches NewEra).
+-- Pet tab shows only when the player has a controllable pet UI (Blizzard PetTab_Update rule -
+-- Hunter/Warlock/DK/Mage water elemental). Mounts & non-combat companions moved OUT of the Character
+-- panel into the standalone Collections window (modules/collections/*), so the Pet tab no longer
+-- needs to appear for petless classes just to browse them - gating on HasPetUI() alone again avoids
+-- showing an empty "you have no pet" pane to Shamans/Priests/etc.
 local function petTabShown()
   local ok, v = pcall(function() return HasPetUI and HasPetUI() end)
   return ok and v and true or false
@@ -174,6 +177,7 @@ local function buildTabs()
     w:RegisterEvent("PLAYER_ENTERING_WORLD")
     w:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
     w:RegisterEvent("KNOWN_CURRENCY_TYPES_UPDATE")
+    w:RegisterEvent("COMPANION_LEARNED")
     w:SetScript("OnEvent", function()
       local petTab = CP._tabs["Pet"]
       if petTab then if petTabShown() then petTab:Show() else petTab:Hide() end end
@@ -323,7 +327,14 @@ selectTab = function(key)
     if CP.HideTitles then pcall(CP.HideTitles) end
     if CP.ExpandSidebar then pcall(CP.ExpandSidebar) end
   elseif key == "Pet" then
-    if CP.ExpandPetSidebar then pcall(CP.ExpandPetSidebar)
+    -- DOWNPORT/REPORT: if Companions.lua's Mounts & Companions grid is showing, the sidebar space is
+    -- repurposed for its 3D model preview rather than collapsed - SyncPetSidebarForCollection keeps
+    -- the frame expanded and swaps InsetRight's content, so re-entering the Pet tab doesn't yank the
+    -- preview away and put the stale pet stats back up (which unconditional ExpandPetSidebar would do).
+    if CP.IsPetCollectionActive and CP.IsPetCollectionActive() then
+      if CP.SyncPetSidebarForCollection then pcall(CP.SyncPetSidebarForCollection)
+      elseif CP.CollapseSidebar then pcall(CP.CollapseSidebar) end
+    elseif CP.ExpandPetSidebar then pcall(CP.ExpandPetSidebar)
     elseif CP.ExpandSidebar then pcall(CP.ExpandSidebar) end
   else
     if CP.CollapseSidebar then pcall(CP.CollapseSidebar) end
