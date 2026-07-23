@@ -1225,10 +1225,8 @@ function AH.BuildBrowsePane(parent)
     -- an auction-index tooltip bound to one specific listing.
     row:RegisterForClicks("LeftButtonUp")
     row:SetScript("OnClick", function(self)
-      if IsModifiedClick and IsModifiedClick("DRESSUP") and self._data and self._data.link then
-        AH.DressUpItem(self._data.link)
-        return
-      end
+      -- SHIFT links the item in chat, CTRL dresses it up; otherwise drill into the item.
+      if self._data and self._data.link and AH.HandleItemClick(self._data.link) then return end
       if openItemDetail then openItemDetail(self._data) end
     end)
     -- WireLiveTooltip, not a bare OnEnter: the tooltip has to keep refreshing while the mouse sits
@@ -1857,6 +1855,12 @@ function AH.BuildBrowsePane(parent)
     detailIconBtn:SetScript("OnEnter", detailIconTooltip)
     detailIconBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
   end
+  -- The drill-down header icon is an item too: same shift-to-link / ctrl-to-dress-up as the rows.
+  detailIconBtn:RegisterForClicks("LeftButtonUp")
+  detailIconBtn:SetScript("OnClick", function()
+    local item = detail.CurrentItem
+    if item and item.link then AH.HandleItemClick(item.link) end
+  end)
 
   local detailName = detailHeader:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   detailName:SetPoint("LEFT", detailIconBtn, "RIGHT", 14, 0)
@@ -2110,10 +2114,10 @@ function AH.BuildBrowsePane(parent)
 
     row:RegisterForClicks("LeftButtonUp")
     row:SetScript("OnClick", function(self)
-      if IsModifiedClick and IsModifiedClick("DRESSUP") and self._data and self._data.index then
+      -- SHIFT links the item in chat, CTRL dresses it up; otherwise select this listing.
+      if self._data and self._data.index then
         local link = GetAuctionItemLink and GetAuctionItemLink("list", self._data.index)
-        if link then AH.DressUpItem(link) end
-        return
+        if link and AH.HandleItemClick(link) then return end
       end
       detailSelected = self._data
       for _, rr in ipairs(detailRowWidgets) do
@@ -2427,6 +2431,11 @@ function AH.BuildBrowsePane(parent)
     AH._browseChatLinkHooked = true
     hooksecurefunc("ChatEdit_InsertLink", function(text)
       if type(text) ~= "string" or not string.find(text, "item:", 1, true) then return end
+      -- Shift-clicking a row INSIDE this window is a request to link that item in chat, not to
+      -- search for it -- AH.HandleItemClick (Window.lua) raises this flag around its own
+      -- ChatEdit_InsertLink call so a chat box that isn't open can't turn the click into a search
+      -- that discards the results being looked at. Bag/chat shift-clicks still search as before.
+      if AH._suppressLinkSearch then return end
       -- A shown chat edit box already consumed the link; 3.3.5a uses the single global
       -- ChatFrameEditBox, but check the retail-style active-window API too in case this client
       -- backports it.

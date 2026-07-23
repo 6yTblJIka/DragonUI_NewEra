@@ -25,6 +25,40 @@ function AH.DressUpItem(link)
   if side then side.parentFrame = saved end
 end
 
+-- Shared modified-click router for every item row in this window: SHIFT links the item into an
+-- open chat edit box, CTRL opens the dressing room. Returns true when it consumed the click, so
+-- callers can fall through to their normal (plain-click) behaviour otherwise.
+--
+-- Deliberately NOT a plain HandleModifiedItemClick(link) call, even though that is the stock
+-- router (ItemButtonTemplate.lua) and has exactly this CHATLINK-then-DRESSUP precedence: its
+-- DRESSUP branch goes straight to DressUpItemLink and would bypass the SideDressUpFrame workaround
+-- above. Same order, our dress-up path.
+function AH.HandleItemClick(link)
+  if not link then return false end
+
+  if IsModifiedClick and IsModifiedClick("CHATLINK") and type(ChatEdit_InsertLink) == "function" then
+    -- Suppress this addon's OWN ChatEdit_InsertLink hook (Browse.lua) for the duration of the
+    -- call. That hook turns a shift-click into an auction search whenever no chat edit box takes
+    -- the link -- which is what we want when shift-clicking an item in the BAGS while the window
+    -- is open (issue #17), but not for a row inside the results list, where it would throw away
+    -- the results being looked at and re-search the item just clicked. hooksecurefunc post-hooks
+    -- run synchronously inside the call, so a plain flag around it is enough; no timer needed.
+    AH._suppressLinkSearch = true
+    local ok, inserted = pcall(ChatEdit_InsertLink, link)
+    AH._suppressLinkSearch = false
+    if ok and inserted then return true end
+    -- No chat box took it: fall through, so shift-click behaves like a plain click rather than
+    -- silently doing nothing.
+  end
+
+  if IsModifiedClick and IsModifiedClick("DRESSUP") then
+    AH.DressUpItem(link)
+    return true
+  end
+
+  return false
+end
+
 local BASE_MODES = {
   Buy = true,
   Sell = true,
