@@ -634,7 +634,19 @@ local function buildPane(host)
     FauxScrollFrame_OnVerticalScroll(self, offset, ROW_H, updateRaidList)
   end)
   raidScroll.ScrollBar = _G[RAID_SCROLL .. "ScrollBar"]   -- 3.3.5a template doesn't set the parentKey
-  if NE.scrollbar and NE.scrollbar.Reskin then pcall(NE.scrollbar.Reskin, raidScroll) end
+  -- Hand-built minimal scrollbar (same as the character window's lists). NE.scrollbar.Reskin's
+  -- stock-slider re-skin leaves the bar untextured/invisible on 3.3.5a; BuildCustom draws a
+  -- visible bar. See modules/character/Reputation.lua.
+  if NE.scrollbar and NE.scrollbar.BuildCustom then pcall(NE.scrollbar.BuildCustom, raidScroll, { x = -8, alwaysShow = true }) end
+  raidScroll:EnableMouseWheel(true)
+  raidScroll:SetScript("OnMouseWheel", function(self, delta)
+    local sb = self.ScrollBar
+    if not sb then return end
+    local mn, mx = sb:GetMinMaxValues()
+    local v = sb:GetValue() - delta * ROW_H
+    if v < mn then v = mn elseif v > mx then v = mx end
+    sb:SetValue(v)
+  end)
   pane.raidScroll = raidScroll
 
   pane.raidRows = {}
@@ -721,7 +733,17 @@ local function buildPane(host)
     FauxScrollFrame_OnVerticalScroll(self, offset, ROW_H, updateBrowseList)
   end)
   browseScroll.ScrollBar = _G[BROWSE_SCROLL .. "ScrollBar"]   -- 3.3.5a template doesn't set the parentKey
-  if NE.scrollbar and NE.scrollbar.Reskin then pcall(NE.scrollbar.Reskin, browseScroll) end
+  -- Hand-built minimal scrollbar (same as the character window's lists) — see raidScroll above.
+  if NE.scrollbar and NE.scrollbar.BuildCustom then pcall(NE.scrollbar.BuildCustom, browseScroll, { x = -8, alwaysShow = true }) end
+  browseScroll:EnableMouseWheel(true)
+  browseScroll:SetScript("OnMouseWheel", function(self, delta)
+    local sb = self.ScrollBar
+    if not sb then return end
+    local mn, mx = sb:GetMinMaxValues()
+    local v = sb:GetValue() - delta * ROW_H
+    if v < mn then v = mn elseif v > mx then v = mx end
+    sb:SetValue(v)
+  end)
   pane.browseScroll = browseScroll
 
   pane.browseRows = {}

@@ -288,6 +288,17 @@ local function buildRail(f)
     f.PortraitLayer:SetFrameLevel(rail:GetFrameLevel() + 1)
     if f.AnimEye then f.AnimEye:SetFrameLevel(f.PortraitLayer:GetFrameLevel() + 1) end
   end
+
+  -- The window's gold border — including the circular PortraitMetal top-left ring
+  -- (PortraitFrameTemplate's TopLeftCorner) — lives on `ns` and must render ABOVE the eye so it
+  -- FRAMES it (retail's round-portrait-in-ring look). The eye was elevated above the rail panel
+  -- (so the panel can't cover its lower half), which also pushed it above `ns` — so the eye sat
+  -- ON TOP of the gold ring instead of below it. Re-raise `ns` above the eye now. Safe: this
+  -- nineslice is border-only (corners + edges, no center fill — see NineSliceLayouts), so the
+  -- title/close (leveled ns+10) and rail content stay correct.
+  if ns and f.PortraitLayer then
+    ns:SetFrameLevel(f.PortraitLayer:GetFrameLevel() + 2)
+  end
 end
 
 -- The gold ring around each rail icon. DOWNPORT: retail's bluemenu-ring backing file (922034)
@@ -342,7 +353,10 @@ local function buildCategoryButton(parent, def)
   b.ring = ring
 
   local icon = b:CreateTexture(nil, "ARTWORK", nil, 1)
-  icon:SetSize(58, 58)
+  -- Sized to fill the gold ring's inner opening (ring holder is 88x84). Was 58 (clear gap);
+  -- 66 was still too small in-game, so the ring's hole is wider than assumed — 76 fills it.
+  -- If the icon now spills over the gold band, dial this back toward ~70.
+  icon:SetSize(76, 76)
   if ring then icon:SetPoint("CENTER", ring, "CENTER", 0, 0)
   else icon:SetPoint("LEFT", b, "LEFT", 4, -1) end
   -- DOWNPORT: was a single `and/or` ternary expression — if NE.tex.Local(def.icon) ever came back
