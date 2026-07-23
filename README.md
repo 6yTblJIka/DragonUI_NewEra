@@ -49,6 +49,8 @@ A standalone War-Within-style two-page spellbook, replacing the 3.3.5a `SpellBoo
 
 Built natively for 3.3.5a's index-based spellbook API (a compat shim maps the Cataclysm `GetSpellBookItem*` family onto it).
 
+### Collections
+
 ![Collections](screenshots/collections.png)
 
 A standalone retail-style Collections journal (**Mounts** and **Pet Journal** bottom tabs), replacing the old Mounts & Companions grid that used to sit inside the Character panel's Pet tab:
