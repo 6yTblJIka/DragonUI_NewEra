@@ -898,6 +898,270 @@ function NE.scrollbar.BuildCustomPixel(scrollFrame, opts)
   return bar
 end
 
+-- ============================================================================
+-- NE.scrollbar.BuildCustomMessageFrame — a LINE-SCROLL variant of BuildCustomPixel for a
+-- ScrollingMessageFrame (e.g. a chat log). Unlike a ScrollFrame, a ScrollingMessageFrame has no
+-- GetVerticalScrollRange/GetVerticalScroll; scroll position is line-based instead:
+--   * GetScrollOffset()   -- 0 = scrolled to the BOTTOM (newest message); larger = further up
+--                             toward older history.
+--   * SetScrollOffset(n)  -- the widget clamps this itself, so an approximate max is fine here.
+--   * GetNumMessages() / GetNumLinesDisplayed() -- used only to size/position the thumb; not
+--                             authoritative, just enough for a faithful-looking bar.
+-- Reuses the same track/thumb art + drag feel as BuildCustom/BuildCustomPixel. frac is inverted
+-- relative to BuildCustomPixel's cbpSync: offset 0 (newest, bottom) puts the thumb at the BOTTOM
+-- of the track, matching how a normal chat window's scrollbar looks when caught up on chat.
+-- No wheel handler is installed here — callers with an existing OnMouseWheel (e.g. guild chat)
+-- keep driving ScrollUp/ScrollDown themselves; this widget only mirrors the resulting position.
+-- Idempotent via scrollFrame._neCustomBar.
+-- ----------------------------------------------------------------------------
+
+-- BUG FIX (owner report: "no scrollbar showing" -- not just a hidden thumb, the whole bar). Root
+-- cause: this client's ScrollingMessageFrame doesn't expose GetNumMessages()/GetNumLinesDisplayed()
+-- (retail/later-client additions), so both guarded calls silently fell through to 0 with no error,
+-- maxOff computed to 0, and cbmSync's bar:Hide() below fired permanently. Neither total nor shown
+-- can be trusted from the widget itself on 3.3.5a:
+--   * total  -- prefer msg._neTotalLines, a caller-maintained counter (Chat.lua increments it on
+--              every AddMessage and zeroes it on Clear) over the possibly-absent GetNumMessages().
+--   * shown  -- prefer GetNumLinesDisplayed() if it DOES exist (harmless to keep the fast path for
+--              a future/other client where it's present), else estimate visible-line capacity from
+--              frame height / font line height -- GetFont() and GetHeight() are plain FontInstance/
+--              Region APIs, not ScrollingMessageFrame-specific, so those are safe to rely on here.
+local function cbmMaxOffset(msg)
+  local total = msg._neTotalLines
+  if not total then
+    total = (msg.GetNumMessages and msg:GetNumMessages()) or 0
+  end
+
+  local shown = msg.GetNumLinesDisplayed and msg:GetNumLinesDisplayed()
+  if not shown or shown <= 0 then
+    local fontHeight
+    if msg.GetFont then
+      local _, h = msg:GetFont()
+      fontHeight = h
+    end
+    fontHeight = fontHeight or 14
+    local h = (msg.GetHeight and msg:GetHeight()) or 0
+    shown = h > 0 and math.max(1, math.floor(h / (fontHeight + 2))) or 1
+  end
+
+  local maxOff = total - shown
+  if maxOff < 0 then maxOff = 0 end
+  return maxOff, total, shown
+end
+
+local function cbmSync(bar)
+  local msg = bar._scrollFrame
+  if not msg then return end
+  local maxOff, total, shown = cbmMaxOffset(msg)
+  if maxOff <= 0 then
+    bar:Hide()
+    if bar._upBtn then bar._upBtn:Hide() end
+    if bar._downBtn then bar._downBtn:Hide() end
+    return
+  end
+  bar:Show()
+  if bar._upBtn then bar._upBtn:Show() end
+  if bar._downBtn then bar._downBtn:Show() end
+
+  local trackH = bar:GetHeight() or 0
+  if trackH <= 0 then return end
+
+  local visible = shown > 0 and shown or 1
+  local totalLines = total > 0 and total or visible
+  local thumbH = trackH * math.min(1, visible / totalLines)
+  if thumbH < CB_MIN_THUMB then thumbH = CB_MIN_THUMB end
+  if thumbH > trackH then thumbH = trackH end
+  bar._thumb:SetHeight(thumbH)
+
+  local offset = (msg.GetScrollOffset and msg:GetScrollOffset()) or 0
+  local frac = 1 - (offset / maxOff)   -- offset 0 (newest) -> frac 1 (thumb at bottom)
+  if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
+  local travel = trackH - thumbH
+  bar._thumb:ClearAllPoints()
+  bar._thumb:SetPoint("TOP", bar, "TOP", 0, -(frac * travel))
+end
+
+-- Drag handler: convert the thumb's top Y into a line offset and write it back.
+local function cbmOnThumbUpdate(thumb)
+  local bar = thumb._bar
+  local msg = bar and bar._scrollFrame
+  if not msg then return end
+  local maxOff = cbmMaxOffset(msg)
+  if maxOff <= 0 then return end
+
+  local trackTop = bar:GetTop()
+  local thumbTop = thumb:GetTop()
+  local trackH   = bar:GetHeight() or 0
+  local thumbH   = thumb:GetHeight() or 0
+  local travel   = trackH - thumbH
+  if not (trackTop and thumbTop) or travel <= 0 then return end
+
+  local frac = (trackTop - thumbTop) / travel   -- 0 at top .. 1 at bottom
+  if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
+  if msg.SetScrollOffset then msg:SetScrollOffset(maxOff * (1 - frac)) end
+end
+
+-- ScrollingMessageFrame has no native slider/arrow buttons to reparent+reskin (unlike BuildCustom's
+-- FauxScrollFrame case), so these are built entirely from scratch: a plain Frame (not a real Button
+-- widget, to sidestep any uncertainty over SetNormalTexture/SetPushedTexture accepting texture
+-- objects on this client) with one texture region whose atlas key swaps for hover/press, matching
+-- the same manual hover-state approach the thumb already uses (cbSetThumbState).
+local function cbmArrowSetState(tex, suffix, normalAtlas, overAtlas, downAtlas)
+  if suffix == "-over" then setAtlas(tex, overAtlas, false)
+  elseif suffix == "-down" then setAtlas(tex, downAtlas, false)
+  else setAtlas(tex, normalAtlas, false) end
+end
+
+local function cbmBuildArrow(bar, normalAtlas, overAtlas, downAtlas, anchor, onClick)
+  local btn = CreateFrame("Frame", nil, bar)
+  btn:SetSize(CB_ARROW_W, CB_ARROW_H)
+  btn:ClearAllPoints()
+  if anchor == "TOP" then
+    btn:SetPoint("BOTTOM", bar, "TOP", 0, CB_ARROW_GAP)
+  else
+    btn:SetPoint("TOP", bar, "BOTTOM", 0, -CB_ARROW_GAP)
+  end
+  btn:SetFrameStrata(bar:GetFrameStrata())
+  btn:SetFrameLevel(bar:GetFrameLevel() + 2)
+  btn:EnableMouse(true)
+
+  local tex = btn:CreateTexture(nil, "ARTWORK")
+  tex:SetAllPoints(btn)
+  setAtlas(tex, normalAtlas, false)
+
+  btn:SetScript("OnEnter", function() cbmArrowSetState(tex, "-over", normalAtlas, overAtlas, downAtlas) end)
+  btn:SetScript("OnLeave", function() cbmArrowSetState(tex, "", normalAtlas, overAtlas, downAtlas) end)
+  btn:SetScript("OnMouseDown", function() cbmArrowSetState(tex, "-down", normalAtlas, overAtlas, downAtlas) end)
+  btn:SetScript("OnMouseUp", function(self)
+    cbmArrowSetState(tex, "-over", normalAtlas, overAtlas, downAtlas)
+    onClick()
+  end)
+  return btn
+end
+
+function NE.scrollbar.BuildCustomMessageFrame(scrollFrame, opts)
+  if not scrollFrame then return end
+  if scrollFrame._neCustomBar then return scrollFrame._neCustomBar end
+
+  opts = opts or {}
+  local xInset = opts.x ~= nil and -opts.x or CB_X_INSET
+  -- Track is inset top/bottom to leave room for the arrow buttons anchored just outside it (same
+  -- CB_ARROW_GAP clearance BuildCustom's arrows use), same default-on convention as BuildCustom.
+  local wantArrows = opts.arrows ~= false
+  local yInset = wantArrows and (CB_ARROW_H + CB_ARROW_GAP) or 0
+
+  local bar = CreateFrame("Frame", nil, scrollFrame:GetParent() or scrollFrame)
+  bar:SetWidth(CB_WIDTH)
+  bar:ClearAllPoints()
+  bar:SetPoint("TOPLEFT",    scrollFrame, "TOPRIGHT",    xInset, -yInset)
+  bar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT", xInset,  yInset)
+  bar:SetFrameStrata("HIGH")
+  bar:SetFrameLevel((scrollFrame:GetFrameLevel() or 1) + 6)
+  bar._scrollFrame = scrollFrame
+
+  if wantArrows then
+    bar._upBtn = cbmBuildArrow(bar,
+      "minimal-scrollbar-arrow-top", "minimal-scrollbar-arrow-top-over", "minimal-scrollbar-arrow-top-down",
+      "TOP", function() if scrollFrame.ScrollUp then scrollFrame:ScrollUp() end end)
+    bar._downBtn = cbmBuildArrow(bar,
+      "minimal-scrollbar-arrow-bottom", "minimal-scrollbar-arrow-bottom-over", "minimal-scrollbar-arrow-bottom-down",
+      "BOTTOM", function() if scrollFrame.ScrollDown then scrollFrame:ScrollDown() end end)
+  end
+
+  -- track: top cap + bottom cap + tiled middle
+  local tTop = bar:CreateTexture(nil, "BACKGROUND")
+  setAtlas(tTop, "minimal-scrollbar-track-top", true)
+  tTop:SetWidth(CB_WIDTH); tTop:SetHeight(CB_CAP_H)
+  tTop:SetPoint("TOP", bar, "TOP", 0, 0)
+
+  local tBot = bar:CreateTexture(nil, "BACKGROUND")
+  setAtlas(tBot, "minimal-scrollbar-track-bottom", true)
+  tBot:SetWidth(CB_WIDTH); tBot:SetHeight(CB_CAP_H)
+  tBot:SetPoint("BOTTOM", bar, "BOTTOM", 0, 0)
+
+  local tMid = bar:CreateTexture(nil, "BACKGROUND")
+  setAtlas(tMid, "!minimal-scrollbar-track-middle", false)
+  tMid:SetPoint("TOPLEFT",     tTop, "BOTTOMLEFT",  0, 0)
+  tMid:SetPoint("BOTTOMRIGHT", tBot, "TOPRIGHT",    0, 0)
+
+  -- ---- the thumb -----------------------------------------------------------
+  local thumb = CreateFrame("Frame", nil, bar)
+  thumb:SetWidth(CB_WIDTH)
+  thumb:SetHeight(CB_MIN_THUMB)
+  thumb:SetPoint("TOP", bar, "TOP", 0, 0)
+  thumb:SetFrameLevel((bar:GetFrameLevel() or 1) + 2)
+  thumb:EnableMouse(true)
+  thumb._bar = bar
+  bar._thumb = thumb
+
+  local thMid = thumb:CreateTexture(nil, "ARTWORK")
+  setAtlas(thMid, "minimal-scrollbar-small-thumb-middle", false)
+  thMid:SetPoint("TOPLEFT",     thumb, "TOPLEFT",     0,  -CB_CAP_H)
+  thMid:SetPoint("BOTTOMRIGHT", thumb, "BOTTOMRIGHT", 0,   CB_CAP_H)
+  bar._thumbMid = thMid
+
+  local thTop = thumb:CreateTexture(nil, "OVERLAY")
+  setAtlas(thTop, "minimal-scrollbar-small-thumb-top", true)
+  thTop:SetWidth(CB_WIDTH); thTop:SetHeight(CB_CAP_H)
+  thTop:SetPoint("TOP", thumb, "TOP", 0, 0)
+  bar._thumbTop = thTop
+
+  local thBot = thumb:CreateTexture(nil, "OVERLAY")
+  setAtlas(thBot, "minimal-scrollbar-small-thumb-bottom", true)
+  thBot:SetWidth(CB_WIDTH); thBot:SetHeight(CB_CAP_H)
+  thBot:SetPoint("BOTTOM", thumb, "BOTTOM", 0, 0)
+  bar._thumbBot = thBot
+
+  -- drag: while held, follow the cursor (clamped) and write the scroll offset.
+  thumb:SetScript("OnMouseDown", function(self)
+    cbSetThumbState(bar, "-down")
+    self._dragging = true
+    self:SetScript("OnUpdate", function(s)
+      local trackTop = bar:GetTop()
+      local trackH   = bar:GetHeight() or 0
+      local thumbH   = s:GetHeight() or 0
+      if not trackTop then return end
+      local _, cursorY = GetCursorPosition()
+      local scale = bar:GetEffectiveScale() or 1
+      cursorY = cursorY / scale
+      local desiredTop = cursorY + (thumbH / 2)
+      local maxTop = trackTop
+      local minTop = trackTop - (trackH - thumbH)
+      if desiredTop > maxTop then desiredTop = maxTop end
+      if desiredTop < minTop then desiredTop = minTop end
+      s:ClearAllPoints()
+      s:SetPoint("TOP", bar, "TOP", 0, -(maxTop - desiredTop))
+      cbmOnThumbUpdate(s)
+    end)
+  end)
+  thumb:SetScript("OnMouseUp", function(self)
+    self._dragging = false
+    self:SetScript("OnUpdate", nil)
+    cbSetThumbState(bar, "")
+    cbmSync(bar)
+  end)
+  thumb:SetScript("OnEnter", function() if not thumb._dragging then cbSetThumbState(bar, "-over") end end)
+  thumb:SetScript("OnLeave", function() if not thumb._dragging then cbSetThumbState(bar, "") end end)
+
+  -- ---- syncing -------------------------------------------------------------
+  -- A ScrollingMessageFrame fires no OnVerticalScroll/OnScrollRangeChanged -- offset and message
+  -- count both change via plain method calls (AddMessage, ScrollUp/Down, the caller's own wheel
+  -- handler), not events. A throttled OnUpdate poll is the only reliable signal, same approach as
+  -- BuildCustom/BuildCustomPixel's fallback.
+  local accum = 0
+  scrollFrame:HookScript("OnUpdate", function(self, elapsed)
+    accum = accum + (elapsed or 0)
+    if accum < 0.1 then return end
+    accum = 0
+    if not thumb._dragging then cbmSync(bar) end
+  end)
+
+  scrollFrame._neCustomBar = bar
+  cbmSync(bar)
+  if C_Timer and C_Timer.After then C_Timer.After(0, function() cbmSync(bar) end) end
+  return bar
+end
+
 -- AttachBottomShadow — DOWNPORT STUB. Needs WowScrollBox callbacks (BaseScrollBoxEvents,
 -- RegisterCallback, GetDerivedScrollRange) — retail-only. Returns nil on 3.3.5a.
 function NE.scrollbar.AttachBottomShadow(scrollBox, host, opts)

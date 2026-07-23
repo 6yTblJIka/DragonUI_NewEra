@@ -240,11 +240,25 @@ local function formatLine(author, message, epoch)
   return string.format("|cff888888[%s]|r ", stamp) .. nameSegment(author) .. (message or "")
 end
 
+-- Tracks how many lines are currently in `log`, for NE.scrollbar.BuildCustomMessageFrame (this
+-- 3.3.5a client's ScrollingMessageFrame has no GetNumMessages() to ask directly — see the fix note
+-- in ScrollbarReskin.lua). Clamped to the widget's own SetMaxLines(500) cap so the count stays
+-- accurate indefinitely: AddMessage past that cap silently drops the widget's own oldest line, so
+-- an uncapped counter would drift high over a long play session and make the scrollbar think there
+-- was more history than the widget actually still holds.
+local function trackLine(log)
+  local n = (log._neTotalLines or 0) + 1
+  local cap = log.GetMaxLines and log:GetMaxLines()
+  if cap and cap > 0 and n > cap then n = cap end
+  log._neTotalLines = n
+end
+
 -- Render one line into the log's ScrollingMessageFrame with the dim "backlog" treatment: toned-
 -- down channel colour, distinguishing it from freshly-arriving lines.
 local function printBacklogLine(log, kind, author, message, epoch)
   local r, g, b = chanColor(kind == "O" and "OFFICER" or "GUILD")
   log:AddMessage(formatLine(author, message, epoch), r * 0.75, g * 0.75, b * 0.75)
+  trackLine(log)
 end
 
 -- Every live message is also `remember()`-ed (see the event handler below), so the stored log is
@@ -254,6 +268,7 @@ repaintLog = function()
   local s = store()
   if not log or not s then return end
   log:Clear()
+  log._neTotalLines = 0
   for _, e in ipairs(s.entries) do
     printBacklogLine(log, e.kind, e.author, e.message, e.epoch)
   end
@@ -313,6 +328,30 @@ function G.SetupChat(f)
   end)
   panel.Log = msg
 
+  -- Visible scrollbar (owner ask 2026-07-24), same minimal-scrollbar art as the rest of the guild
+  -- window. `well`'s right inset (24px, see msg's BOTTOMRIGHT point above) is the gutter this bar
+  -- lives in. ScrollingMessageFrame isn't a ScrollFrame, so this uses the dedicated line-scroll
+  -- variant rather than Reskin/BuildCustom(Pixel); wheel handling stays on msg's own OnMouseWheel
+  -- above, this only mirrors the resulting scroll position.
+  if NE.scrollbar and NE.scrollbar.BuildCustomMessageFrame then
+    -- x = -8, same value Window.lua's GuildEventLog scrollbar uses (BuildCustom's default -2 is
+    -- sized for the bare 8px track; the arrow buttons are 17px wide and centered on that track, so
+    -- they overhang ~4.5px past each edge -- at the default inset that overhang pokes back into
+    -- msg's own text area and visibly overlaps chat lines that run to the right edge).
+    local ok, bar = pcall(NE.scrollbar.BuildCustomMessageFrame, msg, { x = -8 })
+    if ok and bar then
+      -- Same DIALOG-strata trap as Window.lua's GuildEventLog scrollbar (see its comment at
+      -- ~line 516) and the Auction House lists: the guild window frame `f` is unconditionally
+      -- DIALOG strata (Window.lua:649), so every descendant (well/msg included) inherits DIALOG
+      -- too -- a HIGH-strata bar (BuildCustomMessageFrame's default) renders BEHIND that content,
+      -- i.e. invisible. Force it up to match, same as the established fix elsewhere in this addon.
+      bar:SetFrameStrata("DIALOG")
+      bar:SetFrameLevel((well:GetFrameLevel() or 1) + 10)
+      if bar._upBtn then bar._upBtn:SetFrameStrata("DIALOG"); bar._upBtn:SetFrameLevel(bar:GetFrameLevel() + 1) end
+      if bar._downBtn then bar._downBtn:SetFrameStrata("DIALOG"); bar._downBtn:SetFrameLevel(bar:GetFrameLevel() + 1) end
+    end
+  end
+
   -- Send edit box.
   local edit = CreateFrame("EditBox", "NE_GuildChatEdit", panel, "InputBoxTemplate")
   edit:SetHeight(20)
@@ -354,6 +393,7 @@ local function appendGuild(kind, message, author, epoch)
   if not log then return end
   local r, g, b = chanColor(kind)
   log:AddMessage(formatLine(author, message, epoch), r, g, b)
+  trackLine(log)
 end
 G.AppendGuildMessage = appendGuild
 
