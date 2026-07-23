@@ -136,17 +136,23 @@ local function reposition()
 
   local pvp = _G.PVPMicroButton
   local mainMenu = _G.MainMenuMicroButton
+  local help = _G.HelpMicroButton
   local lfd = _G.LFDMicroButton
   local menu = _G.pUiMicroMenu
-  if not (pvp and mainMenu and lfd and menu and pvp:IsVisible()) then
+  if not (pvp and mainMenu and help and lfd and menu and pvp:IsVisible()) then
     btn:Hide()
     return
   end
 
-  -- Live gap measured off PVP/MainMenu -- both stable anchors this module never moves, so there's
-  -- no feedback loop from our own prior repositioning (see encounterjournal/MicroButton.lua for
-  -- why measuring off a button we DO move compounds drift on every retry).
-  local realGap = mainMenu:GetLeft() - pvp:GetRight()
+  -- Live gap measured off Help/MainMenu -- NOT PVP/MainMenu. PVP is exactly the button
+  -- encounterjournal/MicroButton.lua shifts left to open room for its own insertion between PVP
+  -- and MainMenu, so whenever that module is active, PVP no longer sits its native one-gap
+  -- distance from MainMenu -- measuring off it here would read a bloated ~2-gap distance and
+  -- blow up every spacing this module computes (its own button, and the whole LFD..Character
+  -- shift). Help/MainMenu are the two buttons NEITHER module ever moves, so they're a gap
+  -- reference that stays a true single-unit gap regardless of which of these two modules are
+  -- enabled or what order their repositioning runs in.
+  local realGap = help:GetLeft() - mainMenu:GetRight()
 
   -- Sanity guard: DragonUI's skin may not have applied yet (buttons still at stock Blizzard
   -- positions). Bail and let the next scheduled retry (or the next real DragonUI refresh) catch
