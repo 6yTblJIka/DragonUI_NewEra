@@ -10,6 +10,13 @@ local AH = NE.ah
 local MODULE = "AuctionHouse"
 local FRAME_NAME = "NE_AuctionHouseFrame"
 
+-- The window is called "Auction House" whichever built-in tab is showing, matching retail (and the
+-- physical thing you walked up to) rather than naming the tab twice -- the tab strip already says
+-- Buy / Sell / Auctions. 3.3.5a has no AUCTION_HOUSE global; BUTTON_LAG_AUCTIONHOUSE is the only
+-- GlobalStrings entry whose value is exactly "Auction House", and it IS localized per client, so
+-- it beats hardcoding English. Literal fallback in case a locale ever drops it.
+local AH_WINDOW_TITLE = BUTTON_LAG_AUCTIONHOUSE or "Auction House"
+
 -- Ctrl-click dress-up preview. In WoW 3.3.5a the dressup function is DressUpItemLink(link);
 -- DressUpLink is the retail/modern name and does not exist in this client. The legacy
 -- AuctionFrame is kept alive (alpha 0) to hold the AH session. In environments where
@@ -240,8 +247,14 @@ local function buildChrome(f)
   end
   f.NineSlice = ns
 
-  local title = AUCTION_HOUSE_BROWSE_TITLE or AUCTION_HOUSE_BUY_TAB or "Browse Auctions"
-  if NE.panelchrome and NE.panelchrome.SetTitle then
+  -- EnsureTitle, not SetTitle: this window builds its own chrome and never created a title
+  -- FontString, and SetTitle silently returns when it can't find one -- which is why the title bar
+  -- rendered empty. EnsureTitle makes the band + FontString (as f.Title), so the setTitleForMode
+  -- calls below find it from then on.
+  local title = AH_WINDOW_TITLE
+  if NE.panelchrome and NE.panelchrome.EnsureTitle then
+    NE.panelchrome.EnsureTitle(f, title)
+  elseif NE.panelchrome and NE.panelchrome.SetTitle then
     NE.panelchrome.SetTitle(f, title)
   elseif f.TitleText and f.TitleText.SetText then
     f.TitleText:SetText(title)
@@ -281,14 +294,10 @@ local function setTitleForMode(mode)
     else
       t = (def and def.text) or "Auctionator"
     end
-  elseif mode == "Buy" then
-    t = AUCTION_HOUSE_BROWSE_TITLE or "Browse Auctions"
-  elseif mode == "Sell" then
-    t = AUCTION_HOUSE_FRAME_TITLE_SELL or AUCTION_HOUSE_SELL_TAB or "Post Auctions"
-  elseif mode == "Auctions" then
-    t = AUCTION_HOUSE_FRAME_TITLE_AUCTIONS or AUCTION_HOUSE_AUCTIONS_SUB_TAB or "Auctions"
   else
-    t = AUCTION_HOUSE_BROWSE_TITLE or "Browse Auctions"
+    -- Every built-in tab (Buy / Sell / Auctions) keeps the window's own name; the tab strip
+    -- already says which one is active. Only an embedded external provider overrides it, above.
+    t = AH_WINDOW_TITLE
   end
   if NE.panelchrome and NE.panelchrome.SetTitle then
     NE.panelchrome.SetTitle(f, t)
