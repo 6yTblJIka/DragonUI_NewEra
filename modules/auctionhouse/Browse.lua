@@ -14,6 +14,27 @@ local AH = NE.ah
 local ANY_QUALITY = -1
 AH.ANY_QUALITY = ANY_QUALITY
 
+-- ============================================================================
+-- Shared "list" auction-query arbiter.  ISSUE #31.
+--
+-- The 3.3.5a client has exactly ONE "list" query slot. Three consumers in this addon write to it
+-- (the browse scan, the item drill-down, the Sell tab's market lookup) and anything else loaded
+-- can too -- Auctionator, the cloaked stock AuctionFrame, other addons. AUCTION_ITEM_LIST_UPDATE
+-- carries no indication of who asked, so a watcher that reads the slot unconditionally will
+-- happily parse somebody else's result set as its own.
+--
+-- Whoever issues a query claims the slot by name; every watcher must confirm it still owns the
+-- slot before reading GetAuctionItemInfo("list", ...). An update we did not cause leaves
+-- listOwner pointing at someone else (or nil, for a foreign query), so everyone ignores it.
+-- ============================================================================
+function AH.ClaimListQuery(owner)
+  AH.listOwner = owner
+end
+
+function AH.OwnsListQuery(owner)
+  return AH.listOwner == owner
+end
+
 -- Keep alwaysShow custom Faux bars visually in sync with the actual row overflow state.
 -- Track/arrows stay visible; thumb only shows when the list can truly scroll.
 local function syncAlwaysShowFauxBar(scroll, totalRows, visibleRows)
@@ -1316,6 +1337,44 @@ function AH.BuildBrowsePane(parent)
     updatePageControls()
   end
 
+  -- Tear down an INTERRUPTED scan.  ISSUE #31 ("the addon automatically triggers the search and
+  -- refresh buttons without user input").
+  --
+  -- collectScanPage bails early when the pane is hidden (tab switch) or the item drill-down has
+  -- taken over activeQuery -- both before it reaches `scanPending = false`. That left scanning and
+  -- scanPending set with scanToken unchanged, and nothing else ever cleared them: runSearch and
+  -- resetSearch are the only other writers and both need a user action. So the dead scan sat armed,
+  -- and the next AUCTION_ITEM_LIST_UPDATE from ANY source -- the Sell tab's market lookup,
+  -- Auctionator, the stock UI -- got accepted as its next page: it banked whatever rows were in the
+  -- shared "list" slot into our aggregate, then chained queryPage for another server page. That is
+  -- the search firing with nobody pressing anything (and the drill-down's mirror of it at
+  -- refreshDetailRows is the Refresh button appearing to press itself).
+  --
+  -- The query arbiter above already stops us acting on updates we didn't cause; this closes the
+  -- hole from the other side so there is no stranded state left for even our OWN events to revive.
+  -- Deliberately redundant: this state machine has leaked once already.
+  local function cancelScan()
+    if not (scanning or scanPending) then return end
+    scanning = false
+    scanPending = false
+    scanToken = scanToken + 1   -- orphan any in-flight retry/poll callbacks
+    -- Whatever pages did land stay on screen, but the pager has to admit the aggregate is partial:
+    -- these rows' prices are only minima across the pages we actually got.
+    if #pageRows > 0 then scanTruncated = true end
+    updatePageControls()
+  end
+
+  -- Window.lua hides the inactive pane on a tab switch, which is the other way collectScanPage
+  -- bails out mid-scan. Same teardown.
+  pane:HookScript("OnHide", cancelScan)
+
+  -- Lets the Sell tab hold its market lookup while a scan is paging (see Sell.lua queryMarket):
+  -- a query fired into the middle of a scan steals the shared throttle slot and makes queryPage
+  -- burn its retries and abortScan.
+  function AH.IsBrowseScanning()
+    return scanning and true or false
+  end
+
   -- The core rate-limits back-to-back list queries, and a scan issues one per server page. Wait out
   -- a busy slot rather than abandoning the scan mid-way, which would leave a partial aggregate whose
   -- prices silently aren't market minima.
@@ -1341,6 +1400,7 @@ function AH.BuildBrowsePane(parent)
     scanPage = page
 
     local q = lastQuery
+    AH.ClaimListQuery("browse")
     local ok, err = pcall(QueryAuctionItems, q.text, q.minLevel, q.maxLevel, q.invTypeIndex, q.classIndex, q.subClassIndex, page, q.isUsable, q.quality, false)
     if not ok then
       -- Surface the real Lua error instead of a generic message -- if this still isn't the right
@@ -1622,8 +1682,11 @@ function AH.BuildBrowsePane(parent)
 
     -- The item drill-down issues its own "list" query scoped to one item -- route this shared
     -- event to its refresher instead of the aggregate browse path while it's the active query.
+    -- ISSUE #31: only when the drill-down's own query is the one that produced this update. It used
+    -- to refresh on EVERY event, so a Sell-tab market lookup or an Auctionator scan reloaded the
+    -- seller list out from under the user -- the Refresh button appearing to press itself.
     if activeQuery == "itembuy" then
-      if refreshDetailRows then
+      if refreshDetailRows and AH.OwnsListQuery("itembuy") then
         local rdOk, rdErr = pcall(refreshDetailRows)
         if not rdOk and NE.Log then
           NE.Log("AH", "refreshDetailRows error: " .. tostring(rdErr))
@@ -1636,7 +1699,11 @@ function AH.BuildBrowsePane(parent)
     -- and collectScanPage requests the next one. Ignore the event outside a scan -- an unsolicited
     -- AUCTION_ITEM_LIST_UPDATE (the stock UI, another addon, an owner/bidder query) is about a
     -- "list" slot we didn't fill and must not be spliced into our aggregate.
+    -- ISSUE #31: `scanning` alone was not enough -- an interrupted scan could sit armed with
+    -- scanning == true and let a foreign update drive it (see cancelScan). Require that the browse
+    -- scan is also the current owner of the shared query slot.
     if not scanning then return end
+    if not AH.OwnsListQuery("browse") then return end
     pollAttempts = 0
     local csOk, csErr = pcall(collectScanPage, scanToken)
     if not csOk and NE.Log then
@@ -2261,6 +2328,9 @@ function AH.BuildBrowsePane(parent)
   openItemDetail = function(data)
     if not data or not data.name then return end
     detail.CurrentItem = data
+    -- Drilling in takes the shared "list" slot away from the browse scan. Retire the scan properly
+    -- instead of letting collectScanPage bail on activeQuery and strand it armed (issue #31).
+    cancelScan()
     activeQuery = "itembuy"
     detailSelected = nil
     detailRowsData = {}
@@ -2298,6 +2368,7 @@ function AH.BuildBrowsePane(parent)
     -- everything else. ANY_QUALITY (-1) disables the filter. Note this must stay unfiltered even
     -- though we know the item's quality: filtering by it would be redundant, and data.quality can be
     -- nil when the item isn't in the local cache yet.
+    AH.ClaimListQuery("itembuy")
     local ok, err = pcall(QueryAuctionItems, data.name, 0, 0, 0, 0, 0, 0, false, ANY_QUALITY, false)
     if not ok and NE.Log then
       NE.Log("AH", "ItemBuy QueryAuctionItems error: " .. tostring(err))
