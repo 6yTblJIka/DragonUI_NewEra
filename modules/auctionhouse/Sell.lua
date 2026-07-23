@@ -298,7 +298,8 @@ function AH.BuildSellPane(parent)
       ClickAuctionSellItemButton()
     end
   end
-  local function slotEnter()
+  local slotEnter
+  slotEnter = function()
     GameTooltip:SetOwner(slot, "ANCHOR_RIGHT")
     if GetAuctionSellItemInfo and GetAuctionSellItemInfo() and GameTooltip.SetAuctionSellItem then
       GameTooltip:SetAuctionSellItem()
@@ -306,6 +307,16 @@ function AH.BuildSellPane(parent)
       GameTooltip:SetText(AUCTION_ITEM_TEXT or "Auction Item", 1, 1, 1)
     end
     GameTooltip:Show()
+    -- Keep refreshing while hovered so pressing SHIFT mid-hover raises the comparison tooltip
+    -- (NE.FrameUtil.WireLiveTooltip documents the stock UpdateTooltip contract). Registered on
+    -- `slot` rather than on whichever button was entered: the tooltip is deliberately anchored to
+    -- the icon even when the mouse is over the wider `disp` row, so `slot` is always the OWNER --
+    -- and GameTooltip_OnUpdate only ever calls UpdateTooltip on the owner.
+    slot.UpdateTooltip = slotEnter
+  end
+  local function slotLeave()
+    slot.UpdateTooltip = nil
+    GameTooltip:Hide()
   end
   for _, b in ipairs({ disp, slot }) do
     b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -314,7 +325,7 @@ function AH.BuildSellPane(parent)
       if ClickAuctionSellItemButton then ClickAuctionSellItemButton() end
     end)
     b:SetScript("OnEnter", slotEnter)
-    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    b:SetScript("OnLeave", slotLeave)
   end
 
   ----------------------------------------------------------------------

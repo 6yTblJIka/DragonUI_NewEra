@@ -1231,7 +1231,10 @@ function AH.BuildBrowsePane(parent)
       end
       if openItemDetail then openItemDetail(self._data) end
     end)
-    row:SetScript("OnEnter", function(self)
+    -- WireLiveTooltip, not a bare OnEnter: the tooltip has to keep refreshing while the mouse sits
+    -- still, or pressing SHIFT after hovering never brings up the item comparison (it only worked
+    -- if SHIFT was already held on mouse-over). Same stock UpdateTooltip contract bag buttons use.
+    local function rowTooltip(self)
       if not (self._data and self._data.name) then return end
       GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
       local shown = self._data.link and pcall(GameTooltip.SetHyperlink, GameTooltip, self._data.link)
@@ -1240,8 +1243,13 @@ function AH.BuildBrowsePane(parent)
         GameTooltip:AddLine(self._data.name, 1, 1, 1)
       end
       GameTooltip:Show()
-    end)
-    row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
+    if NE.FrameUtil and NE.FrameUtil.WireLiveTooltip then
+      NE.FrameUtil.WireLiveTooltip(row, rowTooltip)
+    else
+      row:SetScript("OnEnter", rowTooltip)
+      row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
 
     rows[i] = row
     return row
@@ -1831,7 +1839,8 @@ function AH.BuildBrowsePane(parent)
   detailRing:SetPoint("BOTTOMRIGHT", detailIconBtn, "BOTTOMRIGHT", detailGlowOver, -detailGlowOver)
   detailRing:Hide()
 
-  detailIconBtn:SetScript("OnEnter", function(self)
+  -- Live-refreshed so shift-compare works mid-hover (see the aggregate row above).
+  local function detailIconTooltip(self)
     local item = detail.CurrentItem
     if not item then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -1841,8 +1850,13 @@ function AH.BuildBrowsePane(parent)
       GameTooltip:AddLine(item.name or "", 1, 1, 1)
     end
     GameTooltip:Show()
-  end)
-  detailIconBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  end
+  if NE.FrameUtil and NE.FrameUtil.WireLiveTooltip then
+    NE.FrameUtil.WireLiveTooltip(detailIconBtn, detailIconTooltip)
+  else
+    detailIconBtn:SetScript("OnEnter", detailIconTooltip)
+    detailIconBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  end
 
   local detailName = detailHeader:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   detailName:SetPoint("LEFT", detailIconBtn, "RIGHT", 14, 0)
