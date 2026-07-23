@@ -62,7 +62,7 @@ add{ id=90001, name="Utgarde Keep", isRaid=false, minLevel=68, buttonFDID=237605
         {id=37180, pct=21, diff="h"}, {id=47241, pct=100, diff="h"},
       },
     },
-    { id=9000102, name="Skarvald the Constructor & Dalronn the Controller", order=2,
+    { id=9000102, name="Skarvald & Dalronn", order=2,
       creatures = { {display=0, file=607774, name="Skarvald the Constructor & Dalronn the Controller"} },
       loot = {
         {id=35573, pct=30, diff="n"}, {id=35574, pct=28, diff="n"}, {id=35575, pct=31, diff="n"}, {id=37181, pct=21, diff="h"}, {id=37182, pct=21, diff="h"}, {id=37183, pct=21, diff="h"},

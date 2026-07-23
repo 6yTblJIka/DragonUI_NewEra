@@ -44,6 +44,42 @@ end
 -- GameFontBlack may be absent on 3.3.5a; dark parchment color is set explicitly at use sites.
 local BLACK_FONT = _G.GameFontBlack and "GameFontBlack" or "GameFontHighlightSmall"
 
+-- Difficulty-toggle cluster geometry. The tab (p.diffPanel) wraps whichever toggles are visible, so
+-- its width is derived here rather than hardcoded per case; buildInfoPanel builds the widgets and
+-- refreshView picks the width.
+--
+-- The tab is built from the SAME DF metal art as the Dungeons/Raids bottom tabs (core/Tabs.lua's
+-- ATLAS_BY_SUFFIX). Those atlases are drawn flat-edge-at-top, tapering at the bottom — which is the
+-- shape for something hanging DOWN off the frame's top border, so they are used unflipped (no
+-- MakeTopTab crop). Native art is 36 tall; DIFF_TAB_SCALE shrinks every piece and every anchor
+-- offset together so the proportions survive.
+local DIFF_TAB_NATIVE_H   = 36
+local DIFF_TAB_H          = 28
+local DIFF_TAB_SCALE      = DIFF_TAB_H / DIFF_TAB_NATIVE_H
+local function tabScaled(n) return math.floor(n * DIFF_TAB_SCALE + 0.5) end
+-- Native piece widths / anchor overshoots, straight from core/Tabs.lua.
+local DIFF_TAB_LEFT_W     = tabScaled(35)
+local DIFF_TAB_RIGHT_W    = tabScaled(37)
+local DIFF_TAB_LEFT_X     = -tabScaled(3)
+local DIFF_TAB_RIGHT_X    = tabScaled(7)
+
+local DIFF_PANEL_PAD      = 8    -- keeps the toggles off the tapered shoulders
+local DIFF_PANEL_GAP      = 2
+local SIZE_TOGGLE_W       = 36
+local HEROIC_TOGGLE_W     = 30
+local DIFF_TOGGLE_H       = 18
+local DIFF_PANEL_H        = DIFF_TAB_H
+local DIFF_TOGGLE_DROP    = 3    -- the taper is at the BOTTOM, so sit above centre
+local DIFF_RIGHT_PAD      = DIFF_PANEL_PAD
+local function diffPanelWidth(showSize, showHeroic)
+  local w = DIFF_PANEL_PAD * 2
+  if showSize   then w = w + SIZE_TOGGLE_W   end
+  if showHeroic then w = w + HEROIC_TOGGLE_W end
+  if showSize and showHeroic then w = w + DIFF_PANEL_GAP end
+  return w
+end
+local DIFF_PANEL_W_BOTH = diffPanelWidth(true, true)
+
 local function sliceTex(parent, slice, layer, setSize)
   local t = parent:CreateTexture(nil, layer or "ARTWORK")
   NE.ej.ApplySlice(t, slice, setSize)
@@ -55,7 +91,10 @@ local function makeTab(parent, id, iconSel, iconUnsel, tip)
   t:SetSize(63, 57)
   local n = sliceTex(t, "UI-EJ-Tab-UnSelected"); n:SetAllPoints(t); t:SetNormalTexture(n)
   local h = sliceTex(t, "UI-EJ-Tab-Highlight");  h:SetAllPoints(t); h:SetBlendMode("ADD"); t:SetHighlightTexture(h)
+  -- Explicit sublevel: the normal texture above is ARTWORK too, and with both at the default
+  -- sublevel the selected art has no guaranteed precedence over the unselected art beneath it.
   t.selBG = sliceTex(t, "UI-EJ-Tab-Selected", "ARTWORK"); t.selBG:SetAllPoints(t); t.selBG:Hide()
+  t.selBG:SetDrawLayer("ARTWORK", 2)
   t.unselIcon = sliceTex(t, iconUnsel, "OVERLAY", true); t.unselIcon:SetPoint("RIGHT", t, "RIGHT", -6, 0)
   t.selIcon   = sliceTex(t, iconSel,   "OVERLAY", true); t.selIcon:SetPoint("CENTER", t.unselIcon, "CENTER", 0, 0); t.selIcon:Hide()
   t.tabID = id
@@ -172,17 +211,19 @@ local function buildInfoPanel(enc)
   p.encounterTitle = p:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   p.encounterTitle:SetPoint("TOPLEFT", p, "TOPLEFT", 400, -14)
   p.encounterTitle:SetWidth(360); p.encounterTitle:SetJustifyH("CENTER"); p.encounterTitle:SetTextColor(1, 0.82, 0)
-  NE.font.Set(p.encounterTitle, NE.font.MORPHEUS, 18, "", GameFontNormalLarge)
+  NE.font.Set(p.encounterTitle, NE.font.MORPHEUS, 15, "", GameFontNormalLarge)
 
   -- Loot slot-filter dropdown (right page header; shown only on the Loot tab). Fully
   -- pcall-wrapped: non-critical chrome must not abort buildInfoPanel.
   pcall(function()
-    local lootFilter = NE.ej.CreateDropdown(p, "NE_EJLootFilterDropdown", 120)
+    local lootFilter = NE.ej.CreateDropdown(p, "NE_EJLootFilterDropdown", 84)   -- 30% off the old 120
     lootFilter:SetPoint("TOPRIGHT", p, "TOPRIGHT", -2, -10)
     lootFilter:SetDefaultText(ALL or "All")
     lootFilter:SetupMenu(function(dropdown, root)
-      -- Only offer categories the current loot actually has (retail skips empty ones).
-      local present = NE.ej.PresentLootCategories(p.lootSource)
+      -- Only offer categories the current loot actually has (retail skips empty ones). `p` is
+      -- passed so the list is narrowed to the selected difficulty/size as well — the menu is
+      -- rebuilt on every open, so it tracks the toggles without needing to be told.
+      local present = NE.ej.PresentLootCategories(p.lootSource, p)
       for _, fl in ipairs(NE.ej.LOOT_FILTERS) do
         local key, label = fl[1], fl[2]
         if key == "ALL" or present[key] then
@@ -198,52 +239,219 @@ local function buildInfoPanel(enc)
     end)
     lootFilter:Hide()
     p.lootFilter = lootFilter
+
+    -- Quick-clear "X" — only up while a real slot filter is active, since an unfiltered dropdown
+    -- has nothing to clear. Anchored off the dropdown's own arrow BUTTON rather than the frame:
+    -- UIDropDownMenuTemplate's frame edges sit ~16px outside the visible box on both sides, so
+    -- "RIGHT of the frame" would leave a conspicuous gap. The arrow button is flush with the
+    -- visible right edge and already vertically centred on the box.
+    local clear = CreateFrame("Button", nil, lootFilter)
+    clear:SetSize(16, 16)
+    local ddArrow = _G[lootFilter:GetName() .. "Button"]
+    clear:SetPoint("LEFT", ddArrow or lootFilter, "RIGHT", 4, 0)
+    -- Same clear art as the Professions recipe search and the AH browse box: the
+    -- common-search-clearbutton atlas, with their identical minimize-button fallback.
+    local ctex = clear:CreateTexture(nil, "OVERLAY")
+    ctex:SetAllPoints(clear)
+    if not (NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(ctex, "common-search-clearbutton", false)) then
+      ctex:SetTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
+    end
+    ctex:SetAlpha(0.8)
+    clear:SetScript("OnEnter", function(self)
+      ctex:SetAlpha(1)
+      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+      GameTooltip:SetText(_G.CLEAR_ALL or _G.RESET or "Clear Filter")
+      GameTooltip:Show()
+    end)
+    clear:SetScript("OnLeave", function() ctex:SetAlpha(0.8); GameTooltip:Hide() end)
+    clear:SetScript("OnClick", function()
+      if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end
+      p.ResetLootFilter()
+      if NE.ej.SelectTab then NE.ej.SelectTab(p.selectedTab or 2) end
+    end)
+    clear:Hide()
+    p.lootFilterClear = clear
   end)
 
-  -- Difficulty dropdown — shown for multi-difficulty instances. Two independent option sets
-  -- share this one dropdown widget:
-  --   * TBC/WotLK 5-man DUNGEONS: static Normal/Heroic (p.hasHeroic set in PopulateEncounter);
-  --     loot/section rows carry an optional diff="n"/"h" tag.
-  --   * WotLK RAIDS: data-driven 10/25-Player (+ Heroic variants on raidHeroic instances) —
-  --     p.diffOptions (built in PopulateEncounter from inst.isRaid/inst.raidHeroic) is a list of
-  --     { id, size, heroic, label }; loot rows carry size=10|25 and an optional diff="h" tag.
-  -- SetupMenu's generator re-runs every time the dropdown opens (UIDropDownMenu_Initialize),
-  -- so branching on p.diffOptions here stays correctly in sync as the selected instance changes.
-  pcall(function()
-    local diffText = _G.ENCOUNTER_JOURNAL_DIFF_TEXT or "%d Player (%s)"
-    local dungeonLabels = {
-      [1] = diffText:format(5, _G.PLAYER_DIFFICULTY1 or "Normal"),
-      [2] = diffText:format(5, _G.PLAYER_DIFFICULTY2 or "Heroic"),
-    }
-    local dd = NE.ej.CreateDropdown(p, "NE_EJDifficultyDropdown", 150)
-    dd:SetPoint("TOPRIGHT", p, "TOPRIGHT", -2, -10)
-    dd:SetDefaultText(dungeonLabels[1])
-    dd:SetupMenu(function(dropdown, root)
-      if p.diffOptions then
-        for _, opt in ipairs(p.diffOptions) do
-          local optID = opt.id
-          root:CreateRadio(opt.label,
-            function() return (p.difficultyID or 1) == optID end,
-            function()
-              p.difficultyID = optID
-              if dropdown.SetDefaultText then dropdown:SetDefaultText(opt.label) end
-              if NE.ej.SelectTab then NE.ej.SelectTab(p.selectedTab or 2) end
-            end)
-        end
-      else
-        for _, id in ipairs({ 1, 2 }) do
-          root:CreateRadio(dungeonLabels[id],
-            function() return (p.difficultyID or 1) == id end,
-            function()
-              p.difficultyID = id
-              if dropdown.SetDefaultText then dropdown:SetDefaultText(dungeonLabels[id]) end
-              if NE.ej.SelectTab then NE.ej.SelectTab(p.selectedTab or 2) end
-            end)
-        end
+  -- Drop back to "All Slots". Shared by the clear button and by the difficulty toggles, which
+  -- reset it because a 10M table is not the 25H one: a slot filter carried across the switch can
+  -- silently empty the loot page and read as "this difficulty drops nothing".
+  function p.ResetLootFilter()
+    p.lootSlot = "ALL"
+    local dd = p.lootFilter
+    if dd then
+      -- Picking a slot overwrites the dropdown's _defaultText (see SetupMenu above), so put the
+      -- "All Slots" label back before asking it to re-read its collapsed text.
+      local fl = NE.ej.LOOT_FILTERS
+      dd._defaultText = (fl and fl[1] and fl[1][2]) or _G.ALL_INVENTORY_SLOTS or ALL or "All"
+      if dd.GenerateMenu then dd:GenerateMenu() end
+    end
+    if p.lootFilterClear then p.lootFilterClear:Hide() end
+  end
+
+  -- DIFFICULTY CONTROLS — two independent toggles, no dropdown anywhere:
+  --   * size toggle  ("10M"/"25M") — WotLK RAIDS only.
+  --   * heroic skull — 5-man DUNGEONS (p.hasHeroic) AND raidHeroic RAIDS (ICC/RS/ToGC).
+  -- A raid's difficulty is really a (size, heroic) PAIR living in p.diffOptions
+  -- ({id,size,heroic,label}; id 1=10N 2=25N 3=10H 4=25H). These helpers convert between that pair
+  -- and difficultyID so each toggle can flip its own axis and leave the other one alone.
+  local function currentDiffOpt()
+    if not p.diffOptions then return nil end
+    for _, opt in ipairs(p.diffOptions) do
+      if opt.id == (p.difficultyID or 1) then return opt end
+    end
+    return p.diffOptions[1]
+  end
+  local function setDiffPair(size, heroic)
+    if not p.diffOptions then return false end
+    for _, opt in ipairs(p.diffOptions) do
+      if opt.size == size and ((opt.heroic and true or false) == heroic) then
+        p.difficultyID = opt.id
+        return true
       end
+    end
+    return false
+  end
+  p.CurrentDiffOpt = currentDiffOpt
+  -- Does this instance offer a heroic axis at all? Dungeons say so via hasHeroic; raids by having
+  -- any heroic entry in diffOptions (only the raidHeroic instances do).
+  function p.HasHeroicAxis()
+    if p.diffOptions then
+      for _, opt in ipairs(p.diffOptions) do if opt.heroic then return true end end
+      return false
+    end
+    return p.hasHeroic and true or false
+  end
+
+  -- Only the two difficulty toggles call this, hence the unconditional filter reset: switching
+  -- 10M<->25M or Normal<->Heroic swaps the whole drop table, so a slot filter from the old one is
+  -- stale by definition and would leave the page looking empty rather than filtered.
+  local function reRender()
+    if p.ResetLootFilter then p.ResetLootFilter() end
+    if NE.ej.SelectTab then NE.ej.SelectTab(p.selectedTab or 2) end
+  end
+
+  -- Shared metal tab behind the difficulty toggles — ONE tab that fits whichever toggles are up
+  -- (both, the skull alone on 5-mans, or 10M/25M alone on non-heroic raids). Both toggles parent
+  -- into it and refreshView sizes it, so there is never a stray empty box.
+  --
+  -- Same three-piece DF metal art as the Dungeons/Raids bottom tabs, hanging DOWN off the top of
+  -- the page instead of up off the bottom of the window. Anchored at p's top with NO rise: p's top
+  -- already sits 4px below the window inset's top edge, and the inset's 3px border tile occupies
+  -- only the 3px above that, so starting here clears the border instead of overlapping it.
+  local dp = CreateFrame("Frame", "NE_EJDiffPanel", p)
+  dp:SetPoint("TOPRIGHT", p, "TOPRIGHT", -DIFF_TAB_RIGHT_X, 0)
+  dp:SetSize(DIFF_PANEL_W_BOTH, DIFF_PANEL_H)
+  -- Piece anchoring mirrors NE.tabs.ReskinClassicTab: Left/Right overshoot dp's edges (scaled from
+  -- the -3/+7 the real tabs use) and Middle tiles between them.
+  local function dpTab(atlas, w)
+    local t = dp:CreateTexture(nil, "BACKGROUND")
+    if not (NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(t, atlas, false)) then
+      t:Hide()
+      return nil
+    end
+    if w then t:SetWidth(w) end
+    t:SetHeight(DIFF_TAB_H)
+    return t
+  end
+  local tl = dpTab("uiframe-tab-left",  DIFF_TAB_LEFT_W)
+  if tl then tl:SetPoint("TOPLEFT",  dp, "TOPLEFT",  DIFF_TAB_LEFT_X,  0) end
+  local tr = dpTab("uiframe-tab-right", DIFF_TAB_RIGHT_W)
+  if tr then tr:SetPoint("TOPRIGHT", dp, "TOPRIGHT", DIFF_TAB_RIGHT_X, 0) end
+  local tm = dpTab("_uiframe-tab-center")
+  if tm and tl and tr then
+    tm:SetHorizTile(true)
+    tm:SetPoint("TOPLEFT",  tl, "TOPRIGHT", 0, 0)
+    tm:SetPoint("TOPRIGHT", tr, "TOPLEFT",  0, 0)
+  elseif tm then
+    tm:Hide()
+  end
+  dp.tabLeft, dp.tabMiddle, dp.tabRight = tl, tm, tr
+  dp:Hide()
+  p.diffPanel = dp
+
+  -- Raid size toggle: "10M" <-> "25M". Sits to the LEFT of the heroic skull (anchored in refreshView).
+  pcall(function()
+    local sb = CreateFrame("Button", "NE_EJSizeToggle", dp)
+    sb:SetSize(SIZE_TOGGLE_W, DIFF_TOGGLE_H)
+    sb.label = sb:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    sb.label:SetPoint("CENTER")
+    sb.label:SetTextColor(1, 0.82, 0)
+    local hl = sb:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetAllPoints(sb)
+    hl:SetTexture("Interface\\Buttons\\UI-Common-MouseHilight")
+    hl:SetBlendMode("ADD")
+    function sb:SyncVisual()
+      local cur = currentDiffOpt()
+      self.label:SetText(((cur and cur.size) or 10) .. "M")
+    end
+    sb:SetScript("OnClick", function(self)
+      local cur = currentDiffOpt()
+      if not cur then return end
+      if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end
+      setDiffPair((cur.size == 10) and 25 or 10, cur.heroic and true or false)
+      self:SyncVisual()
+      if p.heroicToggle and p.heroicToggle.SyncVisual then p.heroicToggle:SyncVisual() end
+      reRender()
     end)
-    dd:Hide()
-    p.difficultyDropdown = dd
+    if NE.tooltip and NE.tooltip.Wire then
+      NE.tooltip.Wire(sb, _G.RAID_DIFFICULTY or "Raid Size")
+    end
+    sb:Hide()
+    p.sizeToggle = sb
+  end)
+
+  -- Heroic TOGGLE — a clickable skull badge (UI-EJ-HeroicTextIcon): lit = Heroic, dimmed +
+  -- desaturated = Normal. Used by BOTH difficulty models:
+  --   * 5-man dungeons  → flips difficultyID 1<->2 directly.
+  --   * raidHeroic raids → flips only the HEROIC axis of the (size, heroic) pair, leaving the
+  --     10M/25M choice on the size toggle untouched.
+  pcall(function()
+    local hb = CreateFrame("Button", "NE_EJHeroicToggle", dp)
+    hb:SetSize(HEROIC_TOGGLE_W, DIFF_TOGGLE_H)
+
+    local icon = hb:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(16, 16)
+    icon:SetPoint("CENTER")
+    icon:SetTexture((NE.tex and NE.tex.localFiles and NE.tex.localFiles[521748]) or 521748)
+    hb.icon = icon
+
+    local hl = hb:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetAllPoints(hb)
+    hl:SetTexture("Interface\\Buttons\\UI-Common-MouseHilight")
+    hl:SetBlendMode("ADD")
+
+    -- Reflect the current difficulty on the badge (called on click AND from refreshView, since the
+    -- difficulty resets to Normal whenever a fresh instance is populated).
+    function hb:SyncVisual()
+      local on
+      if p.diffOptions then
+        local cur = currentDiffOpt()
+        on = (cur and cur.heroic) and true or false
+      else
+        on = (p.difficultyID or 1) == 2
+      end
+      if self.icon.SetDesaturated then self.icon:SetDesaturated(not on) end
+      self.icon:SetAlpha(on and 1 or 0.4)
+    end
+
+    hb:SetScript("OnClick", function(self)
+      if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end
+      if p.diffOptions then
+        local cur = currentDiffOpt()
+        if cur then setDiffPair(cur.size, not (cur.heroic and true or false)) end
+      else
+        p.difficultyID = ((p.difficultyID or 1) == 2) and 1 or 2
+      end
+      self:SyncVisual()
+      if p.sizeToggle and p.sizeToggle.SyncVisual then p.sizeToggle:SyncVisual() end
+      reRender()
+    end)
+    if NE.tooltip and NE.tooltip.Wire then
+      NE.tooltip.Wire(hb, _G.PLAYER_DIFFICULTY2 or "Heroic")
+    end
+    hb:Hide()
+    p.heroicToggle = hb
   end)
 
   -- model/instance button (top-left) → back to the instance overview (retail parity)
@@ -269,7 +477,8 @@ local function buildInfoPanel(enc)
 
   -- Info tabs. Vanilla/TBC-raid content ships NO overview sections, so retail's collapsed
   -- layout applies: tab 1 = lore + abilities (Boss icon), tab 3 hidden, Model below Loot.
-  local overview = makeTab(p, 1, "UI-EJ-Tab-BossIcon-Selected",  "UI-EJ-Tab-BossIcon-UnSelected",  ABILITIES or "Abilities")
+  -- Tab 1 holds lore + abilities in one page, so it's labelled "Overview" rather than "Abilities".
+  local overview = makeTab(p, 1, "UI-EJ-Tab-BossIcon-Selected",  "UI-EJ-Tab-BossIcon-UnSelected",  "Overview")
   overview:SetPoint("TOPLEFT", p, "TOPRIGHT", -4, -35)
   local loot = makeTab(p, 2, "UI-EJ-Tab-LootIcon-Selected",      "UI-EJ-Tab-LootIcon-UnSelected",  LOOT_NOUN or "Loot")
   loot:SetPoint("TOP", overview, "BOTTOM", 0, 2)
@@ -293,6 +502,11 @@ local function buildInfoPanel(enc)
   bossScroll:SetScrollChild(bossChild)
   if NE.scrollbar and NE.scrollbar.Reskin then NE.scrollbar.Reskin(bossScroll, { hideIfUnscrollable = true }) end
   p.bossList = { scroll = bossChild, buttons = {} }
+
+  -- The back button spans y -3..-64 and the boss list starts at -42, so they overlap by ~22px.
+  -- ib is created FIRST, so at equal frame levels the boss buttons drew over it. Raise it here,
+  -- after bossScroll exists, so the button stays clickable and fully visible.
+  ib:SetFrameLevel(bossScroll:GetFrameLevel() + 10)
 
   -- Content area (right page): a text body, a loot row holder, and a creature model.
   local c = CreateFrame("Frame", nil, p)
@@ -541,6 +755,52 @@ local function lootHeader(lf, i)
 end
 
 -- Paint one loot row from a resolved item record (see renderLoot's bucketing).
+-- WotLK set/tier tokens. GetItemInfo reports these as Miscellaneous/"Junk" (they carry no equip
+-- slot), so the type column read "Junk" for every tier piece in the game. There is no runtime flag
+-- that separates a tier token from an actual grey vendor item on 3.3.5a, so this is an explicit
+-- set, derived from AtlasLoot's own WotLK data: every row it tags `=ds=#e15#` ("Token") that also
+-- appears in DataWotLK.lua, minus the three pure currencies in that tag (Champion's Seal 44990,
+-- Emblem of Triumph 47241, Emblem of Frost 49426), which are not gear.
+--   40610-40639  T7  "of the Lost <archetype>"      (Naxxramas / Sartharion / Malygos)
+--   45632-45661  T8  "of the Wayward <archetype>"   (Ulduar)
+--   47242        T9  Trophy of the Crusade          (Trial of the Crusader)
+--   52025-52030  T10 "<archetype>'s Mark of Sanctification" (Icecrown, normal + heroic)
+-- Classic and TBC are NOT covered: AtlasLoot doesn't carry the Token tag for their set pieces, so
+-- there is nothing to derive a list from. Those expansions' tokens still read as "Junk".
+local TIER_TOKEN = {
+  [40610]=1, [40611]=1, [40612]=1, [40613]=1, [40614]=1, [40615]=1, [40616]=1, [40617]=1,
+  [40618]=1, [40619]=1, [40620]=1, [40621]=1, [40622]=1, [40623]=1, [40624]=1, [40625]=1,
+  [40626]=1, [40627]=1, [40628]=1, [40629]=1, [40630]=1, [40631]=1, [40632]=1, [40633]=1,
+  [40634]=1, [40635]=1, [40636]=1, [40637]=1, [40638]=1, [40639]=1, [45632]=1, [45633]=1,
+  [45634]=1, [45635]=1, [45636]=1, [45637]=1, [45638]=1, [45639]=1, [45640]=1, [45641]=1,
+  [45642]=1, [45643]=1, [45644]=1, [45645]=1, [45646]=1, [45647]=1, [45648]=1, [45649]=1,
+  [45650]=1, [45651]=1, [45652]=1, [45653]=1, [45654]=1, [45655]=1, [45656]=1, [45657]=1,
+  [45658]=1, [45659]=1, [45660]=1, [45661]=1, [47242]=1, [52025]=1, [52026]=1, [52027]=1,
+  [52028]=1, [52029]=1, [52030]=1,
+}
+
+-- Quest items — same problem as TIER_TOKEN, same source. Several of these (Shadowfrost Shard
+-- 50274, Fragment of Val'anyr 45038, the Ulduar keeper Sigils, Head of Onyxia) are Miscellaneous/
+-- "Junk" to GetItemInfo rather than the Quest item class, so the type column read "Junk". Derived
+-- from every row AtlasLoot tags `=ds=#m3#` ("Quest Item") across all three of its expansion
+-- modules that also appears in our Data/DataTBC/DataWotLK. Items that ARE the Quest class already
+-- report "Quest", so the override is a no-op for them and only relabels the mis-classed ones.
+local QUEST_ITEM = {
+  [4631]=1, [5334]=1, [7670]=1, [7741]=1, [9234]=1, [9471]=1, [10660]=1, [10661]=1, [11325]=1,
+  [12335]=1, [12336]=1, [12337]=1, [12534]=1, [12845]=1, [13523]=1, [17203]=1, [17204]=1,
+  [18780]=1, [18782]=1, [18784]=1, [19017]=1, [19716]=1, [19717]=1, [19718]=1, [19719]=1,
+  [19720]=1, [19721]=1, [19722]=1, [19723]=1, [19724]=1, [19939]=1, [19940]=1, [19941]=1,
+  [19942]=1, [20383]=1, [21232]=1, [21237]=1, [22637]=1, [22734]=1, [23723]=1, [23735]=1,
+  [23881]=1, [23886]=1, [23933]=1, [24248]=1, [25461]=1, [25462]=1, [27632]=1, [27633]=1,
+  [28490]=1, [28769]=1, [29906]=1, [30808]=1, [30827]=1, [30828]=1, [30829]=1, [31085]=1,
+  [31086]=1, [31721]=1, [31722]=1, [31744]=1, [31750]=1, [32459]=1, [33330]=1, [33814]=1,
+  [33815]=1, [33821]=1, [33826]=1, [33827]=1, [33834]=1, [33835]=1, [33836]=1, [33840]=1,
+  [33847]=1, [33858]=1, [33859]=1, [33860]=1, [33861]=1, [34157]=1, [43151]=1, [43411]=1,
+  [44569]=1, [44577]=1, [44650]=1, [45038]=1, [45784]=1, [45786]=1, [45787]=1, [45788]=1,
+  [45814]=1, [45815]=1, [45816]=1, [45817]=1, [49644]=1, [50226]=1, [50231]=1, [50274]=1,
+  [51026]=1,
+}
+
 local function fillLootRow(r, it)
   r.itemID = it.id
   r.link = it.link   -- HandleModifiedItemClick needs the link, not the id
@@ -558,6 +818,8 @@ local function fillLootRow(r, it)
   if typeText == "Money(OBSOLETE)" or typeText == "Money" then
     typeText = _G.CURRENCY or "Currency"
   end
+  if TIER_TOKEN[it.id] then typeText = "Tier" end
+  if QUEST_ITEM[it.id] then typeText = "Quest" end
   r.armorType:SetText(typeText)
   -- drop% (NE addition): show only when AtlasLoot recorded a rate (pct>0)
   r.dropPct:SetText(it.pct and it.pct > 0 and string.format("%.1f%%", it.pct) or "")
@@ -600,15 +862,29 @@ local function lootCategory(equipLoc)
   return "OTHER"
 end
 
--- The slot categories actually PRESENT in a loot list (resolved items only).
-function NE.ej.PresentLootCategories(items)
+-- The slot categories actually PRESENT in a loot list (resolved items only). `info` is optional:
+-- pass the info panel and the list is narrowed to the difficulty/size currently selected, so the
+-- dropdown can't offer a slot that only drops on the OTHER difficulty of the same boss (picking
+-- one would render an empty page).
+function NE.ej.PresentLootCategories(items, info)
   local present = {}
   if items then
+    -- Looked up at call time rather than captured: passesDifficulty is a local declared further
+    -- down this file, so it is not in scope here.
+    local passes = NE.ej.PassesDifficulty
     for i = 1, #items do
       local entry = items[i]
       local id = (type(entry) == "table") and entry.id or entry
-      local name, _, _, _, _, _, _, _, equipLoc = GetItemInfo(id)
-      if name then present[lootCategory(equipLoc or "")] = true end
+      local ok = true
+      if info and passes then
+        local dif  = (type(entry) == "table") and entry.diff or nil
+        local size = (type(entry) == "table") and entry.size or nil
+        ok = passes(info, dif, size)
+      end
+      if ok then
+        local name, _, _, _, _, _, _, _, equipLoc = GetItemInfo(id)
+        if name then present[lootCategory(equipLoc or "")] = true end
+      end
     end
   end
   return present
@@ -642,7 +918,10 @@ local LOOT_TIERS = {
 --     heroic-ness EXACTLY (WotLK raid loot is a hard split — a Normal-tagged/untagged item is
 --     never also a Heroic drop, unlike the 5-man "applies to both" convention below).
 --   * 5-man dungeons: legacy — an untagged row (dif=nil) applies to both Normal and Heroic.
-local function passesDifficulty(info, dif, size)
+-- `untaggedBoth` opts out of the raid hard-split for ability SECTIONS: no seeded section in
+-- AbilitiesEra/TBC/WotLK.lua carries a diff tag at all, so the exact match above would drop every
+-- section (and its subtree) the moment Heroic was selected on a raid, blanking the Overview tab.
+local function passesDifficulty(info, dif, size, untaggedBoth)
   if info.diffOptions then
     local sel
     for _, opt in ipairs(info.diffOptions) do
@@ -651,6 +930,7 @@ local function passesDifficulty(info, dif, size)
     sel = sel or info.diffOptions[1]
     if not sel then return true end
     if size and sel.size and size ~= sel.size then return false end
+    if dif == nil and untaggedBoth then return true end
     local heroicSel = sel.heroic and true or false
     if (dif == "h") ~= heroicSel then return false end
     return true
@@ -660,6 +940,8 @@ local function passesDifficulty(info, dif, size)
     return true
   end
 end
+-- Published so NE.ej.PresentLootCategories (defined above this point) can reach it.
+NE.ej.PassesDifficulty = passesDifficulty
 
 local function renderLoot(boss, preserveScroll)
   local info = NE.ej.frame.encounter.info
@@ -951,7 +1233,10 @@ local function renderSections(boss)
   c._secExp = c._secExp or {}
   -- Lead lore paragraph: the boss description at the TOP, above the ability sections.
   if not c.leadDesc then
-    c.leadDesc = c.sectionChild:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    -- BLACK_FONT, not GameFontHighlight: this is body copy on the parchment, so it matches the
+    -- ability descriptions below it (w.desc) and the instance lore on the left page. Highlight is
+    -- a size larger, which left the lore paragraph visibly outsized against the rest of the page.
+    c.leadDesc = c.sectionChild:CreateFontString(nil, "ARTWORK", BLACK_FONT)
     c.leadDesc:SetJustifyH("LEFT"); c.leadDesc:SetJustifyV("TOP"); c.leadDesc:SetWidth(SEC_W)
     c.leadDesc:SetTextColor(0.25, 0.1484375, 0.02)   -- dark on the parchment page
   end
@@ -975,7 +1260,7 @@ local function renderSections(boss)
         visited[id] = true
         local s = byId[id]
         local dif = s.diff
-        if not passesDifficulty(dinfo, dif, nil) then
+        if not passesDifficulty(dinfo, dif, nil, true) then
           id = s.sib   -- wrong difficulty: drop this section and its subtree
         else
           idx = idx + 1
@@ -1120,8 +1405,14 @@ local function refreshView()
   for _, t in ipairs(info.tabs) do
     local en = enabled[t.tabID] and true or false
     local on = (t.tabID == tab) and en
-    setShown(t.selBG, on); setShown(t.selIcon, on); setShown(t.unselIcon, not on)
+    -- Enable/Disable FIRST: a button re-asserts its normal texture on enable, so doing this after
+    -- the art below would put the UNSELECTED tab back on top of the selected art we just showed.
     if en then t:Enable() else t:Disable() end   -- DOWNPORT: no Button:SetEnabled on 3.3.5a
+    setShown(t.selBG, on); setShown(t.selIcon, on); setShown(t.unselIcon, not on)
+    -- And hide the normal (unselected) texture outright on the active tab, so the selected art
+    -- never has to win a draw-order tie against it.
+    local norm = t.GetNormalTexture and t:GetNormalTexture()
+    if norm then setShown(norm, not on) end
     t.unselIcon:SetDesaturated(not en); t.unselIcon:SetAlpha(en and 1 or 0.35)
     if t.selIcon.SetDesaturated then t.selIcon:SetDesaturated(not en) end
   end
@@ -1129,32 +1420,83 @@ local function refreshView()
   local c = info.content
   c.text:Hide(); c.lootScroll:Hide(); c.sectionScroll:Hide()
   if info.modelArea then info.modelArea:Hide() end
-  -- Boss title in the header is hidden on Model AND Loot (that header hosts the loot
-  -- filters, not the boss name) — matching retail.
+  -- Difficulty controls — computed before the title below so the title can reserve room for them.
+  -- Both axes are toggles now (no dropdown): the 10M/25M size toggle shows for RAIDS, and the
+  -- heroic skull shows wherever a heroic axis exists (5-man dungeons + raidHeroic raids).
+  -- Suppressed on the instance LANDING page (no boss picked) whenever the lore artwork is what's
+  -- on screen — the toggles would sit over the dungeon/raid art with nothing to filter. The
+  -- landing Loot tab is the exception: it aggregates instance-wide drops, which difficulty does
+  -- filter, so the cluster stays for that one.
+  local onLandingArt = (not selBoss) and tab ~= 2
+  local isRaidDiff = (info.diffOptions and #info.diffOptions > 0) and true or false
+  local hasHeroicAxis = info.HasHeroicAxis and info.HasHeroicAxis() or false
+  local showSize   = (isRaidDiff and tab ~= 4 and not onLandingArt) and true or false
+  local showHeroic = (hasHeroicAxis and tab ~= 4 and not onLandingArt) and true or false
+  -- The shared dark well shrinks to fit whatever is up, and hides entirely when neither is.
+  local dp = info.diffPanel
+  if dp then
+    setShown(dp, showSize or showHeroic)
+    if showSize or showHeroic then dp:SetWidth(diffPanelWidth(showSize, showHeroic)) end
+  end
+  if info.heroicToggle then
+    setShown(info.heroicToggle, showHeroic)
+    if showHeroic then
+      -- Always the RIGHTMOST toggle in the well.
+      info.heroicToggle:ClearAllPoints()
+      info.heroicToggle:SetPoint("RIGHT", dp or info, "RIGHT", -DIFF_RIGHT_PAD, DIFF_TOGGLE_DROP)
+      -- difficultyID resets on every fresh instance, so re-sync the badge's lit/dim state here.
+      if info.heroicToggle.SyncVisual then info.heroicToggle:SyncVisual() end
+    end
+  end
+  if info.sizeToggle then
+    setShown(info.sizeToggle, showSize)
+    if showSize then
+      -- Sits to the LEFT of the heroic skull when both are up; otherwise takes the well itself.
+      info.sizeToggle:ClearAllPoints()
+      if showHeroic and info.heroicToggle then
+        info.sizeToggle:SetPoint("RIGHT", info.heroicToggle, "LEFT", -DIFF_PANEL_GAP, 0)
+      else
+        info.sizeToggle:SetPoint("RIGHT", dp or info, "RIGHT", -DIFF_RIGHT_PAD, DIFF_TOGGLE_DROP)
+      end
+      if info.sizeToggle.SyncVisual then info.sizeToggle:SyncVisual() end
+    end
+  end
+  -- Boss title in the header is shown ONLY on the Abilities tab (hidden on Loot, which uses that
+  -- header for the loot filters, and on Model) — matching retail. The title is centre-justified in
+  -- its own box, so the box only shrinks by however much the header's right corner is actually
+  -- occupied. Both controls are compact toggles now, so the name stays close to centred.
   local hideBossTitle = (tab == 4 or tab == 2)
   if info.encounterTitle then
     info.encounterTitle:SetText(selBoss and selBoss.name or "")
-    setShown(info.encounterTitle, (selBoss and not hideBossTitle) and true or false)
+    local showTitle = (selBoss and not hideBossTitle) and true or false
+    setShown(info.encounterTitle, showTitle)
+    if showTitle then
+      -- Shrink by however much the difficulty well actually occupies, so the tiers stay correct if
+      -- the cluster's geometry constants change.
+      local titleW = 360                                        -- nothing in the corner
+      if showSize or showHeroic then
+        titleW = 360 - diffPanelWidth(showSize, showHeroic) + 12
+      end
+      info.encounterTitle:ClearAllPoints()
+      info.encounterTitle:SetPoint("TOPLEFT", info, "TOPLEFT", 400, -14)
+      info.encounterTitle:SetWidth(titleW)
+    end
   end
   if info.rightHeader then setShown(info.rightHeader, tab ~= 4) end
-  if info.difficultyDropdown then
-    local hasDiff = info.hasHeroic or (info.diffOptions and #info.diffOptions > 0)
-    local showDiff = (hasDiff and tab ~= 4) and true or false
-    setShown(info.difficultyDropdown, showDiff)
-    -- keep the collapsed label in sync -- PopulateEncounter may have just swapped instances
-    -- (different diffOptions / a reset difficultyID) without the dropdown ever being opened.
-    if showDiff and info.difficultyDropdown.GenerateMenu then info.difficultyDropdown:GenerateMenu() end
-  end
   if info.lootFilter then
     setShown(info.lootFilter, tab == 2)   -- slot filter only on Loot
-    -- The difficulty dropdown owns retail's top-right corner; slide the slot filter left
-    -- when both are visible.
+    -- LEFT-aligned on the loot page. The right page starts at x=400 (where info.content is
+    -- anchored); the -16 backs out UIDropDownMenuTemplate's invisible left inset so the visible box
+    -- edge — not the frame edge — lands on 400, and the +15 then insets it from that page edge.
+    -- Fixed anchor: it no longer trails the difficulty well, since the two are now at opposite ends
+    -- of the header and cannot collide.
     info.lootFilter:ClearAllPoints()
-    if info.difficultyDropdown and info.difficultyDropdown:IsShown() then
-      info.lootFilter:SetPoint("TOPRIGHT", info.difficultyDropdown, "TOPLEFT", 24, 0)
-    else
-      info.lootFilter:SetPoint("TOPRIGHT", info, "TOPRIGHT", -2, -10)
-    end
+    info.lootFilter:SetPoint("TOPLEFT", info, "TOPLEFT", 400 - 16 + 15, -10)
+  end
+  if info.lootFilterClear then
+    -- Clear badge only when there is something to clear. (It parents into the dropdown, so the
+    -- tab check is belt-and-braces — but refreshView is also what re-shows it after a reset.)
+    setShown(info.lootFilterClear, tab == 2 and (info.lootSlot or "ALL") ~= "ALL")
   end
 
   if not selBoss then
@@ -1242,15 +1584,15 @@ function NE.ej.PopulateEncounter(inst)
   enc.info.difficultyID = 1
   if inst.isRaid and inst.tier == 3 then
     enc.info.hasHeroic = false
-    local diffText = _G.ENCOUNTER_JOURNAL_DIFF_TEXT or "%d Player (%s)"
+    -- retail EJ difficulty-dropdown format: "(10) Normal", not the LFD tool's "10 Player (Normal)".
     local normalLbl, heroicLbl = _G.PLAYER_DIFFICULTY1 or "Normal", _G.PLAYER_DIFFICULTY2 or "Heroic"
     local opts = {
-      { id = 1, size = 10, heroic = false, label = diffText:format(10, normalLbl) },
-      { id = 2, size = 25, heroic = false, label = diffText:format(25, normalLbl) },
+      { id = 1, size = 10, heroic = false, label = ("(%d) %s"):format(10, normalLbl) },
+      { id = 2, size = 25, heroic = false, label = ("(%d) %s"):format(25, normalLbl) },
     }
     if inst.raidHeroic then
-      opts[3] = { id = 3, size = 10, heroic = true, label = diffText:format(10, heroicLbl) }
-      opts[4] = { id = 4, size = 25, heroic = true, label = diffText:format(25, heroicLbl) }
+      opts[3] = { id = 3, size = 10, heroic = true, label = ("(%d) %s"):format(10, heroicLbl) }
+      opts[4] = { id = 4, size = 25, heroic = true, label = ("(%d) %s"):format(25, heroicLbl) }
     end
     enc.info.diffOptions = opts
   else

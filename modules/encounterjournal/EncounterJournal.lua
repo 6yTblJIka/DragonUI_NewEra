@@ -31,10 +31,12 @@ NE.ej = NE.ej or {}
 local FRAME_W, FRAME_H = 800, 496
 local MODULE = "EncounterJournal"
 
--- Pixel-perfect scale (pin to 768/physH, never raw SetScale numbers). userScale=1.25 renders
--- the whole window (chrome + every nested panel) 25% larger on screen without touching any of
--- the internal layout math — PinPixelPerfect folds it into the frame's SetScale.
-local WINDOW_USER_SCALE = 1.25
+-- Pixel-perfect scale (pin to 768/physH, never raw SetScale numbers). This is THE scale knob for
+-- the whole window (chrome + every nested panel) — PinPixelPerfect folds it into the frame's
+-- SetScale without touching any internal layout math. A raw frame:SetScale() elsewhere is useless:
+-- pinScale() runs on build/show/reposition and overwrites it, so change the window size HERE.
+-- 2026-07-23: bumped 1.25 → 1.5 (user asked for +20% on top of the previous 1.25).
+local WINDOW_USER_SCALE = 1.5
 local function pinScale(f) NE.FrameUtil.PinPixelPerfect(f, WINDOW_USER_SCALE) end
 
 -- Options gate. Reads profile.modules["ne_"..MODULE].enabled -- the SAME flag DragonUI
@@ -107,6 +109,42 @@ end
 -- portrait/title. The ClassicAPI PortraitFrameTemplate supplies rock body + f.portrait +
 -- f.TitleText; we overlay the DF metal nineslice + streaks + modernized close on top.
 local function buildChrome(f)
+  -- Modern grey window body: the same untinted UI-Background-Rock fill every other from-scratch
+  -- standalone window builds (Guild/LFG/Professions/AuctionHouse/Social).
+  --
+  -- DOWNPORT FIX: we own a DEDICATED texture rather than re-texturing the template's own fill.
+  --
+  -- ClassicAPI's PortraitFrameTemplate declares that fill as `$parentBg` with NO parentKey
+  -- (Templates/UIPanelTemplates.xml), so `f.Bg` is NIL on 3.3.5a and any `if f.Bg` guard silently
+  -- no-ops — it has to be resolved by GLOBAL NAME. It is also the OLD stone
+  -- (!!!ClassicAPI\Texture\FrameGeneral\UI-Background-Rock) at BACKGROUND subLevel -6, so a body
+  -- texture below that draws behind it. Hence both halves of the fix: hide it by name, and sit
+  -- ABOVE -6 so we still win if anything re-shows it. Re-applied on OnShow for the same reason.
+  local rockPath = (NE.tex and NE.tex.localFiles and NE.tex.localFiles[374155]) or 374155
+  local function templateBg()
+    if f.Bg and f.Bg ~= f._neBody then return f.Bg end
+    local n = f.GetName and f:GetName()
+    local t = n and _G[n .. "Bg"]
+    if t and t ~= f._neBody then return t end
+  end
+  local function applyBody()
+    local old = templateBg()
+    if old and old.Hide then old:Hide() end
+    local body = f._neBody
+    if not body then
+      body = f:CreateTexture(nil, "BACKGROUND", nil, -5)
+      body:SetPoint("TOPLEFT",     f, "TOPLEFT",      4, -21)
+      body:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT",  0,   0)
+      f._neBody = body
+    end
+    body:SetTexture(rockPath, "REPEAT", "REPEAT")
+    body:SetHorizTile(true); body:SetVertTile(true)
+    body:SetVertexColor(1, 1, 1)   -- untinted / full brightness (the "modern grey", not a dimmed wash)
+    body:Show()
+  end
+  applyBody()
+  f:HookScript("OnShow", applyBody)
+
   local streaks = f:CreateTexture(nil, "BORDER")
   if NE.tex and NE.tex.SetAtlas then NE.tex.SetAtlas(streaks, "_UI-Frame-TopTileStreaks", false) end
   streaks:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -21)
@@ -371,22 +409,57 @@ local function buildInstanceSelect(f)
     end)
   end
 
-  -- Dungeons / Raids bottom tabs. NE.charpanel.ReskinTab is guarded (not yet ported here) —
-  -- without it the tabs render as stock 3.3.5a CharacterFrame tabs, which is fine.
+  -- Dungeons / Raids bottom tabs — DF metal reskin via the shared NE.tabs walker (core/Tabs.lua),
+  -- the same CharacterFrameTabButtonTemplate + ReskinClassicTab pattern used by the character panel,
+  -- Collections, Social, Spellbook, Talents and Auction House. Art/height/level are driven manually
+  -- (setTabArt below) rather than PanelTemplates_SelectTab, matching those modules.
+  local TAB_H_INACTIVE, TAB_H_ACTIVE = 36, 42
+
   local dunTab = CreateFrame("Button", "NE_EJDungeonsTab", f, "CharacterFrameTabButtonTemplate")
   dunTab:SetText(DUNGEONS or "Dungeons")
-  dunTab:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 11, 2)
   local raidTab = CreateFrame("Button", "NE_EJRaidsTab", f, "CharacterFrameTabButtonTemplate")
   raidTab:SetText(RAIDS or "Raids")
-  raidTab:SetPoint("TOPLEFT", dunTab, "TOPRIGHT", 1, 0)
-  if NE.charpanel and NE.charpanel.ReskinTab then
-    NE.charpanel.ReskinTab("NE_EJDungeonsTab")
-    NE.charpanel.ReskinTab("NE_EJRaidsTab")
-  end
-  if NE.charpanel and NE.charpanel.ResizeTabMinimum then
-    NE.charpanel.ResizeTabMinimum(dunTab); NE.charpanel.ResizeTabMinimum(raidTab)
-  end
   page.dunTab, page.raidTab = dunTab, raidTab
+
+  if NE.tabs and NE.tabs.ReskinClassicTab then
+    pcall(NE.tabs.ReskinClassicTab, "NE_EJDungeonsTab", {})
+    pcall(NE.tabs.ReskinClassicTab, "NE_EJRaidsTab", {})
+  end
+
+  local function setTabArt(tab, selected)
+    if not tab then return end
+    local n = tab:GetName()
+    local function set(suffix, show)
+      local t = _G[n .. suffix]
+      if t then if show then t:Show() else t:Hide() end end
+    end
+    set("Left",  not selected); set("Middle",  not selected); set("Right",  not selected)
+    set("LeftDisabled", selected); set("MiddleDisabled", selected); set("RightDisabled", selected)
+    local hl = tab._neCustomHL
+    if hl then
+      local a = selected and 0 or 0.4
+      if hl.left   and hl.left.SetAlpha   then hl.left:SetAlpha(a)   end
+      if hl.middle and hl.middle.SetAlpha then hl.middle:SetAlpha(a) end
+      if hl.right  and hl.right.SetAlpha  then hl.right:SetAlpha(a)  end
+    end
+  end
+
+  local function sizeTab(tab)
+    if not tab then return end
+    local text = _G[tab:GetName() .. "Text"]
+    local w = 70
+    if text then text:SetWidth(0); w = math.max(70, math.floor((text:GetWidth() or 0) + 24)) end
+    tab:SetWidth(w)
+  end
+
+  local function rechainTabs()
+    dunTab:ClearAllPoints(); dunTab:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 11, 2)
+    raidTab:ClearAllPoints(); raidTab:SetPoint("TOPLEFT", dunTab, "TOPRIGHT", 1, 0)
+  end
+
+  sizeTab(dunTab); dunTab:SetHeight(TAB_H_INACTIVE)
+  sizeTab(raidTab); raidTab:SetHeight(TAB_H_INACTIVE)
+  rechainTabs()
 
   local function selectCat(isRaid)
     -- a bottom tab always returns to the instance grid (retail) — works from a boss page
@@ -407,24 +480,36 @@ local function buildInstanceSelect(f)
       page.ExpansionDropdown:GenerateMenu()
     end
     page.applyInstanceFilter()
-    if PanelTemplates_SelectTab and PanelTemplates_DeselectTab then
-      PanelTemplates_SelectTab(isRaid and raidTab or dunTab)
-      PanelTemplates_DeselectTab(isRaid and dunTab or raidTab)
-    end
-    -- active tab draws above its neighbour
+
+    -- selected -> gold/active art, taller body, raised above its neighbour (DF metal look).
+    setTabArt(dunTab, not isRaid); setTabArt(raidTab, isRaid)
+    dunTab:SetHeight(isRaid and TAB_H_INACTIVE or TAB_H_ACTIVE)
+    raidTab:SetHeight(isRaid and TAB_H_ACTIVE or TAB_H_INACTIVE)
+    sizeTab(dunTab); sizeTab(raidTab)
+    rechainTabs()
     local base = f:GetFrameLevel()
     dunTab:SetFrameLevel(base + (isRaid and 4 or 10))
     raidTab:SetFrameLevel(base + (isRaid and 10 or 4))
-    -- DOWNPORT FIX: PanelTemplates_SelectTab/DeselectTab (called above) already reposition each
-    -- tab's Text on selection — CharacterFrameTabButtonTemplate's native "pushed in" look. A second
-    -- manual SetPoint here stacked on top of that native shift, sinking the active tab's label
-    -- further than intended. Let the native calls own the text position.
+    local dunTxt, raidTxt = _G["NE_EJDungeonsTabText"], _G["NE_EJRaidsTabText"]
+    if dunTxt  then dunTxt:ClearAllPoints();  dunTxt:SetPoint("CENTER", dunTab, "CENTER", 0, isRaid and 0 or -3) end
+    if raidTxt then raidTxt:ClearAllPoints(); raidTxt:SetPoint("CENTER", raidTab, "CENTER", 0, isRaid and -3 or 0) end
     if page.Title then page.Title:SetText(isRaid and (RAIDS or "Raids") or (DUNGEONS or "Dungeons")) end
   end
   dunTab:SetScript("OnClick",  function() if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_ABILITY_PAGE_TURN) end; selectCat(false) end)
   raidTab:SetScript("OnClick", function() if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_ABILITY_PAGE_TURN) end; selectCat(true) end)
   page.SelectCategory = selectCat
   selectCat(false)   -- default to Dungeons
+
+  -- Text measurement is unreliable until the frame has been shown once: this runs during the LAZY
+  -- build, while `f` is still hidden, and the template's Text reports its XML width rather than the
+  -- string width until then. So the build-time sizeTab() overshoots and the tabs visibly shrink on
+  -- the first click (which re-runs sizeTab via selectCat, now that the frame is up). Re-size on
+  -- show — NE.tabs.SizeAndAnchorTabs hooks OnShow for this same reason, but we can't use that
+  -- helper here because the art/height/level are driven manually.
+  f:HookScript("OnShow", function()
+    sizeTab(dunTab); sizeTab(raidTab)
+    rechainTabs()
+  end)
 end
 
 -- Build + toggle
