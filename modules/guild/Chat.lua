@@ -68,15 +68,22 @@ local repaintLog
 -- picks up real class colours instead of staying stuck on the fallback forever.
 local function refreshRosterClasses()
   if not GetNumGuildMembers or not GetGuildRosterInfo then return end
-  -- GetGuildRosterInfo only enumerates OFFLINE members while GetGuildRosterShowOffline() is true
-  -- (the same flag behind the Roster tab's own "Show Offline" checkbox, Roster.lua:264) — owner
-  -- report 2026-07-18: someone offline at login stayed the fallback colour forever, even though
-  -- the roster "knows" their class once that checkbox is ticked. Flip it on for this synchronous
-  -- scan (no server round-trip involved, just a client-side filter on already-cached data) and
-  -- restore whatever the Roster tab had it set to, so we don't silently change that checkbox's
-  -- visible state out from under the user.
-  local prevShowOffline = GetGuildRosterShowOffline and GetGuildRosterShowOffline()
-  if SetGuildRosterShowOffline and not prevShowOffline then SetGuildRosterShowOffline(true) end
+  -- Reads directly, with NO SetGuildRosterShowOffline call — matching how Blizzard's own default
+  -- guild UI works: that flag is set ONLY by an explicit user action (the Roster tab's checkbox,
+  -- Roster.lua:265), never automatically from inside an event handler.
+  --
+  -- This function used to force the flag on before scanning (to also pick up offline members'
+  -- classes) and restore it after. That is EXACTLY what caused a live crash: SetGuildRosterShowOffline
+  -- synchronously fires GUILD_ROSTER_UPDATE on this client, this function is registered on that same
+  -- event, so it recursed into itself on both the flip-on and the flip-back — a C stack overflow. It
+  -- also spammed every guildmate who had the Roster tab open, because that same synchronous refire
+  -- fans out into every OTHER addon's GUILD_ROSTER_UPDATE handler too, including the base DragonUI
+  -- addon's unthrottled version-broadcast system (modules/versioncheck.lua).
+  --
+  -- The tradeoff from removing the workaround: an offline guildmate's class colour won't populate
+  -- until the Roster tab's checkbox has actually been ticked at least once this session (their name
+  -- falls back to the "unknown class" colour until then). That's the same limitation Blizzard's own
+  -- UI has, not a regression — a stability bug that spams the whole guild is a far worse trade.
   local total = GetNumGuildMembers() or 0
   for i = 1, total do
     local name, _, _, _, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)
@@ -86,7 +93,6 @@ local function refreshRosterClasses()
       nameClass[name:match("^([^%-]+)") or name] = classFile
     end
   end
-  if SetGuildRosterShowOffline and not prevShowOffline then SetGuildRosterShowOffline(false) end
   local panel = G.frame and G.frame.ChatFrame
   if total > 0 and panel and panel._needsRecolor then
     panel._needsRecolor = nil

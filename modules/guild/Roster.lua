@@ -400,6 +400,18 @@ function G.SetupRoster(f)
   buildMemberDetail(f)
 end
 
+-- SHOW-OFFLINE FILTERING: read the native APIs directly, exactly as Blizzard's own default guild UI
+-- does — no client-side re-filtering, no force-toggling GetGuildRosterShowOffline from in here.
+--
+-- An earlier version of this file tried to compensate for the checkbox appearing to do nothing by
+-- forcing SetGuildRosterShowOffline(true) before every scan and restoring it after. That call
+-- synchronously fires GUILD_ROSTER_UPDATE on this client — proven by a live crash (C stack overflow,
+-- this function recursing into itself via that very event) — and, worse, that refire fans out into
+-- EVERY OTHER addon's handler for the same event, including the base DragonUI addon's version-
+-- broadcast system, which sent an unthrottled guild-chat spam storm to every guildmate who had the
+-- Roster tab open. Blizzard's default UI never does this: it sets the flag ONLY from the checkbox's
+-- own OnClick (see below), then trusts GetNumGuildMembers()/GetGuildRosterInfo() to already reflect
+-- it. Matching that removes the entire class of bug rather than working around it.
 function G.RefreshRoster()
   local f = G.frame
   local panel = f and f.RosterFrame
@@ -469,7 +481,10 @@ end
 -- crest badge.
 local function recountOnline()
   if not GetNumGuildMembers then return end
-  local total = GetNumGuildMembers() or 0
+  -- Explicit `true`: this client's API dump documents an optional includeOffline arg, so ask for the
+  -- FULL total explicitly rather than depending on whatever GetGuildRosterShowOffline() happens to
+  -- currently be — this is a pure read, no flag ever touched here.
+  local total = GetNumGuildMembers(true) or GetNumGuildMembers() or 0
   local online = 0
   for i = 1, total do
     local _, _, _, _, _, _, _, _, isOnline = GetGuildRosterInfo(i)
