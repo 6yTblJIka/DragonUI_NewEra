@@ -468,6 +468,34 @@ function NE.scrollbar.BuildCustom(scrollFrame, opts)
     local newParent = scrollFrame:GetParent() or scrollFrame
     if upBtn then upBtn:SetParent(newParent) end
     if downBtn then downBtn:SetParent(newParent) end
+
+    -- ...but reparenting BREAKS their click handler, so we have to replace it. FauxScrollFrameTemplate
+    -- instantiates the arrows with an inline OnClick (UIPanelTemplates.xml) hardcoded to its own
+    -- parent, which it assumes IS the slider:
+    --     local parent = self:GetParent();
+    --     parent:SetValue(parent:GetValue() - (parent:GetHeight() / 2));
+    -- Once the button hangs off the scroll frame's parent instead, GetValue is nil there and every
+    -- arrow click threw "attempt to call method 'GetValue' (a nil value)" (reported against the
+    -- character Skills list, but it affected every list built by this function). Drive the slider we
+    -- already captured above instead of whatever the button happens to be parented to.
+    --
+    -- Step by ONE row rather than stock's half-a-bar-height: FauxScrollFrame_Update calls
+    -- slider:SetValueStep(valueStep) with the caller's row height, so GetValueStep() is exactly one
+    -- row -- which also matches what the callers' own OnMouseWheel handlers scroll by.
+    local function arrowClick(dir)
+      return function()
+        if not (slider and slider.GetValue) then return end
+        local mn, mx = slider:GetMinMaxValues()
+        local step = slider.GetValueStep and slider:GetValueStep() or nil
+        if not step or step <= 0 then step = (slider:GetHeight() or 32) / 2 end
+        local v = slider:GetValue() + dir * step
+        if v < mn then v = mn elseif v > mx then v = mx end
+        slider:SetValue(v)
+        if PlaySound then pcall(PlaySound, "UChatScrollButton") end
+      end
+    end
+    if upBtn   then upBtn:SetScript("OnClick",   arrowClick(-1)) end
+    if downBtn then downBtn:SetScript("OnClick", arrowClick(1))  end
   end
 
   -- Hide the stock scrollbar (do NOT remove — Faux still drives the slider value). If arrows are

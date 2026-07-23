@@ -10,6 +10,13 @@ local AH = NE.ah
 local MODULE = "AuctionHouse"
 local FRAME_NAME = "NE_AuctionHouseFrame"
 
+-- The window is called "Auction House" whichever built-in tab is showing, matching retail (and the
+-- physical thing you walked up to) rather than naming the tab twice -- the tab strip already says
+-- Buy / Sell / Auctions. 3.3.5a has no AUCTION_HOUSE global; BUTTON_LAG_AUCTIONHOUSE is the only
+-- GlobalStrings entry whose value is exactly "Auction House", and it IS localized per client, so
+-- it beats hardcoding English. Literal fallback in case a locale ever drops it.
+local AH_WINDOW_TITLE = BUTTON_LAG_AUCTIONHOUSE or "Auction House"
+
 -- Ctrl-click dress-up preview. In WoW 3.3.5a the dressup function is DressUpItemLink(link);
 -- DressUpLink is the retail/modern name and does not exist in this client. The legacy
 -- AuctionFrame is kept alive (alpha 0) to hold the AH session. In environments where
@@ -23,6 +30,40 @@ function AH.DressUpItem(link)
   if side then saved = side.parentFrame; side.parentFrame = nil end
   DressUpItemLink(link)
   if side then side.parentFrame = saved end
+end
+
+-- Shared modified-click router for every item row in this window: SHIFT links the item into an
+-- open chat edit box, CTRL opens the dressing room. Returns true when it consumed the click, so
+-- callers can fall through to their normal (plain-click) behaviour otherwise.
+--
+-- Deliberately NOT a plain HandleModifiedItemClick(link) call, even though that is the stock
+-- router (ItemButtonTemplate.lua) and has exactly this CHATLINK-then-DRESSUP precedence: its
+-- DRESSUP branch goes straight to DressUpItemLink and would bypass the SideDressUpFrame workaround
+-- above. Same order, our dress-up path.
+function AH.HandleItemClick(link)
+  if not link then return false end
+
+  if IsModifiedClick and IsModifiedClick("CHATLINK") and type(ChatEdit_InsertLink) == "function" then
+    -- Suppress this addon's OWN ChatEdit_InsertLink hook (Browse.lua) for the duration of the
+    -- call. That hook turns a shift-click into an auction search whenever no chat edit box takes
+    -- the link -- which is what we want when shift-clicking an item in the BAGS while the window
+    -- is open (issue #17), but not for a row inside the results list, where it would throw away
+    -- the results being looked at and re-search the item just clicked. hooksecurefunc post-hooks
+    -- run synchronously inside the call, so a plain flag around it is enough; no timer needed.
+    AH._suppressLinkSearch = true
+    local ok, inserted = pcall(ChatEdit_InsertLink, link)
+    AH._suppressLinkSearch = false
+    if ok and inserted then return true end
+    -- No chat box took it: fall through, so shift-click behaves like a plain click rather than
+    -- silently doing nothing.
+  end
+
+  if IsModifiedClick and IsModifiedClick("DRESSUP") then
+    AH.DressUpItem(link)
+    return true
+  end
+
+  return false
 end
 
 local BASE_MODES = {
@@ -206,8 +247,14 @@ local function buildChrome(f)
   end
   f.NineSlice = ns
 
-  local title = AUCTION_HOUSE_BROWSE_TITLE or AUCTION_HOUSE_BUY_TAB or "Browse Auctions"
-  if NE.panelchrome and NE.panelchrome.SetTitle then
+  -- EnsureTitle, not SetTitle: this window builds its own chrome and never created a title
+  -- FontString, and SetTitle silently returns when it can't find one -- which is why the title bar
+  -- rendered empty. EnsureTitle makes the band + FontString (as f.Title), so the setTitleForMode
+  -- calls below find it from then on.
+  local title = AH_WINDOW_TITLE
+  if NE.panelchrome and NE.panelchrome.EnsureTitle then
+    NE.panelchrome.EnsureTitle(f, title)
+  elseif NE.panelchrome and NE.panelchrome.SetTitle then
     NE.panelchrome.SetTitle(f, title)
   elseif f.TitleText and f.TitleText.SetText then
     f.TitleText:SetText(title)
@@ -247,14 +294,10 @@ local function setTitleForMode(mode)
     else
       t = (def and def.text) or "Auctionator"
     end
-  elseif mode == "Buy" then
-    t = AUCTION_HOUSE_BROWSE_TITLE or "Browse Auctions"
-  elseif mode == "Sell" then
-    t = AUCTION_HOUSE_FRAME_TITLE_SELL or AUCTION_HOUSE_SELL_TAB or "Post Auctions"
-  elseif mode == "Auctions" then
-    t = AUCTION_HOUSE_FRAME_TITLE_AUCTIONS or AUCTION_HOUSE_AUCTIONS_SUB_TAB or "Auctions"
   else
-    t = AUCTION_HOUSE_BROWSE_TITLE or "Browse Auctions"
+    -- Every built-in tab (Buy / Sell / Auctions) keeps the window's own name; the tab strip
+    -- already says which one is active. Only an embedded external provider overrides it, above.
+    t = AH_WINDOW_TITLE
   end
   if NE.panelchrome and NE.panelchrome.SetTitle then
     NE.panelchrome.SetTitle(f, t)

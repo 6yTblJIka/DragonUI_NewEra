@@ -135,6 +135,17 @@ local function ensureTitle(f, text)
   return fs
 end
 
+-- Public wrapper over ensureTitle: give the frame a standard title band + FontString if it has no
+-- title of its own yet, then style it. PC.SetTitle deliberately no-ops when it can't find a
+-- FontString (frame.TitleContainer.TitleText / frame.Title / one passed in), which is an easy trap
+-- to fall into -- a window that builds its own chrome and never made one renders a blank title bar
+-- with no error to explain it. Call this once at chrome-build time; SetTitle(f, text) works
+-- normally afterwards, so per-tab title updates need no changes.
+function PC.EnsureTitle(f, text)
+  if not f then return end
+  return ensureTitle(f, text)
+end
+
 local function ensurePortrait(f)
   if f.portrait then return f.portrait end
   if f.PortraitTexture then return f.PortraitTexture end

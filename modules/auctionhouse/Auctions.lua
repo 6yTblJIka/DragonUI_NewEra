@@ -570,10 +570,10 @@ function AH.BuildAuctionsPane(parent)
     row.Time:SetJustifyH("RIGHT")
 
     row:SetScript("OnClick", function(self)
-      if IsModifiedClick and IsModifiedClick("DRESSUP") and self._index then
+      -- SHIFT links the item in chat, CTRL dresses it up; otherwise select the row.
+      if self._index then
         local link = GetAuctionItemLink and GetAuctionItemLink(activeListType(), self._index)
-        if link then AH.DressUpItem(link) end
-        return
+        if link and AH.HandleItemClick(link) then return end
       end
       if selectedSub ~= 1 then return end
       selectedOwnerIndex = self._index

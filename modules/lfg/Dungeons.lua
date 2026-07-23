@@ -569,7 +569,19 @@ local function buildPane(host)
     FauxScrollFrame_OnVerticalScroll(self, offset, ROW_H, updateSpecificList)
   end)
   scroll.ScrollBar = _G[SCROLL_NAME .. "ScrollBar"]   -- 3.3.5a template doesn't set the parentKey
-  if NE.scrollbar and NE.scrollbar.Reskin then pcall(NE.scrollbar.Reskin, scroll) end
+  -- Hand-built minimal scrollbar (same as the character window's lists). NE.scrollbar.Reskin's
+  -- stock-slider re-skin leaves the bar untextured/invisible on 3.3.5a (its atlas sheets aren't
+  -- shipped); BuildCustom draws a visible bar. See modules/character/Reputation.lua.
+  if NE.scrollbar and NE.scrollbar.BuildCustom then pcall(NE.scrollbar.BuildCustom, scroll, { x = -8, alwaysShow = true }) end
+  scroll:EnableMouseWheel(true)
+  scroll:SetScript("OnMouseWheel", function(self, delta)
+    local sb = self.ScrollBar
+    if not sb then return end
+    local mn, mx = sb:GetMinMaxValues()
+    local v = sb:GetValue() - delta * ROW_H
+    if v < mn then v = mn elseif v > mx then v = mx end
+    sb:SetValue(v)
+  end)
   pane.scroll = scroll
 
   pane.rows = {}
@@ -588,15 +600,20 @@ local function buildPane(host)
   rp.title:SetPoint("TOPLEFT", rp, "TOPLEFT", 10, -10)
   rp.description = rp:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
   rp.description:SetPoint("TOPLEFT", rp.title, "BOTTOMLEFT", 0, -6)
-  rp.description:SetPoint("RIGHT", rp, "RIGHT", -10, 0)
   rp.description:SetJustifyH("LEFT")
+  -- Explicit width (not a RIGHT anchor) forces a concrete wrap boundary immediately, so the text
+  -- flows to new lines instead of truncating with "...". Window is fixed-size, so a constant is
+  -- safe: right pane ≈ 331px wide, less the title's 10px left inset and a 10px right margin.
+  rp.description:SetWidth(300)
+  if rp.description.SetWordWrap then rp.description:SetWordWrap(true) end
   rp.rewardsLabel = rp:CreateFontString(nil, "ARTWORK", "GameFontNormal")
   rp.rewardsLabel:SetPoint("TOPLEFT", rp.description, "BOTTOMLEFT", 0, -12)
   rp.rewardsLabel:SetText(REWARDS or "Rewards")
   rp.rewardsDescription = rp:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
   rp.rewardsDescription:SetPoint("TOPLEFT", rp.rewardsLabel, "BOTTOMLEFT", 0, -4)
-  rp.rewardsDescription:SetPoint("RIGHT", rp, "RIGHT", -10, 0)
   rp.rewardsDescription:SetJustifyH("LEFT")
+  rp.rewardsDescription:SetWidth(300)
+  if rp.rewardsDescription.SetWordWrap then rp.rewardsDescription:SetWordWrap(true) end
   rp.moneyLine = rp:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
   rp.xpLine = rp:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
   pane.randomPanel = rp

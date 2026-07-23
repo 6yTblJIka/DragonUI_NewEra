@@ -1504,6 +1504,54 @@ function C.UpdateReagents(r)
 end
 
 -- ============================================================================
+-- C.LiveNumAvailable(r) — how many of r can be crafted RIGHT NOW.
+--
+-- ISSUE #30 ("Professions don't live update"): r.numAvailable is a snapshot taken when the
+-- recipe list was last built, and the client's own cached count (GetTradeSkillInfo /
+-- GetCraftInfo) does not necessarily refresh in the same frame the reagents arrive — so
+-- picking mats out of the mailbox left the Create button disabled until the recipe was
+-- re-selected. The per-reagent have/need counts ARE read live, so derive a count from them
+-- too and take whichever source says we can make more. Taking the max is deliberate: it can
+-- only ever ENABLE a button that should be enabled, never disable one that should be usable.
+-- ============================================================================
+function C.LiveNumAvailable(r)
+  if not r then return 0 end
+
+  local cached = 0
+  if r.isCraft and GetCraftInfo then
+    cached = select(4, GetCraftInfo(r.index)) or 0
+  elseif GetTradeSkillInfo then
+    cached = select(3, GetTradeSkillInfo(r.index)) or 0
+  end
+
+  local numReagents = 0
+  if r.isCraft and GetCraftNumReagents then
+    numReagents = GetCraftNumReagents(r.index) or 0
+  elseif GetTradeSkillNumReagents then
+    numReagents = GetTradeSkillNumReagents(r.index) or 0
+  end
+  if numReagents == 0 then return cached end
+
+  local computed
+  for i = 1, numReagents do
+    local rName, rTex, need, have
+    if r.isCraft and GetCraftReagentInfo then
+      rName, rTex, need, have = GetCraftReagentInfo(r.index, i)
+    elseif GetTradeSkillReagentInfo then
+      rName, rTex, need, have = GetTradeSkillReagentInfo(r.index, i)
+    end
+    -- Reagent not cached yet → we can't trust our own math this pass; defer to the client.
+    if not rName or rName == "" then return cached end
+    need = (need and need > 0) and need or 1
+    local n = math.floor((have or 0) / need)
+    if not computed or n < computed then computed = n end
+    if computed == 0 then break end
+  end
+
+  return math.max(cached, computed or 0)
+end
+
+-- ============================================================================
 -- C.UpdateCreateButtons(r) — enable/disable Create controls based on selection.
 -- ============================================================================
 function C.UpdateCreateButtons(r)
@@ -1520,6 +1568,13 @@ function C.UpdateCreateButtons(r)
     if f.CreateAllButton then
       local n = r.numAvailable or 0
       f.CreateAllButton:SetText((_G.TRADESKILL_CREATE_ALL or "Create All") .. (n > 0 and (" [%d]"):format(n) or ""))
+    end
+    -- Keep the quantity spinner inside the (now live) craftable range — the [+] button clamps to
+    -- numAvailable, so a count typed/left over from a larger stock would otherwise stick.
+    local qty = f.CreateMultipleInputBox
+    if qty and qty.GetValue and not qty:HasFocus() then
+      local v = qty:GetValue()
+      if v > r.numAvailable then qty:SetText(r.numAvailable) end
     end
   else
     if f.CreateButton    then f.CreateButton:Disable()    end

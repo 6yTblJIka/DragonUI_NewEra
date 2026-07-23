@@ -176,6 +176,42 @@ function NE.FrameUtil.EscClose(frame)
   tinsert(UISpecialFrames, name)
 end
 
+-- Wire an item tooltip that keeps refreshing while the mouse sits still, so pressing SHIFT
+-- mid-hover pops the comparison tooltip (and releasing it drops the comparison again).
+--
+-- Stock GameTooltip_OnUpdate (GameTooltip.lua) does this for anyone who opts in:
+--     local owner = self:GetOwner();
+--     if ( owner and owner.UpdateTooltip ) then owner:UpdateTooltip(); end
+-- ...called every TOOLTIP_UPDATE_TIME (0.2s) while the tooltip is up. Bag buttons opt in at the
+-- end of their own OnEnter (ContainerFrame.lua: `self.UpdateTooltip =
+-- ContainerFrameItemButton_OnEnter`), which is the entire reason shift-compare works there.
+--
+-- A frame that just sets a tooltip in OnEnter and stops has no such refresh, so its comparison
+-- only ever appears if SHIFT happened to be held already when the mouse arrived. Route those
+-- through here instead of hand-rolling a modifier watcher: this is the stock contract, it costs
+-- nothing when no tooltip is showing, and it picks up ALT/CTRL-driven tooltip content for free.
+--
+-- `enter` is the existing OnEnter body. `leave` is optional; the default hides the tooltip.
+function NE.FrameUtil.WireLiveTooltip(frame, enter, leave)
+  if not (frame and enter) then return end
+  local function onEnter(self, ...)
+    enter(self, ...)
+    -- Re-armed on every pass: the refresh calls this same function, and an OnLeave in between
+    -- clears it, so the frame is only ever registered while genuinely hovered.
+    self.UpdateTooltip = onEnter
+  end
+  frame:SetScript("OnEnter", onEnter)
+  frame:SetScript("OnLeave", function(self, ...)
+    self.UpdateTooltip = nil
+    if leave then
+      leave(self, ...)
+    elseif GameTooltip then
+      GameTooltip:Hide()
+    end
+  end)
+  return onEnter
+end
+
 -- Keep a frame on screen after its SIZE changes.
 function NE.FrameUtil.KeepOnScreen(frame)
   if not (frame and frame.SetClampedToScreen) then return end

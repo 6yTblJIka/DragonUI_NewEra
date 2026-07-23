@@ -7,7 +7,8 @@
 --   GetAuctionDeposit(duration, minBid, buyoutPrice, stackSize, numStacks)     -- deposit cost
 --   PostAuction(minBid, buyoutPrice, duration, stackSize, numStacks)           -- create the auction
 --   QueryAuctionItems(name, minLevel, maxLevel, invTypeIndex, classIndex, subClassIndex, page,
---                      isUsable, minQuality, getAll)                          -- market search
+--                      isUsable, quality, getAll)                             -- market search
+--                      `quality` is an EXACT match, not a minimum; -1 = any rarity (0 = Poor).
 --   GetAuctionItemInfo("list", i) -> name,tex,count,quality,canUse,level,minBid,minIncrement,
 --                      buyoutPrice,bidAmount,highBidder,owner,saleStatus      (13 values)
 --   Events: NEW_AUCTION_UPDATE (sell slot changed), AUCTION_ITEM_LIST_UPDATE (list query done).
@@ -297,7 +298,8 @@ function AH.BuildSellPane(parent)
       ClickAuctionSellItemButton()
     end
   end
-  local function slotEnter()
+  local slotEnter
+  slotEnter = function()
     GameTooltip:SetOwner(slot, "ANCHOR_RIGHT")
     if GetAuctionSellItemInfo and GetAuctionSellItemInfo() and GameTooltip.SetAuctionSellItem then
       GameTooltip:SetAuctionSellItem()
@@ -305,6 +307,16 @@ function AH.BuildSellPane(parent)
       GameTooltip:SetText(AUCTION_ITEM_TEXT or "Auction Item", 1, 1, 1)
     end
     GameTooltip:Show()
+    -- Keep refreshing while hovered so pressing SHIFT mid-hover raises the comparison tooltip
+    -- (NE.FrameUtil.WireLiveTooltip documents the stock UpdateTooltip contract). Registered on
+    -- `slot` rather than on whichever button was entered: the tooltip is deliberately anchored to
+    -- the icon even when the mouse is over the wider `disp` row, so `slot` is always the OWNER --
+    -- and GameTooltip_OnUpdate only ever calls UpdateTooltip on the owner.
+    slot.UpdateTooltip = slotEnter
+  end
+  local function slotLeave()
+    slot.UpdateTooltip = nil
+    GameTooltip:Hide()
   end
   for _, b in ipairs({ disp, slot }) do
     b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -313,7 +325,7 @@ function AH.BuildSellPane(parent)
       if ClickAuctionSellItemButton then ClickAuctionSellItemButton() end
     end)
     b:SetScript("OnEnter", slotEnter)
-    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    b:SetScript("OnLeave", slotLeave)
   end
 
   ----------------------------------------------------------------------
@@ -669,6 +681,21 @@ function AH.BuildSellPane(parent)
       return
     end
     if name == SF.marketName and not force then return end
+
+    -- ISSUE #31: the Buy tab's scan owns the shared "list" query slot while it is paging. Firing
+    -- this lookup into the middle of it steals the throttle slot, so the scan burns its retries and
+    -- aborts with a partial aggregate. Wait for it -- bounded, so a wedged scan can't stall this
+    -- forever. Retry with force=true or the name-unchanged guard above would swallow it.
+    if AH.IsBrowseScanning and AH.IsBrowseScanning() then
+      SF._marketWaits = (SF._marketWaits or 0) + 1
+      if SF._marketWaits <= 20 and C_Timer and C_Timer.After then
+        emptyText:SetText(SEARCHING or "Searching...")
+        C_Timer.After(0.25, function() queryMarket(true) end)
+        return
+      end
+    end
+    SF._marketWaits = 0
+
     SF.marketName = name
     if not (CanSendAuctionQuery and CanSendAuctionQuery("list")) then
       emptyText:SetText(AUCTION_HOUSE_THROTTLED or "Auction query is throttled. Try again in a moment.")
@@ -677,7 +704,11 @@ function AH.BuildSellPane(parent)
     emptyText:SetText(SEARCHING or "Searching...")
     SF.marketRows = {}
     refreshMarketRows()
-    pcall(QueryAuctionItems, name, 0, 0, 0, 0, 0, 0, false, 0, false)
+    -- ISSUE #31: -1 ("any rarity"), not 0 -- QueryAuctionItems' quality argument is an exact match
+    -- and 0 means "exactly Poor", so this market lookup previously came back empty for every item
+    -- that wasn't grey. Mirrors AH.ANY_QUALITY in Browse.lua.
+    if AH.ClaimListQuery then AH.ClaimListQuery("sellmarket") end
+    pcall(QueryAuctionItems, name, 0, 0, 0, 0, 0, 0, false, -1, false)
   end
 
   refreshBtn:SetScript("OnClick", function()
@@ -793,6 +824,10 @@ function AH.BuildSellPane(parent)
     if event == "NEW_AUCTION_UPDATE" then
       updateItem()
     elseif event == "AUCTION_ITEM_LIST_UPDATE" then
+      -- ISSUE #31: only read the shared "list" slot when OUR market lookup is what filled it.
+      -- This used to fire on every update, so a Buy-tab scan page or an Auctionator search landed
+      -- in this tab's market table as if it were price data for the slotted item.
+      if AH.OwnsListQuery and not AH.OwnsListQuery("sellmarket") then return end
       SF.marketRows = readMarket()
       if #SF.marketRows == 0 then
         emptyText:SetText(BROWSE_NO_RESULTS_TEXT or "No auctions found for this item.")

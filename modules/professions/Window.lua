@@ -559,18 +559,40 @@ function C.Toggle()
   end
 end
 
-function C.Refresh()
-  guard("SetProfession",  function() if C.SetProfession  then C.SetProfession()  end end)
-  guard("RefreshRecipes", function() if C.RefreshRecipes then C.RefreshRecipes() end end)
-  guard("UpdateRank",     function() if C.UpdateRank     then C.UpdateRank()     end end)
+-- ISSUE #30: C._selected is the recipe table captured when the row was clicked, but every
+-- C.RefreshRecipes() builds BRAND NEW recipe tables, so the selection survives as an orphan
+-- holding an index that was only ever valid for the list it came from. Re-opening a profession
+-- re-collapses the native headers, which can shift every trade-skill index — so reading
+-- availability off the stale index could silently describe a DIFFERENT recipe. Re-point the
+-- selection at the live entry of the same name (copying fields in place, so the identity the
+-- reagent-retry token and OutputIcon._recipe hold on to stays valid).
+local function resyncSelectedFromList()
+  local r = C._selected
+  if not r or not C.flatList then return end
+  for _, e in ipairs(C.flatList) do
+    local live = (e.kind == "recipe") and e.r or nil
+    if live and live.name == r.name and (live.isCraft and true or false) == (r.isCraft and true or false) then
+      if live ~= r then
+        r.index        = live.index
+        r.difficulty   = live.difficulty
+        r.numSkillUps  = live.numSkillUps
+        r.numAvailable = live.numAvailable
+      end
+      return
+    end
+  end
 end
 
 local function refreshSelectedRecipeAvailability()
   local r = C._selected
   if not r then return end
 
+  resyncSelectedFromList()
+
   local numAvailable
-  if r.isCraft and GetCraftInfo then
+  if C.LiveNumAvailable then
+    numAvailable = C.LiveNumAvailable(r)
+  elseif r.isCraft and GetCraftInfo then
     numAvailable = select(4, GetCraftInfo(r.index))
   elseif GetTradeSkillInfo then
     numAvailable = select(3, GetTradeSkillInfo(r.index))
@@ -582,6 +604,35 @@ local function refreshSelectedRecipeAvailability()
 
   if C.UpdateReagents then C.UpdateReagents(r) end
   if C.UpdateCreateButtons then C.UpdateCreateButtons(r) end
+end
+
+-- BAG_UPDATE fires the instant the item lands, which can be BEFORE the client has recomputed
+-- its cached craftable counts (it follows up with TRADE_SKILL_UPDATE / CRAFT_UPDATE). Run the
+-- resync once immediately and once again shortly after, debounced by a token so a burst of bag
+-- events — looting a stack, emptying a mailbox — collapses into a single trailing pass.
+local function scheduleAvailabilityRefresh()
+  if not (C_Timer and C_Timer.After) then return end
+  C._availToken = (C._availToken or 0) + 1
+  local token = C._availToken
+  C_Timer.After(0.15, function()
+    if token ~= C._availToken then return end
+    if not (C.frame and C.frame:IsShown()) then return end
+    guard("RefreshRecipes.deferred", function()
+      if C.RefreshRecipes then C.RefreshRecipes() end
+      refreshSelectedRecipeAvailability()
+    end)
+  end)
+end
+
+function C.Refresh()
+  guard("SetProfession",  function() if C.SetProfession  then C.SetProfession()  end end)
+  guard("RefreshRecipes", function() if C.RefreshRecipes then C.RefreshRecipes() end end)
+  guard("UpdateRank",     function() if C.UpdateRank     then C.UpdateRank()     end end)
+  -- ISSUE #30: nothing re-derived the SELECTED recipe's craftable count, so the Create button
+  -- kept whatever state it had at selection time. Every refresh path (OnShow, post-open retry
+  -- loop, TRADE_SKILL_UPDATE, bag changes) funnels through here, so resync it here too — that
+  -- is what makes closing and re-opening the window pick up newly-acquired reagents.
+  guard("SelectedAvailability", refreshSelectedRecipeAvailability)
 end
 
 -- First-open on 3.3.5a can race the skill-line API population, leaving the header portrait/title
@@ -670,6 +721,9 @@ eventFrame:RegisterEvent("CRAFT_SHOW")
 eventFrame:RegisterEvent("CRAFT_CLOSE")
 eventFrame:RegisterEvent("CRAFT_UPDATE")
 eventFrame:RegisterEvent("BAG_UPDATE")   -- reagent counts change → refresh schematic
+-- Mail/trade/loot can land reagents without a clean BAG_UPDATE on every client build; this is a
+-- cheap second signal for the same resync (filtered to "player", debounced downstream). Issue #30.
+eventFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
   if event == "PLAYER_LOGIN" then
     guard("loadOpts", loadOpts)
@@ -755,6 +809,8 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 
   elseif event == "TRADE_SKILL_UPDATE" or event == "CRAFT_UPDATE" then
     if isModuleEnabled() and C.frame and C.frame:IsShown() then
+      -- This is the event that fires once the client HAS recomputed craftable counts, so it is
+      -- the authoritative moment to resync the Create buttons. C.Refresh does that (issue #30).
       guard("Refresh.update", C.Refresh)
       -- New item/skill data arrived — re-fill the open recipe's reagents/details so any that were
       -- still uncached (missing) now resolve.
@@ -766,7 +822,9 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
       end)
     end
 
-  elseif event == "BAG_UPDATE" then
+  elseif event == "BAG_UPDATE" or event == "UNIT_INVENTORY_CHANGED" then
+    local arg1 = ...
+    if event == "UNIT_INVENTORY_CHANGED" and arg1 ~= "player" then return end
     if isModuleEnabled() and C.frame and C.frame:IsShown() then
       -- Bag changes can alter the live craftable count for every recipe, so refresh the list and
       -- then resync the selected row's controls against the updated API values.
@@ -774,6 +832,8 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         if C.RefreshRecipes then C.RefreshRecipes() end
         refreshSelectedRecipeAvailability()
       end)
+      -- ...and again a beat later, in case this event beat the client's own recount to the punch.
+      scheduleAvailabilityRefresh()
     end
   end
 end)
