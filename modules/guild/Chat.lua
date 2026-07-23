@@ -66,24 +66,12 @@ local repaintLog
 -- class" colour for everyone since nameClass is still empty. G.SetupChat flags
 -- panel._needsRecolor in that case; once we actually get roster data, repaint the log so history
 -- picks up real class colours instead of staying stuck on the fallback forever.
-local function refreshRosterClasses()
-  if not GetNumGuildMembers or not GetGuildRosterInfo then return end
-  -- Reads directly, with NO SetGuildRosterShowOffline call — matching how Blizzard's own default
-  -- guild UI works: that flag is set ONLY by an explicit user action (the Roster tab's checkbox,
-  -- Roster.lua:265), never automatically from inside an event handler.
-  --
-  -- This function used to force the flag on before scanning (to also pick up offline members'
-  -- classes) and restore it after. That is EXACTLY what caused a live crash: SetGuildRosterShowOffline
-  -- synchronously fires GUILD_ROSTER_UPDATE on this client, this function is registered on that same
-  -- event, so it recursed into itself on both the flip-on and the flip-back — a C stack overflow. It
-  -- also spammed every guildmate who had the Roster tab open, because that same synchronous refire
-  -- fans out into every OTHER addon's GUILD_ROSTER_UPDATE handler too, including the base DragonUI
-  -- addon's unthrottled version-broadcast system (modules/versioncheck.lua).
-  --
-  -- The tradeoff from removing the workaround: an offline guildmate's class colour won't populate
-  -- until the Roster tab's checkbox has actually been ticked at least once this session (their name
-  -- falls back to the "unknown class" colour until then). That's the same limitation Blizzard's own
-  -- UI has, not a regression — a stability bug that spams the whole guild is a far worse trade.
+-- Populates nameClass from GetGuildRosterInfo() for every member GetNumGuildMembers() currently
+-- reports; returns the total scanned. Whether OFFLINE members come back with real data depends
+-- entirely on GetGuildRosterShowOffline()'s CURRENT value at call time — this function never
+-- touches that flag itself. The two callers below handle that in two deliberately different ways.
+local function scanRosterClasses()
+  if not GetNumGuildMembers or not GetGuildRosterInfo then return 0 end
   local total = GetNumGuildMembers() or 0
   for i = 1, total do
     local name, _, _, _, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)
@@ -93,11 +81,57 @@ local function refreshRosterClasses()
       nameClass[name:match("^([^%-]+)") or name] = classFile
     end
   end
+  return total
+end
+
+-- Reads directly, with NO SetGuildRosterShowOffline call — matching how Blizzard's own default
+-- guild UI works: that flag is set only by an explicit user action (the Roster tab's checkbox,
+-- Roster.lua:265) or by scanOfflineClassesOnce below, never automatically from an event handler.
+-- This is what makes it safe to run on every GUILD_ROSTER_UPDATE (it's registered on that event
+-- below): it can't recurse, because it never writes the flag that would re-trigger it.
+--
+-- An earlier version DID force the flag here, which caused a live crash (C stack overflow — this
+-- function recursing into itself via the very event its own flag-write re-fired) and spammed every
+-- guildmate who had the Roster tab open, because that re-fire also fans out into every OTHER
+-- addon's GUILD_ROSTER_UPDATE handler, including the base DragonUI addon's unthrottled
+-- version-broadcast system (modules/versioncheck.lua).
+local function refreshRosterClasses()
+  local total = scanRosterClasses()
   local panel = G.frame and G.frame.ChatFrame
   if total > 0 and panel and panel._needsRecolor then
     panel._needsRecolor = nil
     if repaintLog then repaintLog() end
   end
+end
+
+-- ONE-SHOT: brings OFFLINE guildmates' class colours back for chat history — something
+-- refreshRosterClasses alone can't do, since GetGuildRosterInfo only returns complete data for an
+-- offline member's slot while GetGuildRosterShowOffline() is true. Runs exactly once per session,
+-- and — critically — from a plain timer callback that is NOT itself registered on
+-- GUILD_ROSTER_UPDATE (see where this is scheduled, PLAYER_ENTERING_WORLD below), so even though
+-- SetGuildRosterShowOffline synchronously re-fires that event on this client, nothing here can
+-- recurse: the re-fire just re-enters refreshRosterClasses, which is passive and never writes the
+-- flag.
+--
+-- STILL NOT SIDE-EFFECT-FREE, BY ACCEPTED DESIGN: the base DragonUI addon's versioncheck.lua also
+-- listens for GUILD_ROSTER_UPDATE and sends an unthrottled guild-chat message on every firing.
+-- Each SetGuildRosterShowOffline call below re-fires the event once, so this puts one or two
+-- "DUI_Version" lines in guild chat, once, at login — an accepted, bounded tradeoff for getting
+-- offline colours back automatically. DragonUI itself is out of scope for this addon to modify.
+local hasScannedOffline = false
+local function scanOfflineClassesOnce()
+  if hasScannedOffline then return end
+  if not (IsInGuild and IsInGuild()) then return end
+  if not (SetGuildRosterShowOffline and GetGuildRosterShowOffline) then return end
+  hasScannedOffline = true
+
+  local prevShowOffline = GetGuildRosterShowOffline()
+  if not prevShowOffline then SetGuildRosterShowOffline(true) end
+  local total = scanRosterClasses()
+  if not prevShowOffline then SetGuildRosterShowOffline(false) end
+
+  local panel = G.frame and G.frame.ChatFrame
+  if total > 0 and panel and repaintLog then repaintLog() end
 end
 
 -- Same RAID_CLASS_COLORS convention as Roster.lua's classColor(), just hex-packed for inline
@@ -415,6 +449,11 @@ ev:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
     -- Belt-and-braces retry: PLAYER_GUILD_UPDATE/GUILD_ROSTER_UPDATE normally beat this to it, but
     -- if guild info resolved without either firing again this session, don't leave history stuck.
     C_Timer.After(5, function() tryReplayBacklog(); requestSync() end)
+    -- Deliberately its OWN timer, not folded into the one above: scanOfflineClassesOnce writes
+    -- SetGuildRosterShowOffline, and calling that from a callback that's ALSO doing other things is
+    -- fine, but keeping it a separate, clearly-named scheduled call makes it obvious at a glance
+    -- that this is the one deliberate place in the file where that flag gets touched.
+    C_Timer.After(8, scanOfflineClassesOnce)
     return
   end
 
