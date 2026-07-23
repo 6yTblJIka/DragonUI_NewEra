@@ -7,7 +7,8 @@
 --   GetAuctionDeposit(duration, minBid, buyoutPrice, stackSize, numStacks)     -- deposit cost
 --   PostAuction(minBid, buyoutPrice, duration, stackSize, numStacks)           -- create the auction
 --   QueryAuctionItems(name, minLevel, maxLevel, invTypeIndex, classIndex, subClassIndex, page,
---                      isUsable, minQuality, getAll)                          -- market search
+--                      isUsable, quality, getAll)                             -- market search
+--                      `quality` is an EXACT match, not a minimum; -1 = any rarity (0 = Poor).
 --   GetAuctionItemInfo("list", i) -> name,tex,count,quality,canUse,level,minBid,minIncrement,
 --                      buyoutPrice,bidAmount,highBidder,owner,saleStatus      (13 values)
 --   Events: NEW_AUCTION_UPDATE (sell slot changed), AUCTION_ITEM_LIST_UPDATE (list query done).
@@ -677,7 +678,10 @@ function AH.BuildSellPane(parent)
     emptyText:SetText(SEARCHING or "Searching...")
     SF.marketRows = {}
     refreshMarketRows()
-    pcall(QueryAuctionItems, name, 0, 0, 0, 0, 0, 0, false, 0, false)
+    -- ISSUE #31: -1 ("any rarity"), not 0 -- QueryAuctionItems' quality argument is an exact match
+    -- and 0 means "exactly Poor", so this market lookup previously came back empty for every item
+    -- that wasn't grey. Mirrors AH.ANY_QUALITY in Browse.lua.
+    pcall(QueryAuctionItems, name, 0, 0, 0, 0, 0, 0, false, -1, false)
   end
 
   refreshBtn:SetScript("OnClick", function()
