@@ -7,6 +7,34 @@ if not NE then return end
 NE.ah = NE.ah or {}
 local AH = NE.ah
 
+-- "Any rarity" sentinel for QueryAuctionItems' quality argument. That argument is an EXACT match
+-- against the item's quality, NOT a minimum, and -1 is the only value that disables the filter --
+-- 0 is a real quality (Poor). See the ISSUE #31 note on pane.Filter in buildBrowsePane. Every
+-- QueryAuctionItems call site in this addon must pass this, never 0, when it wants "all rarities".
+local ANY_QUALITY = -1
+AH.ANY_QUALITY = ANY_QUALITY
+
+-- ============================================================================
+-- Shared "list" auction-query arbiter.  ISSUE #31.
+--
+-- The 3.3.5a client has exactly ONE "list" query slot. Three consumers in this addon write to it
+-- (the browse scan, the item drill-down, the Sell tab's market lookup) and anything else loaded
+-- can too -- Auctionator, the cloaked stock AuctionFrame, other addons. AUCTION_ITEM_LIST_UPDATE
+-- carries no indication of who asked, so a watcher that reads the slot unconditionally will
+-- happily parse somebody else's result set as its own.
+--
+-- Whoever issues a query claims the slot by name; every watcher must confirm it still owns the
+-- slot before reading GetAuctionItemInfo("list", ...). An update we did not cause leaves
+-- listOwner pointing at someone else (or nil, for a foreign query), so everyone ignores it.
+-- ============================================================================
+function AH.ClaimListQuery(owner)
+  AH.listOwner = owner
+end
+
+function AH.OwnsListQuery(owner)
+  return AH.listOwner == owner
+end
+
 -- Keep alwaysShow custom Faux bars visually in sync with the actual row overflow state.
 -- Track/arrows stay visible; thumb only shows when the list can truly scroll.
 local function syncAlwaysShowFauxBar(scroll, totalRows, visibleRows)
@@ -578,7 +606,15 @@ function AH.BuildBrowsePane(parent)
   -- strata) so it always draws above the results list header/rows regardless of sibling creation
   -- order -- the previous version shared "DIALOG" with the results list, which (being built later
   -- in this function) drew on top of the panel and made it unreadable.
-  pane.Filter = { minLevel = 0, maxLevel = 0, usable = false, minQuality = 0 }
+  -- ISSUE #31: the rarity slot of QueryAuctionItems is an EXACT quality match, not a minimum, and
+  -- its "any rarity" sentinel is -1 -- NOT 0. Server side (TrinityCore AuctionHouseMgr.cpp,
+  -- BuildListAuctionItems): `if (quality != 0xffffffff && proto->Quality != quality) continue;`.
+  -- Stock FrameXML agrees: Blizzard_AuctionUI.lua's BrowseDropDown_Initialize gives the ALL entry
+  -- `info.value = -1`, and BrowseDropDown_OnLoad/AuctionFrameBrowse_Reset select -1.
+  -- This field was previously named minQuality and defaulted to 0, so "All" searched for items of
+  -- EXACTLY Poor quality and found nothing. Renamed to `quality` so the wrong mental model that
+  -- caused the bug can't be read back out of the field name.
+  pane.Filter = { minLevel = 0, maxLevel = 0, usable = false, quality = ANY_QUALITY }
 
   local filterPanel = CreateFrame("Frame", nil, pane)
   filterPanel:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -669,7 +705,9 @@ function AH.BuildBrowsePane(parent)
   -- mutual exclusivity instead of relying on a native radio widget.
   local rarityBtns = {}
   local function setRarity(val)
-    pane.Filter.minQuality = val or 0
+    -- ANY_QUALITY (-1), not 0 -- see the pane.Filter note above. The "All" row used to pass nil
+    -- here, which `or 0` then turned into a Poor-only filter.
+    pane.Filter.quality = val or ANY_QUALITY
     for _, rb in ipairs(rarityBtns) do rb:SetChecked(rb._val == val) end
   end
   local function rarityRow(y, val, label)
@@ -683,13 +721,13 @@ function AH.BuildBrowsePane(parent)
     rb:SetScript("OnClick", function() setRarity(val) end)
     rarityBtns[#rarityBtns + 1] = rb
   end
-  rarityRow(-134, nil, ALL or "All")
+  rarityRow(-134, ANY_QUALITY, ALL or "All")
   rarityRow(-153, 0, NE.itembtn and NE.itembtn.WrapTextByQuality(_G.ITEM_QUALITY0_DESC or "Poor", 0) or (_G.ITEM_QUALITY0_DESC or "Poor"))
   rarityRow(-172, 1, NE.itembtn and NE.itembtn.WrapTextByQuality(_G.ITEM_QUALITY1_DESC or "Common", 1) or (_G.ITEM_QUALITY1_DESC or "Common"))
   rarityRow(-191, 2, NE.itembtn and NE.itembtn.WrapTextByQuality(_G.ITEM_QUALITY2_DESC or "Uncommon", 2) or (_G.ITEM_QUALITY2_DESC or "Uncommon"))
   rarityRow(-210, 3, NE.itembtn and NE.itembtn.WrapTextByQuality(_G.ITEM_QUALITY3_DESC or "Rare", 3) or (_G.ITEM_QUALITY3_DESC or "Rare"))
   rarityRow(-229, 4, NE.itembtn and NE.itembtn.WrapTextByQuality(_G.ITEM_QUALITY4_DESC or "Epic", 4) or (_G.ITEM_QUALITY4_DESC or "Epic"))
-  setRarity(nil)
+  setRarity(ANY_QUALITY)
 
   filterButton:SetScript("OnClick", function() filterPanel:SetShown(not filterPanel:IsShown()) end)
 
@@ -1299,6 +1337,44 @@ function AH.BuildBrowsePane(parent)
     updatePageControls()
   end
 
+  -- Tear down an INTERRUPTED scan.  ISSUE #31 ("the addon automatically triggers the search and
+  -- refresh buttons without user input").
+  --
+  -- collectScanPage bails early when the pane is hidden (tab switch) or the item drill-down has
+  -- taken over activeQuery -- both before it reaches `scanPending = false`. That left scanning and
+  -- scanPending set with scanToken unchanged, and nothing else ever cleared them: runSearch and
+  -- resetSearch are the only other writers and both need a user action. So the dead scan sat armed,
+  -- and the next AUCTION_ITEM_LIST_UPDATE from ANY source -- the Sell tab's market lookup,
+  -- Auctionator, the stock UI -- got accepted as its next page: it banked whatever rows were in the
+  -- shared "list" slot into our aggregate, then chained queryPage for another server page. That is
+  -- the search firing with nobody pressing anything (and the drill-down's mirror of it at
+  -- refreshDetailRows is the Refresh button appearing to press itself).
+  --
+  -- The query arbiter above already stops us acting on updates we didn't cause; this closes the
+  -- hole from the other side so there is no stranded state left for even our OWN events to revive.
+  -- Deliberately redundant: this state machine has leaked once already.
+  local function cancelScan()
+    if not (scanning or scanPending) then return end
+    scanning = false
+    scanPending = false
+    scanToken = scanToken + 1   -- orphan any in-flight retry/poll callbacks
+    -- Whatever pages did land stay on screen, but the pager has to admit the aggregate is partial:
+    -- these rows' prices are only minima across the pages we actually got.
+    if #pageRows > 0 then scanTruncated = true end
+    updatePageControls()
+  end
+
+  -- Window.lua hides the inactive pane on a tab switch, which is the other way collectScanPage
+  -- bails out mid-scan. Same teardown.
+  pane:HookScript("OnHide", cancelScan)
+
+  -- Lets the Sell tab hold its market lookup while a scan is paging (see Sell.lua queryMarket):
+  -- a query fired into the middle of a scan steals the shared throttle slot and makes queryPage
+  -- burn its retries and abortScan.
+  function AH.IsBrowseScanning()
+    return scanning and true or false
+  end
+
   -- The core rate-limits back-to-back list queries, and a scan issues one per server page. Wait out
   -- a busy slot rather than abandoning the scan mid-way, which would leave a partial aggregate whose
   -- prices silently aren't market minima.
@@ -1324,7 +1400,8 @@ function AH.BuildBrowsePane(parent)
     scanPage = page
 
     local q = lastQuery
-    local ok, err = pcall(QueryAuctionItems, q.text, q.minLevel, q.maxLevel, q.invTypeIndex, q.classIndex, q.subClassIndex, page, q.isUsable, q.minQuality, false)
+    AH.ClaimListQuery("browse")
+    local ok, err = pcall(QueryAuctionItems, q.text, q.minLevel, q.maxLevel, q.invTypeIndex, q.classIndex, q.subClassIndex, page, q.isUsable, q.quality, false)
     if not ok then
       -- Surface the real Lua error instead of a generic message -- if this still isn't the right
       -- call shape, the exact "bad argument #N" text tells us which slot to fix next.
@@ -1361,18 +1438,23 @@ function AH.BuildBrowsePane(parent)
     q = string.gsub(q, "^%s+", "")
     q = string.gsub(q, "%s+$", "")
 
-    -- 3.3.5a's QueryAuctionItems signature per THIS server's own bundled APIDocumentation addon
-    -- (Interface/AddOns/APIDocumentation/Documentation/AuctionDocumentation.lua): name, minLevel,
-    -- maxLevel, invTypeIndex, classIndex, subClassIndex, page, isUsable, minQuality, getAll -- and
-    -- EVERY one of those except getAll is documented Nilable=false with a concrete type (number/
-    -- luaIndex/bool), not just invTypeIndex. The previous version still passed nil for classIndex/
-    -- subClassIndex/minQuality and a number (0) for the bool isUsable slot; pass real typed values
-    -- for all of them so a strict argument check on this core can't reject the call outright.
+    -- 3.3.5a's QueryAuctionItems signature, confirmed against the stock client's own FrameXML
+    -- (Blizzard_AuctionUI.lua AuctionFrameBrowse_SearchHelper): name, minLevel, maxLevel,
+    -- invTypeIndex, classIndex, subClassIndex, page, isUsable, quality[, getAll]. Every one of
+    -- those except getAll takes a concrete type (number/luaIndex/bool), so pass real typed values
+    -- rather than nil, or a strict argument check on this core can reject the call outright.
+    --
+    -- The class/subclass/invtype slots are luaIndex values (1-based positions in
+    -- GetAuctionItemClasses() etc.), so 0 correctly means "no filter" -- the client maps it to the
+    -- server's 0xffffffff "any" sentinel. `quality` is NOT an index: it's a raw quality value that
+    -- goes to the wire as-is, so its "any" sentinel has to be written out as -1. That asymmetry is
+    -- exactly what issue #31 tripped over.
     local filter = pane.Filter or {}
     local minLevel = filter.minLevel or 0
     local maxLevel = filter.maxLevel or 0
     local isUsable = filter.usable and true or false
-    local minQuality = filter.minQuality or 0
+    -- ANY_QUALITY (-1) is the "no rarity filter" sentinel; 0 would mean "exactly Poor". Issue #31.
+    local quality = filter.quality or ANY_QUALITY
 
     -- classIndex/subClassIndex/invTypeIndex from the left category tree (0/0/0 == no category
     -- filter). These are POSITIONAL luaIndex values into GetAuctionItemClasses()/
@@ -1386,7 +1468,7 @@ function AH.BuildBrowsePane(parent)
 
     lastQuery = {
       text = q, minLevel = minLevel, maxLevel = maxLevel, invTypeIndex = invTypeIndex,
-      classIndex = classIndex, subClassIndex = subClassIndex, isUsable = isUsable, minQuality = minQuality,
+      classIndex = classIndex, subClassIndex = subClassIndex, isUsable = isUsable, quality = quality,
     }
     refreshResults()
     queryPage(0, scanToken)
@@ -1600,8 +1682,11 @@ function AH.BuildBrowsePane(parent)
 
     -- The item drill-down issues its own "list" query scoped to one item -- route this shared
     -- event to its refresher instead of the aggregate browse path while it's the active query.
+    -- ISSUE #31: only when the drill-down's own query is the one that produced this update. It used
+    -- to refresh on EVERY event, so a Sell-tab market lookup or an Auctionator scan reloaded the
+    -- seller list out from under the user -- the Refresh button appearing to press itself.
     if activeQuery == "itembuy" then
-      if refreshDetailRows then
+      if refreshDetailRows and AH.OwnsListQuery("itembuy") then
         local rdOk, rdErr = pcall(refreshDetailRows)
         if not rdOk and NE.Log then
           NE.Log("AH", "refreshDetailRows error: " .. tostring(rdErr))
@@ -1614,7 +1699,11 @@ function AH.BuildBrowsePane(parent)
     -- and collectScanPage requests the next one. Ignore the event outside a scan -- an unsolicited
     -- AUCTION_ITEM_LIST_UPDATE (the stock UI, another addon, an owner/bidder query) is about a
     -- "list" slot we didn't fill and must not be spliced into our aggregate.
+    -- ISSUE #31: `scanning` alone was not enough -- an interrupted scan could sit armed with
+    -- scanning == true and let a foreign update drive it (see cancelScan). Require that the browse
+    -- scan is also the current owner of the shared query slot.
     if not scanning then return end
+    if not AH.OwnsListQuery("browse") then return end
     pollAttempts = 0
     local csOk, csErr = pcall(collectScanPage, scanToken)
     if not csOk and NE.Log then
@@ -2239,6 +2328,9 @@ function AH.BuildBrowsePane(parent)
   openItemDetail = function(data)
     if not data or not data.name then return end
     detail.CurrentItem = data
+    -- Drilling in takes the shared "list" slot away from the browse scan. Retire the scan properly
+    -- instead of letting collectScanPage bail on activeQuery and strand it armed (issue #31).
+    cancelScan()
     activeQuery = "itembuy"
     detailSelected = nil
     detailRowsData = {}
@@ -2270,7 +2362,14 @@ function AH.BuildBrowsePane(parent)
     -- own bundled APIDocumentation) has no dedicated exact-match flag the way some other clients'
     -- do -- passing the full item name as the search text returns just this item barring rare
     -- substring collisions (e.g. "Belt" would also match "Belt of Deep Shadow").
-    local ok, err = pcall(QueryAuctionItems, data.name, 0, 0, 0, 0, 0, 0, false, 0, false)
+    -- ISSUE #31 ("the list of sellers does not appear, even if that item is available"): the
+    -- rarity slot was hardcoded to 0, which is an EXACT match on Poor quality, not "any" -- so this
+    -- drill-down only ever returned listings for grey items and the seller list came back empty for
+    -- everything else. ANY_QUALITY (-1) disables the filter. Note this must stay unfiltered even
+    -- though we know the item's quality: filtering by it would be redundant, and data.quality can be
+    -- nil when the item isn't in the local cache yet.
+    AH.ClaimListQuery("itembuy")
+    local ok, err = pcall(QueryAuctionItems, data.name, 0, 0, 0, 0, 0, 0, false, ANY_QUALITY, false)
     if not ok and NE.Log then
       NE.Log("AH", "ItemBuy QueryAuctionItems error: " .. tostring(err))
     end
