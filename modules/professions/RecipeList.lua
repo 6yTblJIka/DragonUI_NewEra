@@ -17,6 +17,7 @@
 --   C.RefreshRecipes()     — rebuilds C.flatList + re-renders the visible rows
 --   C.BuildFlatList()      — populates C.flatList from the current tradeskill/craft data
 --   C.UpdateFilterReset()  — show/hide the filter-reset (x) button
+--   C.ResetFilters()       — restore C.filters to defaults (used on manual reset and window close)
 
 local NE = DragonUI_NewEra
 NE.profcraft = NE.profcraft or {}
@@ -25,7 +26,7 @@ local C = NE.profcraft
 -- ============================================================================
 -- State
 -- ============================================================================
-C.filters   = C.filters   or { showLearned = true, showUnlearned = false, makeable = false, skillUp = false, search = "" }
+C.filters   = C.filters   or { showLearned = true, makeable = false, skillUp = false, search = "" }
 C._collapsed = C._collapsed or {}   -- [catName] = true when collapsed client-side
 C.flatList  = C.flatList  or {}     -- output of BuildFlatList()
 C._selectedKey = nil                -- recipe NAME string of the currently highlighted row
@@ -218,7 +219,6 @@ function C.BuildFlatList()
       -- Lua 5.1: no goto; use skip flag instead.
       local skip = false
       if r.learned      and not filt.showLearned                                                  then skip = true end
-      if not skip and not r.learned and not filt.showUnlearned                                   then skip = true end
       if not skip and filt.skillUp and (r.difficulty == "trivial" or r.difficulty == "nodifficulty") then skip = true end
       if not skip and filt.makeable and (r.numAvailable or 0) <= 0                              then skip = true end
       if not skip and srch ~= "" and not r.name:lower():find(srch, 1, true)                     then skip = true end
@@ -552,6 +552,23 @@ function C.RefreshRecipes()
 end
 
 -- ============================================================================
+-- C.ResetFilters — restore C.filters to defaults. C.filters is shared across every
+-- profession (module-level table, not per-profession), so this also runs on window
+-- close to prevent filters picked for one profession leaking into the next.
+-- ============================================================================
+function C.ResetFilters()
+  C.filters.showLearned   = true
+  C.filters.makeable      = false
+  C.filters.skillUp       = false
+  C.filters.search        = ""
+  local f  = C.frame
+  local rl = f and f.RecipeList
+  if rl and rl.SearchBox then rl.SearchBox:SetText("") end
+  pcall(function() if SetTradeSkillSubClassFilter then SetTradeSkillSubClassFilter(0, 1, 1) end end)
+  pcall(function() if SetTradeSkillInvSlotFilter  then SetTradeSkillInvSlotFilter(0,  1, 1) end end)
+end
+
+-- ============================================================================
 -- C.UpdateFilterReset — show/hide the filter-reset (x) button.
 -- ============================================================================
 function C.UpdateFilterReset()
@@ -560,8 +577,7 @@ function C.UpdateFilterReset()
   if not (rl and rl.FilterReset) then return end
   local filt  = C.filters
   local hasSearch = (filt.search and filt.search ~= "")
-  local hasFilterToggles = (not filt.showLearned) or filt.showUnlearned
-                        or filt.makeable or filt.skillUp
+  local hasFilterToggles = (not filt.showLearned) or filt.makeable or filt.skillUp
 
   -- Avoid showing two clear buttons at once: while search text exists, use only the
   -- search-box clear button. Show the red reset button only for non-search filters.
@@ -596,9 +612,12 @@ function C.buildRecipeList(f)
   -- Filter button — positioned at TOPRIGHT of the list panel first, so the search box
   -- can anchor its RIGHT edge to the filter's LEFT (mirroring the reference layout).
   local filter = CreateFrame("Button", "NE_ProfessionsCraftingFilterBtn", rl, "UIPanelButtonTemplate")
-  filter:SetSize(70, 18)
+  filter:SetSize(60, 18)
   filter:SetText(_G.FILTER or "Filter")
-  filter:SetPoint("TOPRIGHT", rl, "TOPRIGHT", -8, -9)
+  -- Right edge sits 26px in from the panel (not the usual 8px) to reserve room for the
+  -- filter-reset (x) button below, so it lands flush with the panel inset instead of
+  -- overhanging past it.
+  filter:SetPoint("TOPRIGHT", rl, "TOPRIGHT", -26, -9)
   rl.FilterDropdown = filter
 
   -- Search box: left-anchored to panel left, right edge bounded by the filter button.
@@ -696,7 +715,6 @@ function C.buildRecipeList(f)
         UIDropDownMenu_AddButton(info)
       end
       addCheck(_G.PROFESSION_RECIPES_SHOW_LEARNED   or "Show Learned",    "showLearned")
-      addCheck(_G.PROFESSION_RECIPES_SHOW_UNLEARNED or "Show Unlearned",  "showUnlearned")
       addCheck(_G.TRADESKILL_FILTER_HAS_SKILL_UP    or "Has Skill Up",    "skillUp")
       addCheck(_G.CRAFT_IS_MAKEABLE                 or "Have Materials",  "makeable")
     end, "MENU")
@@ -718,14 +736,7 @@ function C.buildRecipeList(f)
   reset:SetScript("OnClick", function()
     -- Close the (possibly open) filter dropdown so its checkboxes can't go out of sync with the reset.
     if CloseDropDownMenus then CloseDropDownMenus() end
-    C.filters.showLearned   = true
-    C.filters.showUnlearned = false
-    C.filters.makeable      = false
-    C.filters.skillUp       = false
-    C.filters.search        = ""
-    if rl.SearchBox then rl.SearchBox:SetText("") end
-    pcall(function() if SetTradeSkillSubClassFilter then SetTradeSkillSubClassFilter(0, 1, 1) end end)
-    pcall(function() if SetTradeSkillInvSlotFilter  then SetTradeSkillInvSlotFilter(0,  1, 1) end end)
+    C.ResetFilters()
     C.RefreshRecipes(); C.UpdateFilterReset()
   end)
   rl.FilterReset = reset
