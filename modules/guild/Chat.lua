@@ -66,17 +66,12 @@ local repaintLog
 -- class" colour for everyone since nameClass is still empty. G.SetupChat flags
 -- panel._needsRecolor in that case; once we actually get roster data, repaint the log so history
 -- picks up real class colours instead of staying stuck on the fallback forever.
-local function refreshRosterClasses()
-  if not GetNumGuildMembers or not GetGuildRosterInfo then return end
-  -- GetGuildRosterInfo only enumerates OFFLINE members while GetGuildRosterShowOffline() is true
-  -- (the same flag behind the Roster tab's own "Show Offline" checkbox, Roster.lua:264) — owner
-  -- report 2026-07-18: someone offline at login stayed the fallback colour forever, even though
-  -- the roster "knows" their class once that checkbox is ticked. Flip it on for this synchronous
-  -- scan (no server round-trip involved, just a client-side filter on already-cached data) and
-  -- restore whatever the Roster tab had it set to, so we don't silently change that checkbox's
-  -- visible state out from under the user.
-  local prevShowOffline = GetGuildRosterShowOffline and GetGuildRosterShowOffline()
-  if SetGuildRosterShowOffline and not prevShowOffline then SetGuildRosterShowOffline(true) end
+-- Populates nameClass from GetGuildRosterInfo() for every member GetNumGuildMembers() currently
+-- reports; returns the total scanned. Whether OFFLINE members come back with real data depends
+-- entirely on GetGuildRosterShowOffline()'s CURRENT value at call time — this function never
+-- touches that flag itself. The two callers below handle that in two deliberately different ways.
+local function scanRosterClasses()
+  if not GetNumGuildMembers or not GetGuildRosterInfo then return 0 end
   local total = GetNumGuildMembers() or 0
   for i = 1, total do
     local name, _, _, _, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)
@@ -86,12 +81,57 @@ local function refreshRosterClasses()
       nameClass[name:match("^([^%-]+)") or name] = classFile
     end
   end
-  if SetGuildRosterShowOffline and not prevShowOffline then SetGuildRosterShowOffline(false) end
+  return total
+end
+
+-- Reads directly, with NO SetGuildRosterShowOffline call — matching how Blizzard's own default
+-- guild UI works: that flag is set only by an explicit user action (the Roster tab's checkbox,
+-- Roster.lua:265) or by scanOfflineClassesOnce below, never automatically from an event handler.
+-- This is what makes it safe to run on every GUILD_ROSTER_UPDATE (it's registered on that event
+-- below): it can't recurse, because it never writes the flag that would re-trigger it.
+--
+-- An earlier version DID force the flag here, which caused a live crash (C stack overflow — this
+-- function recursing into itself via the very event its own flag-write re-fired) and spammed every
+-- guildmate who had the Roster tab open, because that re-fire also fans out into every OTHER
+-- addon's GUILD_ROSTER_UPDATE handler, including the base DragonUI addon's unthrottled
+-- version-broadcast system (modules/versioncheck.lua).
+local function refreshRosterClasses()
+  local total = scanRosterClasses()
   local panel = G.frame and G.frame.ChatFrame
   if total > 0 and panel and panel._needsRecolor then
     panel._needsRecolor = nil
     if repaintLog then repaintLog() end
   end
+end
+
+-- ONE-SHOT: brings OFFLINE guildmates' class colours back for chat history — something
+-- refreshRosterClasses alone can't do, since GetGuildRosterInfo only returns complete data for an
+-- offline member's slot while GetGuildRosterShowOffline() is true. Runs exactly once per session,
+-- and — critically — from a plain timer callback that is NOT itself registered on
+-- GUILD_ROSTER_UPDATE (see where this is scheduled, PLAYER_ENTERING_WORLD below), so even though
+-- SetGuildRosterShowOffline synchronously re-fires that event on this client, nothing here can
+-- recurse: the re-fire just re-enters refreshRosterClasses, which is passive and never writes the
+-- flag.
+--
+-- STILL NOT SIDE-EFFECT-FREE, BY ACCEPTED DESIGN: the base DragonUI addon's versioncheck.lua also
+-- listens for GUILD_ROSTER_UPDATE and sends an unthrottled guild-chat message on every firing.
+-- Each SetGuildRosterShowOffline call below re-fires the event once, so this puts one or two
+-- "DUI_Version" lines in guild chat, once, at login — an accepted, bounded tradeoff for getting
+-- offline colours back automatically. DragonUI itself is out of scope for this addon to modify.
+local hasScannedOffline = false
+local function scanOfflineClassesOnce()
+  if hasScannedOffline then return end
+  if not (IsInGuild and IsInGuild()) then return end
+  if not (SetGuildRosterShowOffline and GetGuildRosterShowOffline) then return end
+  hasScannedOffline = true
+
+  local prevShowOffline = GetGuildRosterShowOffline()
+  if not prevShowOffline then SetGuildRosterShowOffline(true) end
+  local total = scanRosterClasses()
+  if not prevShowOffline then SetGuildRosterShowOffline(false) end
+
+  local panel = G.frame and G.frame.ChatFrame
+  if total > 0 and panel and repaintLog then repaintLog() end
 end
 
 -- Same RAID_CLASS_COLORS convention as Roster.lua's classColor(), just hex-packed for inline
@@ -200,11 +240,25 @@ local function formatLine(author, message, epoch)
   return string.format("|cff888888[%s]|r ", stamp) .. nameSegment(author) .. (message or "")
 end
 
+-- Tracks how many lines are currently in `log`, for NE.scrollbar.BuildCustomMessageFrame (this
+-- 3.3.5a client's ScrollingMessageFrame has no GetNumMessages() to ask directly — see the fix note
+-- in ScrollbarReskin.lua). Clamped to the widget's own SetMaxLines(500) cap so the count stays
+-- accurate indefinitely: AddMessage past that cap silently drops the widget's own oldest line, so
+-- an uncapped counter would drift high over a long play session and make the scrollbar think there
+-- was more history than the widget actually still holds.
+local function trackLine(log)
+  local n = (log._neTotalLines or 0) + 1
+  local cap = log.GetMaxLines and log:GetMaxLines()
+  if cap and cap > 0 and n > cap then n = cap end
+  log._neTotalLines = n
+end
+
 -- Render one line into the log's ScrollingMessageFrame with the dim "backlog" treatment: toned-
 -- down channel colour, distinguishing it from freshly-arriving lines.
 local function printBacklogLine(log, kind, author, message, epoch)
   local r, g, b = chanColor(kind == "O" and "OFFICER" or "GUILD")
   log:AddMessage(formatLine(author, message, epoch), r * 0.75, g * 0.75, b * 0.75)
+  trackLine(log)
 end
 
 -- Every live message is also `remember()`-ed (see the event handler below), so the stored log is
@@ -214,6 +268,7 @@ repaintLog = function()
   local s = store()
   if not log or not s then return end
   log:Clear()
+  log._neTotalLines = 0
   for _, e in ipairs(s.entries) do
     printBacklogLine(log, e.kind, e.author, e.message, e.epoch)
   end
@@ -273,6 +328,30 @@ function G.SetupChat(f)
   end)
   panel.Log = msg
 
+  -- Visible scrollbar (owner ask 2026-07-24), same minimal-scrollbar art as the rest of the guild
+  -- window. `well`'s right inset (24px, see msg's BOTTOMRIGHT point above) is the gutter this bar
+  -- lives in. ScrollingMessageFrame isn't a ScrollFrame, so this uses the dedicated line-scroll
+  -- variant rather than Reskin/BuildCustom(Pixel); wheel handling stays on msg's own OnMouseWheel
+  -- above, this only mirrors the resulting scroll position.
+  if NE.scrollbar and NE.scrollbar.BuildCustomMessageFrame then
+    -- x = -8, same value Window.lua's GuildEventLog scrollbar uses (BuildCustom's default -2 is
+    -- sized for the bare 8px track; the arrow buttons are 17px wide and centered on that track, so
+    -- they overhang ~4.5px past each edge -- at the default inset that overhang pokes back into
+    -- msg's own text area and visibly overlaps chat lines that run to the right edge).
+    local ok, bar = pcall(NE.scrollbar.BuildCustomMessageFrame, msg, { x = -8 })
+    if ok and bar then
+      -- Same DIALOG-strata trap as Window.lua's GuildEventLog scrollbar (see its comment at
+      -- ~line 516) and the Auction House lists: the guild window frame `f` is unconditionally
+      -- DIALOG strata (Window.lua:649), so every descendant (well/msg included) inherits DIALOG
+      -- too -- a HIGH-strata bar (BuildCustomMessageFrame's default) renders BEHIND that content,
+      -- i.e. invisible. Force it up to match, same as the established fix elsewhere in this addon.
+      bar:SetFrameStrata("DIALOG")
+      bar:SetFrameLevel((well:GetFrameLevel() or 1) + 10)
+      if bar._upBtn then bar._upBtn:SetFrameStrata("DIALOG"); bar._upBtn:SetFrameLevel(bar:GetFrameLevel() + 1) end
+      if bar._downBtn then bar._downBtn:SetFrameStrata("DIALOG"); bar._downBtn:SetFrameLevel(bar:GetFrameLevel() + 1) end
+    end
+  end
+
   -- Send edit box.
   local edit = CreateFrame("EditBox", "NE_GuildChatEdit", panel, "InputBoxTemplate")
   edit:SetHeight(20)
@@ -314,6 +393,7 @@ local function appendGuild(kind, message, author, epoch)
   if not log then return end
   local r, g, b = chanColor(kind)
   log:AddMessage(formatLine(author, message, epoch), r, g, b)
+  trackLine(log)
 end
 G.AppendGuildMessage = appendGuild
 
@@ -409,6 +489,11 @@ ev:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
     -- Belt-and-braces retry: PLAYER_GUILD_UPDATE/GUILD_ROSTER_UPDATE normally beat this to it, but
     -- if guild info resolved without either firing again this session, don't leave history stuck.
     C_Timer.After(5, function() tryReplayBacklog(); requestSync() end)
+    -- Deliberately its OWN timer, not folded into the one above: scanOfflineClassesOnce writes
+    -- SetGuildRosterShowOffline, and calling that from a callback that's ALSO doing other things is
+    -- fine, but keeping it a separate, clearly-named scheduled call makes it obvious at a glance
+    -- that this is the one deliberate place in the file where that flag gets touched.
+    C_Timer.After(8, scanOfflineClassesOnce)
     return
   end
 

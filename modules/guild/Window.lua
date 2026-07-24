@@ -78,12 +78,6 @@ local function buildChrome(f)
   body:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -21)
   body:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
 
-  local streaks = f:CreateTexture(nil, "BORDER")
-  if NE.tex and NE.tex.SetAtlas then NE.tex.SetAtlas(streaks, "_UI-Frame-TopTileStreaks", false) end
-  streaks:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -21)
-  streaks:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -21)
-  streaks:SetHeight(43); streaks:SetHorizTile(true)
-
   local ns = CreateFrame("Frame", nil, f)
   ns:SetAllPoints(f)
   -- Flat (non-portrait) corner — no circular cutout (owner steer 2026-07-17: "remove the circle
@@ -91,6 +85,34 @@ local function buildChrome(f)
   -- below), so this window doesn't need a corner portrait at all.
   if NE.nineslice and NE.nineslice.ApplyLayout then NE.nineslice.ApplyLayout(ns, "ButtonFrameTemplateNoPortrait") end
   f.NineSlice = ns
+
+  -- The streaks band needs to sit in a NARROW gap in the stack, and neither obvious placement works:
+  --   on `f`            -> underneath the nineslice child frame, invisible (draw layers don't help;
+  --                        a child frame always beats its parent's textures)
+  --   on `ns`           -> above the nineslice, but also above the guild column, so it covered the
+  --                        crest
+  -- So it gets its own frame, explicitly levelled ABOVE the nineslice and BELOW the guild column
+  -- (which buildGuildColumn pins to base+10). Explicit levels rather than creation order, because
+  -- same-level frames resolve by creation sequence — which is exactly the fragile, hard-to-see
+  -- coupling that made this take several attempts.
+  -- Sized to just the top strip the band actually occupies (SetPoint TOPLEFT/TOPRIGHT + height),
+  -- NOT SetAllPoints(f) — a full-window frame at this level had no measurable reason to interfere
+  -- with anything below it (it never calls EnableMouse, and neither does ApplyTopTileStreaks), but
+  -- the Roster tab's "Show Offline" checkbox stopped responding to clicks right after that frame was
+  -- introduced, in a build using an in-house 3.3.5a client + compat layer whose mouse-hit-testing
+  -- defaults aren't guaranteed to match retail's. Rather than lean on an assumption about this
+  -- client's EnableMouse semantics, remove the possibility outright: this frame now physically
+  -- cannot cover the checkbox (or anything else past the title band), regardless of what it does or
+  -- doesn't intercept.
+  local sf = CreateFrame("Frame", nil, f)
+  sf:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+  sf:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
+  sf:SetHeight(70)
+  sf:SetFrameLevel((ns:GetFrameLevel() or 1) + 1)
+  f.StreaksHost = sf
+  if NE.nineslice and NE.nineslice.ApplyTopTileStreaks then
+    NE.nineslice.ApplyTopTileStreaks(f, { parent = sf })
+  end
 
   -- Title. DOWNPORT: PC.SetTitle only writes into frame.TitleContainer.TitleText or frame.Title.
   -- A bare Frame has NEITHER, so SetTitle silently no-op'd and the title bar rendered blank.
@@ -236,6 +258,11 @@ local GUILD_COLUMN_WIDTH = 180
 -- not atlas nicknames — matched here 1:1, see modules/guild/Assets.lua).
 local function buildGuildColumn(f)
   local list = CreateFrame("Frame", FRAME_NAME .. "GuildColumn", f)
+  -- Explicitly above the chrome's nineslice (base+1) and streaks host (base+2), so the crest and the
+  -- column art are never painted over by window decoration. Previously this relied on being created
+  -- later than those frames at the same level, which is invisible coupling and broke as soon as the
+  -- streaks moved.
+  list:SetFrameLevel((f:GetFrameLevel() or 0) + 10)
   list:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -48)
   list:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 34)
   list:SetWidth(GUILD_COLUMN_WIDTH)
@@ -309,7 +336,15 @@ local function buildGuildColumn(f)
   -- The single guild "entry": banner plate (communities atlas — already registered) + tabard
   -- crest (real design via Tabard.lua when it resolves, else the static NoLogo crest) + name.
   local banner = list:CreateTexture(nil, "ARTWORK", nil, 3)
-  if NE.tex and NE.tex.SetAtlas then NE.tex.SetAtlas(banner, "communities-guildbanner-background", true) end
+  -- SetAtlas RETURNS FALSE when the atlas entry or its bundled BLP can't be resolved, and on failure
+  -- it applies neither texture nor size (size is only set on success). Ignoring that left a 0x0
+  -- untextured banner — invisible, and useless to anchor against, which is what made the tabard
+  -- crest render as an emblem floating over bare panel. Give it an explicit size so it is at least a
+  -- valid anchor target, and record the outcome; Tabard.lua retries the atlas and falls back to the
+  -- NoLogo crest as its plate while this stays false.
+  banner:SetSize(74, 69)
+  list.BannerAtlasOK = (NE.tex and NE.tex.SetAtlas
+    and NE.tex.SetAtlas(banner, "communities-guildbanner-background", true)) or false
   banner:SetPoint("TOP", list, "TOP", 0, -46)
   list.Banner = banner
 
@@ -318,7 +353,7 @@ local function buildGuildColumn(f)
   crest:SetSize(44, 44)
   crest:SetPoint("CENTER", banner, "CENTER", 0, 2)
   list.Crest = crest
-  list.CrestSize = 40   -- Tabard.lua's badge sits just inside the static crest's edge
+  list.CrestSize = 40   -- box Tabard.lua sizes the emblem against; just inside the crest's edge
 
   local name = list:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   name:SetPoint("TOP", banner, "BOTTOM", 0, -12)
@@ -414,12 +449,10 @@ local function buildControls(f)
     body:SetPoint("TOPLEFT",  elf, "TOPLEFT",  5, -21)
     body:SetPoint("BOTTOMRIGHT", elf, "BOTTOMRIGHT", 0, 1)
 
-    -- TopTileStreaks banner.
-    local streaks = elf:CreateTexture(nil, "BORDER")
-    if NE.tex and NE.tex.SetAtlas then NE.tex.SetAtlas(streaks, "_UI-Frame-TopTileStreaks", false) end
-    streaks:SetPoint("TOPLEFT",  elf, "TOPLEFT",  6, -21)
-    streaks:SetPoint("TOPRIGHT", elf, "TOPRIGHT", -2, -21)
-    streaks:SetHeight(43); streaks:SetHorizTile(true)
+    -- TopTileStreaks banner (shared helper: same geometry, plus retry on atlas failure).
+    if NE.nineslice and NE.nineslice.ApplyTopTileStreaks then
+      NE.nineslice.ApplyTopTileStreaks(elf)
+    end
 
     -- NineSlice chrome: no-portrait layout so the top-left corner is flat (no circular cutout).
     local ns = CreateFrame("Frame", nil, elf)

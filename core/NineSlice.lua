@@ -190,9 +190,17 @@ function NE.nineslice.ApplyTopTileStreaks(frame, opts)
   t:SetPoint("TOPLEFT",  host, "TOPLEFT",  opts.xL or 6,  opts.y or -21)
   t:SetPoint("TOPRIGHT", host, "TOPRIGHT", opts.xR or -2, opts.y or -21)
   if not (NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(t, "_ui-frame-toptilestreaks", false)) then
+    -- Hiding and giving up here is why the band sometimes never appeared: whatever made the atlas
+    -- unresolvable at build time (registry or BLP not ready yet) is usually transient, but nothing
+    -- ever asked again, so the panel stayed bandless for the session. Retry on a timer instead.
     t:Hide()
+    if C_Timer and C_Timer.After and (frame._neStreakTries or 0) < 5 then
+      frame._neStreakTries = (frame._neStreakTries or 0) + 1
+      C_Timer.After(1, function() NE.nineslice.ApplyTopTileStreaks(frame, opts) end)
+    end
     return t
   end
+  frame._neStreakTries = nil
   t:SetHorizTile(true)
   local entry = NE.tex._atlasEntry and NE.tex._atlasEntry("_ui-frame-toptilestreaks")
   t:SetHeight(opts.h or (entry and entry.height) or 43)
