@@ -490,6 +490,10 @@ local function buildWindow()
     local sb = f.RecipeList and f.RecipeList.SearchBox
     if sb and sb.ClearFocus then sb:ClearFocus() end
 
+    -- C.filters is shared across professions; reset it here so filters chosen while
+    -- crafting one profession don't carry over the next time any profession is opened.
+    if C.ResetFilters then pcall(C.ResetFilters) end
+
     if GetCurrentKeyBoardFocus then
       local kf = GetCurrentKeyBoardFocus()
       if kf and kf.ClearFocus then pcall(kf.ClearFocus, kf) end
@@ -769,10 +773,10 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
       local tex = GetTradeSkillTexture and GetTradeSkillTexture()
       if tex and tex ~= "" then C._pendingProfessionIcon = tex end
     end
-    if C.filters then C.filters.search = "" end
-    if C.frame and C.frame.RecipeList and C.frame.RecipeList.SearchBox then
-      C.frame.RecipeList.SearchBox:SetText("")
-    end
+    -- C.filters is shared across every profession; reset it here too so switching
+    -- professions without closing the window (e.g. a dual-profession character) doesn't
+    -- carry the previous profession's filters/search into the new one.
+    if C.ResetFilters then pcall(C.ResetFilters) end
     -- Hide Blizzard's frame immediately (it was just shown by the LoD addon load).
     hideBlizzardTradeSkillFrames()
     -- Also schedule a deferred hide in case our handler runs before Blizzard's Show.
@@ -791,10 +795,8 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
       if n and n ~= "" and n ~= "UNKNOWN" then C._pendingProfessionName = n end
       -- Craft API has no direct texture getter in 3.3.5a; keep pending icon as-is.
     end
-    if C.filters then C.filters.search = "" end
-    if C.frame and C.frame.RecipeList and C.frame.RecipeList.SearchBox then
-      C.frame.RecipeList.SearchBox:SetText("")
-    end
+    -- See TRADE_SKILL_SHOW above: reset shared filters on every (re)open, not just on close.
+    if C.ResetFilters then pcall(C.ResetFilters) end
     hideBlizzardTradeSkillFrames()
     if C_Timer and C_Timer.After then
       C_Timer.After(0, hideBlizzardTradeSkillFrames)
