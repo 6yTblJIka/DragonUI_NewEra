@@ -99,7 +99,7 @@ local function makeTab(parent, id, iconSel, iconUnsel, tip)
   t.selIcon   = sliceTex(t, iconSel,   "OVERLAY", true); t.selIcon:SetPoint("CENTER", t.unselIcon, "CENTER", 0, 0); t.selIcon:Hide()
   t.tabID = id
   t:SetScript("OnClick", function()
-    if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_ABILITY_PAGE_TURN) end
+    if PlaySound then pcall(PlaySound, "igCharacterInfoTab") end
     NE.ej.SelectTab(id)
   end)
   if tip then
@@ -718,7 +718,7 @@ local function fillBossList(inst)
     end
     local encRef = enc
     b:SetScript("OnClick", function()
-      if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_ABILITY_PAGE_TURN) end
+      if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end
       NE.ej.ShowBoss(encRef)
     end)
     b:Show()
