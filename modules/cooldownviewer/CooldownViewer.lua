@@ -1,0 +1,424 @@
+-- DragonUI_NewEra/modules/cooldownviewer/CooldownViewer.lua — Cooldown Manager core.
+--
+-- DOWNPORT of NewEra/CooldownViewer/CooldownViewer.lua. Retail's Cooldown Manager reads its
+-- per-spec cooldown sets from C_CooldownViewer, which does not exist on 3.3.5a (nor on Classic Era
+-- or TBC Classic — NewEra hit the same wall). So this is retail's VISUAL model driven by curated
+-- per-class data plus live GetSpellCooldown / UNIT_AURA reads, exactly as upstream built it.
+--
+-- PHASE 1 SCOPE: Essential + Utility viewers. BuffIcon / BuffBar (aura-driven) are Phase 3; the
+-- alert engine and the standalone settings panel are Phase 4. The category plumbing below keeps all
+-- four names so those phases are additive.
+--
+-- THE ONE STRUCTURAL DEVIATION — settings storage:
+--
+-- Upstream reads every setting through `NE.editmode` (EM.Register / EM.GetFrameSettingStored /
+-- EM.const.StoredToDisplay), a 6,441-line reimplementation of retail Edit Mode. This addon does not
+-- have it, DragonUI's movers are position-only, and DragonUI is read-only (CONTRACTS §0). Per
+-- PORT_PLAN §B1 we drop Edit Mode entirely: `getOpt` is the single chokepoint every setting reads
+-- through, so it is retargeted at our own profile table and the retail settings-int codec
+-- (M.CDV_CODEC, sliderToStored, StoredToDisplay) is gone. Positions come from DragonUI's
+-- MoversSystem; the ten settings are rendered in the New Era options tab.
+
+local NE = DragonUI_NewEra
+NE.cooldownviewer = NE.cooldownviewer or {}
+local M = NE.cooldownviewer
+
+-- Curated per-class/per-race data lives in ClassData.lua (loaded before this file):
+-- M.ESSENTIAL_BY_CLASS / UTILITY_BY_CLASS / BUFFICON_BY_CLASS / BUFFBAR_BY_CLASS /
+-- SPELL_DATA_BY_CATEGORY / RACIAL_BY_RACE.
+
+-- Upstream defines this in the buff-viewer section (Phase 3). Declared here so ShouldTrackBuff and
+-- the curated-set walk can reference it unconditionally.
+M.BUFFBAR_EXCLUDE = M.BUFFBAR_EXCLUDE or {}
+
+-- Defaults, from retail's HUDLayout preset (EditModePresetLayouts.lua).
+M.DEFAULTS = {
+  orientation      = "horizontal",
+  iconLimit        = 12,
+  iconDirection    = "right",
+  iconSize         = 100,
+  iconPadding      = 2,
+  opacity          = 100,
+  visibleSetting   = "always",
+  hideWhenInactive = true,
+  showTimer        = true,
+  showTooltips     = true,
+}
+
+M.FRAME_ID = {
+  essential = "CooldownViewerEssential",
+  utility   = "CooldownViewerUtility",
+  buffIcon  = "CooldownViewerBuffIcon",
+  buffBar   = "CooldownViewerBuffBar",
+}
+
+-- Per-frame overrides (retail preset values).
+--
+-- Essential/Utility templates do NOT set `allowHideWhenInactive` in retail XML, so retail's
+-- ShouldBeShown returns true unconditionally — they always show known cooldowns regardless of the
+-- HideWhenInactive setting. Only BuffIcon and BuffBar honour it. UpdateShownState reads this.
+local PER_FRAME_DEFAULT_OVERRIDES = {
+  CooldownViewerEssential = { iconLimit = 12, allowHideWhenInactive = false },
+  CooldownViewerUtility   = { iconLimit = 7,  allowHideWhenInactive = false },
+  CooldownViewerBuffIcon  = { iconLimit = 1,  iconPadding = 5, allowHideWhenInactive = true },
+  CooldownViewerBuffBar   = { iconLimit = 1,  iconPadding = 5, allowHideWhenInactive = true,
+                              orientation = "vertical", iconDirection = "left" },
+}
+M.PER_FRAME_DEFAULT_OVERRIDES = PER_FRAME_DEFAULT_OVERRIDES
+
+-- Default anchors (retail Mainline preset), consumed by Register.lua as the movers' defaultPoint.
+M.VIEWER_DEFAULT_Y = { utility = 240, essential = 310, buffIcon = 370 }
+
+-- ── Settings store ──────────────────────────────────────────────────────────────────────────────
+-- Lives in DragonUI's profile alongside every other NewEra setting (integration/Register.lua
+-- ensureProfile owns the `newera` sub-table), so it follows DragonUI profiles and the options tab
+-- can bind to it directly.
+local function store(create)
+  local cfg = NE.Config and NE.Config()
+  if not cfg then return nil end
+  if not cfg.cooldownviewer then
+    if not create then return nil end
+    cfg.cooldownviewer = {}
+  end
+  local cd = cfg.cooldownviewer
+  if not cd.frames then
+    if not create then return cd end
+    cd.frames = {}
+  end
+  return cd
+end
+M._store = store
+
+-- THE settings chokepoint. Upstream read the retail Edit Mode stored-value table here and converted
+-- through the settings codec; we read our own table and store display values directly.
+local function getOpt(frameID, key)
+  local cd = store(false)
+  local frame = cd and cd.frames and cd.frames[frameID]
+  if frame and frame[key] ~= nil then return frame[key] end
+
+  local overrides = PER_FRAME_DEFAULT_OVERRIDES[frameID]
+  if overrides and overrides[key] ~= nil then return overrides[key] end
+  return M.DEFAULTS[key]
+end
+M.GetOpt = getOpt
+
+-- Write one setting and re-apply it live.
+function M.SetOpt(frameID, key, value)
+  local cd = store(true)
+  if not cd then return end
+  cd.frames[frameID] = cd.frames[frameID] or {}
+  cd.frames[frameID][key] = value
+  local viewer = M.GetViewerByFrameID and M.GetViewerByFrameID(frameID)
+  if viewer and viewer.RefreshLayout then viewer:RefreshLayout() end
+end
+
+-- Restore one frame's settings to defaults.
+function M.ResetOpts(frameID)
+  local cd = store(true)
+  if not cd then return end
+  cd.frames[frameID] = nil
+  local viewer = M.GetViewerByFrameID and M.GetViewerByFrameID(frameID)
+  if viewer and viewer.RefreshLayout then viewer:RefreshLayout() end
+end
+
+function M.GetEssentialOpt(key) return getOpt(M.FRAME_ID.essential, key) end
+function M.GetUtilityOpt(key)   return getOpt(M.FRAME_ID.utility,   key) end
+function M.GetBuffIconOpt(key)  return getOpt(M.FRAME_ID.buffIcon,  key) end
+function M.GetBuffBarOpt(key)   return getOpt(M.FRAME_ID.buffBar,   key) end
+
+-- ── Enable toggles ──────────────────────────────────────────────────────────────────────────────
+function M.IsEnabled()
+  local cd = store(false)
+  if cd and cd.enabled ~= nil then return cd.enabled end
+  return true
+end
+
+function M.SetEnabled(v)
+  local cd = store(true)
+  if cd then cd.enabled = v and true or false end
+  M.ForEachViewer(function(viewer) viewer:UpdateVisibility() end)
+end
+
+-- Per-category enable. Retail's HUDLayout preset has all four viewers on.
+local CATEGORY_DEFAULT_ENABLED = {
+  essential = true, utility = true, buffIcon = true, buffBar = true,
+}
+
+function M.IsCategoryEnabled(category)
+  local cd = store(false)
+  if cd and cd.categories then
+    local v = cd.categories[category]
+    if v ~= nil then return v end
+  end
+  local d = CATEGORY_DEFAULT_ENABLED[category]
+  if d == nil then return true end
+  return d
+end
+
+function M.SetCategoryEnabled(category, v)
+  local cd = store(true)
+  if cd then
+    cd.categories = cd.categories or {}
+    cd.categories[category] = v and true or false
+  end
+  local viewer = M.viewers and M.viewers[category]
+  if viewer then viewer:UpdateVisibility() end
+end
+
+-- ── Viewer registry ─────────────────────────────────────────────────────────────────────────────
+-- Upstream addressed viewers through XML-created globals (NE_EssentialCooldownViewer, ...). We
+-- build frames in Lua (Viewers.lua), so they register here instead.
+M.viewers = M.viewers or {}
+
+function M.RegisterViewer(category, frame)
+  M.viewers[category] = frame
+end
+
+function M.GetViewerByFrameID(frameID)
+  for category, frame in pairs(M.viewers) do
+    if M.FRAME_ID[category] == frameID then return frame end
+  end
+  return nil
+end
+
+function M.ForEachViewer(fn)
+  for _, frame in pairs(M.viewers) do
+    if frame then fn(frame) end
+  end
+end
+
+-- ── Item helpers ────────────────────────────────────────────────────────────────────────────────
+
+-- On-use item cooldown by itemID. C_Container.GetItemCooldown takes an itemID despite the
+-- namespace; the global GetItemCooldown is the 3.3.5a original.
+function M.ItemCooldown(itemID)
+  if itemID and C_Container and C_Container.GetItemCooldown then return C_Container.GetItemCooldown(itemID) end
+  if itemID and GetItemCooldown then return GetItemCooldown(itemID) end
+  return 0, 0, 0
+end
+
+-- Resolve an item's inventory icon. Returns nil until the server caches the item; the viewer's
+-- GET_ITEM_INFO_RECEIVED handler re-resolves when it lands.
+function M.ResolveItemIcon(itemID)
+  if not itemID then return nil end
+  local icon = (C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(itemID))
+    or (GetItemIcon and GetItemIcon(itemID))
+  if not icon and C_Item and C_Item.RequestLoadItemDataByID then
+    C_Item.RequestLoadItemDataByID(itemID)
+  end
+  return icon
+end
+
+function M.GetItemUseSpell(item)
+  if not item then return nil end
+  if C_Item and C_Item.GetItemSpell then return C_Item.GetItemSpell(item) end
+  if GetItemSpell then return GetItemSpell(item) end
+  return nil
+end
+
+-- On-use item entries live in the editable lists keyed by their USE-SPELL id, carrying itemID +
+-- track ("item" = GetItemCooldown / "spell" = GetSpellCooldown on the use-spell).
+function M.GetItemMeta(spellID, class)
+  if not class then local _; _, class = UnitClass("player") end
+  if not (spellID and class) then return nil end
+  for _, key in ipairs({ "essential", "utility" }) do
+    local list = M.GetEditableList(key, class)
+    if list then
+      for _, e in ipairs(list) do
+        if e.itemID and e.spellID == spellID then return e.itemID, e.track or "spell" end
+      end
+    end
+  end
+  return nil
+end
+
+-- Equipped-trinket / bag-consumable auto-discovery is CooldownViewerEquip.lua upstream (182 lines).
+-- PHASE 1: not ported — returns empty so the Rebuild branch that consumes it is a clean no-op.
+function M.GetEquipItemsForCategory(_)
+  return {}
+end
+
+-- ── Spell list resolution ───────────────────────────────────────────────────────────────────────
+
+-- Per-character custom list, per category:
+--   store().customLists[<category>][<CLASS>] = { { spellID=, enabled= }, ... }
+-- nil means "use the curated default for this class".
+local function getCustomTable(category)
+  local cd = store(true)
+  if not (cd and category) then return nil end
+  cd.customLists = cd.customLists or {}
+  cd.customLists[category] = cd.customLists[category] or {}
+  return cd.customLists[category]
+end
+
+function M.GetCustomList(category, class)
+  if not class then local _; _, class = UnitClass("player") end
+  local t = getCustomTable(category)
+  return t and t[class] or nil
+end
+
+function M.SetCustomList(category, class, list)
+  if not class then local _; _, class = UnitClass("player") end
+  local t = getCustomTable(category)
+  if not t then return end
+  t[class] = list
+end
+
+function M.ResetCustomList(category, class)
+  if not class then local _; _, class = UnitClass("player") end
+  local t = getCustomTable(category)
+  if not t then return end
+  t[class] = nil
+end
+
+function M.GetEditableList(category, class)
+  if not class then local _; _, class = UnitClass("player") end
+  local t = getCustomTable(category)
+  if not (t and class) then return nil end
+  if not t[class] then
+    local source = M.SPELL_DATA_BY_CATEGORY and M.SPELL_DATA_BY_CATEGORY[category]
+    local default = source and source[class] or {}
+    local seeded = {}
+    for _, spellID in ipairs(default) do
+      table.insert(seeded, { spellID = spellID, enabled = true })
+    end
+    t[class] = seeded
+  end
+  return t[class]
+end
+
+-- Merge per-race racials into a category's list. UnitRace's 2nd return is the canonical key
+-- ("Human", "Scourge", ...). Deduped, and never overrides a deliberate user disable.
+local function appendRacials(out, category, exclude)
+  local _, raceFile = UnitRace("player")
+  if not raceFile then return end
+  local bucket = M.RACIAL_BY_RACE and M.RACIAL_BY_RACE[raceFile]
+  local list = bucket and bucket[category]
+  if not list then return end
+  local seen = {}
+  for _, id in ipairs(out) do seen[id] = true end
+  for _, spellID in ipairs(list) do
+    if not seen[spellID] and not (exclude and exclude[spellID]) then
+      out[#out + 1] = spellID
+      seen[spellID] = true
+    end
+  end
+end
+
+-- Learn-gate. The curated per-class set is what we gate; a spellID NOT in it is a user-added
+-- item/external (its use-spell is never "known"), so it is always trackable. Memoised per class.
+local curatedSetCache = {}
+local function curatedSet(class)
+  if curatedSetCache[class] then return curatedSetCache[class] end
+  local set = {}
+  if M.SPELL_DATA_BY_CATEGORY then
+    for _, byClass in pairs(M.SPELL_DATA_BY_CATEGORY) do
+      local list = byClass[class]
+      if list then for _, id in ipairs(list) do set[id] = true end end
+    end
+  end
+  if M.RACIAL_BY_RACE then
+    for _, bucket in pairs(M.RACIAL_BY_RACE) do
+      for _, catName in ipairs({ "essential", "utility", "buffIcon", "buffBar" }) do
+        local l = bucket[catName]
+        if l then for _, id in ipairs(l) do set[id] = true end end
+      end
+    end
+  end
+  curatedSetCache[class] = set
+  return set
+end
+
+-- Invalidated when the curated tables are appended to (the Phase 2 WotLK seed does exactly that).
+function M.InvalidateCuratedCache()
+  curatedSetCache = {}
+end
+
+-- Known including ANY rank: IsSpellKnown checks the exact ID; the name lookup catches the case
+-- where the player has a different rank of the same ability (the vanilla rank gotcha).
+local function isLearned(spellID)
+  if IsSpellKnown and IsSpellKnown(spellID) then return true end
+  local name = GetSpellInfo(spellID)
+  return (name and GetSpellInfo(name)) and true or false
+end
+
+-- Race gate. Upstream reads the generated NE_SPELL_RACEMASK table (SkillLineAbility RaceMask) to
+-- hide never-learnable-by-race spells. We do not ship that data, and the upstream design already
+-- FAILS OPEN on a missing mask — so this is currently a permissive pass-through. Kept as the seam.
+function M.SpellAllowedForRace(spellID)
+  local mask = spellID and _G.NE_SPELL_RACEMASK and _G.NE_SPELL_RACEMASK[spellID]
+  if not mask then return true end
+  return true
+end
+
+function M.IsTrackable(spellID, class)
+  if not class then local _; _, class = UnitClass("player") end
+  if not (spellID and class) then return true end
+  if not curatedSet(class)[spellID] then return true end
+  return isLearned(spellID)
+end
+
+function M.IsCuratedSpell(spellID, class)
+  if not class then local _; _, class = UnitClass("player") end
+  return (spellID and class and curatedSet(class)[spellID]) and true or false
+end
+
+-- The live spell list for a category. `includeUnlearned` skips the learn-gate (used by the
+-- options-tab preview so an untrained character still sees the full curated set).
+function M.GetActiveSpellList(category, includeUnlearned)
+  local _, class = UnitClass("player")
+  if not class then return {} end
+
+  local raw = {}
+  local present   -- spellIDs the user explicitly listed (enabled OR disabled)
+  local custom = M.GetCustomList(category, class)
+  if custom then
+    present = {}
+    for _, entry in ipairs(custom) do
+      present[entry.spellID] = true
+      if entry.enabled then raw[#raw + 1] = entry.spellID end
+    end
+  else
+    local source = M.SPELL_DATA_BY_CATEGORY and M.SPELL_DATA_BY_CATEGORY[category]
+    local classList = (source and source[class]) or {}
+    for _, spellID in ipairs(classList) do raw[#raw + 1] = spellID end
+  end
+
+  -- Racials are class-agnostic and were never in the editable seed, so append in BOTH paths
+  -- (deduped) — otherwise the moment a custom list is seeded, every racial silently vanishes.
+  -- `present` keeps an explicit user disable authoritative.
+  appendRacials(raw, category, present)
+
+  local allowed = {}
+  for _, id in ipairs(raw) do
+    if M.SpellAllowedForRace(id) then allowed[#allowed + 1] = id end
+  end
+  if includeUnlearned then return allowed end
+
+  local out = {}
+  for _, id in ipairs(allowed) do
+    if M.IsTrackable(id, class) then out[#out + 1] = id end
+  end
+  return out
+end
+
+function M.RefreshActiveViewer(category)
+  if category == nil then
+    M.ForEachViewer(function(v) if v:IsShown() then v:Rebuild() end end)
+    return
+  end
+  local viewer = M.viewers[category]
+  if viewer and viewer:IsShown() then viewer:Rebuild() end
+end
+
+-- Reset the per-character tracking data (rank-specific list overrides). Storing a SPECIFIC rank is
+-- pointless — every rank shares one cooldown and the viewer resolves the displayed rank live — and
+-- a stale snapshot also masks newly-curated defaults. Positions/scale live in DragonUI's mover
+-- store, NOT here, so this never touches layout.
+function M.ResetTracking()
+  local cd = store(true)
+  if not cd then return end
+  cd.customLists = {}
+  M.InvalidateCuratedCache()
+  M.ForEachViewer(function(v) if v.Rebuild and v:IsShown() then v:Rebuild() end end)
+end
