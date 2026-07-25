@@ -21,6 +21,9 @@ Libs\LibCustomGlow-1.0\LibCustomGlow-1.0.xml
 # These files now only fill the handful of symbols ClassicAPI does NOT provide; C_Timer/C_Texture
 # are fully ClassicAPI-owned and no longer shipped here. See compat/COVERAGE.md.
 compat\Compat.lua
+# Events.lua adds Frame:RegisterUnitEvent (a 5.0 API; ClassicAPI implements the semantics but only
+# inside its private namespace) plus NE.EV_LEARNED_SPELL. Must follow Compat.lua for NE.compat.
+compat\Events.lua
 compat\C_Container.lua
 compat\C_Item.lua
 compat\C_Spell.lua
@@ -42,6 +45,16 @@ core\ScrollbarReskin.lua
 core\ItemButton.lua
 core\ItemGrid.lua
 core\Modules.lua
+# --- core: HUD-layer primitives (added for the Cooldown Manager port; reusable) ---
+# GridLayout    = Lua reimplementation of retail's GridLayoutFrame template (absent on 3.3.5a).
+# CooldownNumbers = countdown text on Cooldown frames (the widget draws none on this client).
+# AuraSnapshot  = one UnitBuff/UnitDebuff walk per unit per frame, shared addon-wide.
+# SpellRanks    = per-ability rank ids from the live spellbook. Load-bearing: GetSpellInfo's 7th
+#                 return is castTime here, NOT the spellID it is on modern clients.
+core\GridLayout.lua
+core\CooldownNumbers.lua
+core\AuraSnapshot.lua
+core\SpellRanks.lua
 
 # --- textures: art + atlas registration data (owner: Asset Pipeline Engineer) ---
 Textures\Assets.lua
@@ -200,6 +213,19 @@ modules\encounterjournal\EncounterPage.lua
 modules\encounterjournal\NavBar.lua
 modules\encounterjournal\EncounterJournal.lua
 modules\encounterjournal\MicroButton.lua
+
+# --- Cooldown Manager (downport of NewEra/CooldownViewer) — PHASE 1: Essential + Utility ---
+# Retail's Cooldown Manager runs on C_CooldownViewer, which exists on no Classic-family client;
+# NewEra rebuilt it as retail's visual model over curated per-class data, and that is what ports.
+# Load order: ClassData (pure tables) -> CooldownViewer (core: settings store, spell-list
+# resolution) -> ItemMixins (the per-tile mixin) -> Viewers (frames built in Lua, replacing
+# CooldownViewer.xml — MaskTexture and GridLayoutFrame are both unavailable here) -> Register
+# (movers + options tab, replacing EditModeRegister.lua). See modules/cooldownviewer/PORT_PLAN.md.
+modules\cooldownviewer\ClassData.lua
+modules\cooldownviewer\CooldownViewer.lua
+modules\cooldownviewer\ItemMixins.lua
+modules\cooldownviewer\Viewers.lua
+modules\cooldownviewer\Register.lua
 
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---
 core\_HelloDemo.lua

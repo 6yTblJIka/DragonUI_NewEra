@@ -1,0 +1,52 @@
+# Offline harnesses
+
+Run these **outside the game** to catch faults before a `/reload`. They complement `qa/Harness.lua`
+(in-game, `/dnetest`) and `qa/staticcheck.sh` (TOC + trap grep).
+
+Added during the Cooldown Manager port (see `modules/cooldownviewer/PORT_PLAN.md`).
+
+## Requirements
+
+- **LuaJIT** (Lua 5.1-compatible, the same dialect as the 3.3.5a client) — already on this machine at
+  `~/AppData/Local/Programs/LuaJIT/bin/luajit`.
+- **node** + `npm install luaparse` for the syntax gate. There is no `luac` on this box; `luaparse`
+  is the substitute.
+
+## Usage
+
+Syntax-gate any set of files (Lua 5.1):
+
+```bash
+node qa/offline/check.js core/GridLayout.lua modules/cooldownviewer/Viewers.lua
+```
+
+Unit-test the grid layout engine (28 assertions: cell arithmetic, wrapping, direction mirroring,
+per-child scale, retired/hidden children, degenerate cases):
+
+```bash
+luajit qa/offline/test_gridlayout.lua
+```
+
+Boot the whole Cooldown Manager stack against a stubbed 3.3.5a client and drive it through a
+realistic event sequence — load order, mover registration, spellbook rank resolution, populate,
+cooldown start, rank-safe cooldown read, GCD suppression, live settings, visibility, and the
+`RegisterUnitEvent` filter:
+
+```bash
+luajit qa/offline/test_boot.lua
+```
+
+## What test_boot.lua stubs
+
+A minimal widget API (`CreateFrame`, textures, font strings, scripts, events) plus the 3.3.5a game
+functions the module touches. Two stub details matter and are deliberate:
+
+- **`GetSpellInfo` returns the 9-value WotLK signature** (`name, rank, icon, cost, isFunnel,
+  powerType, castTime, minRange, maxRange`). Position 7 is castTime, *not* spellID. This is the trap
+  that makes `core/SpellRanks.lua` load-bearing; the test asserts rank resolution returns 10947 and
+  not the 1500 castTime.
+- **`Show()` fires `OnShow` only on a hidden→shown transition**, matching the client. Getting this
+  wrong is what first surfaced the `Rebuild → RefreshLayout → Show → OnShow → Rebuild` re-entrancy
+  (now guarded in `Viewers.lua`).
+
+Both harnesses exit non-zero on failure, so they can gate a commit hook.
