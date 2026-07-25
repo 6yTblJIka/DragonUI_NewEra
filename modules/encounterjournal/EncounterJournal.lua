@@ -332,7 +332,10 @@ local function buildInstanceSelect(f)
         end)
       else
         b.label:SetTextColor(1, 0.82, 0)
-        b:SetScript("OnClick", function() NE.ej.ShowInstance(e.inst) end)
+        b:SetScript("OnClick", function()
+          if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end
+          NE.ej.ShowInstance(e.inst)
+        end)
       end
       b:Show()
     end
@@ -495,8 +498,11 @@ local function buildInstanceSelect(f)
     if raidTxt then raidTxt:ClearAllPoints(); raidTxt:SetPoint("CENTER", raidTab, "CENTER", 0, isRaid and -3 or 0) end
     if page.Title then page.Title:SetText(isRaid and (RAIDS or "Raids") or (DUNGEONS or "Dungeons")) end
   end
-  dunTab:SetScript("OnClick",  function() if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_ABILITY_PAGE_TURN) end; selectCat(false) end)
-  raidTab:SetScript("OnClick", function() if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_ABILITY_PAGE_TURN) end; selectCat(true) end)
+  local function playPageTurn()
+    if PlaySound then pcall(PlaySound, "igCharacterInfoTab") end
+  end
+  dunTab:SetScript("OnClick",  function() playPageTurn(); selectCat(false) end)
+  raidTab:SetScript("OnClick", function() playPageTurn(); selectCat(true) end)
   page.SelectCategory = selectCat
   selectCat(false)   -- default to Dungeons
 

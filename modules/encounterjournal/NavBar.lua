@@ -504,7 +504,10 @@ function NE.ej.RefreshNavBar()
     c.text:ClearAllPoints()
     c.text:SetPoint("LEFT", c, "LEFT", c._isHome and TEXT_LPAD_HOME or TEXT_LPAD_SUB, 0)
     c.text:SetTextColor(c._isLast and 1 or 1, c._isLast and 1 or 0.82, c._isLast and 1 or 0)
-    c:SetScript("OnClick", function() if e.OnClick then e.OnClick() end end)
+    c:SetScript("OnClick", function()
+      if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end
+      if e.OnClick then e.OnClick() end
+    end)
     c:ClearAllPoints()
     if prevWidget then
       -- Flush after the previous crumb: its overhanging connector (or Home's overhanging notch)
