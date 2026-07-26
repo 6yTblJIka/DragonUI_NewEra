@@ -18,8 +18,8 @@ local function nextFrame(dt) NOW = NOW + (dt or 0.05) end
 -- ── widget stubs ────────────────────────────────────────────────────────────
 local allFrames = {}
 
-local function newRegion(kind)
-  local r = { _kind = kind, _shown = true, _alpha = 1 }
+local function newRegion(kind, layer)
+  local r = { _kind = kind, _shown = true, _alpha = 1, _layer = layer }
   function r:SetTexture(t) self._tex = t end
   function r:GetTexture() return self._tex end
   -- Recorded, not discarded: the GCD flipbook stepper's only observable output is its texcoords, and
@@ -202,7 +202,10 @@ function frameMeta:UnregisterEvent(e) self._events[e] = nil end
 function frameMeta:SetScript(s, fn) self._scripts[s] = fn end
 function frameMeta:GetScript(s) return self._scripts[s] end
 function frameMeta:HookScript(s, fn) self._scripts[s] = fn end
-function frameMeta:CreateTexture() local t = newRegion("Texture"); self._regions[#self._regions+1] = t; return t end
+-- The LAYER argument is kept. Discarding it meant GetDrawLayer only ever answered for regions that
+-- had also been through SetDrawLayer, so a region created on the wrong layer was unassertable — which
+-- is how a mutation test on the buff glow's layer came back green with the glow back over the icon.
+function frameMeta:CreateTexture(_, layer) local t = newRegion("Texture", layer); self._regions[#self._regions+1] = t; return t end
 function frameMeta:CreateFontString() local t = newRegion("FontString"); self._regions[#self._regions+1] = t; return t end
 function frameMeta:SetCooldown(s, d) self._cdStart, self._cdDur = s, d end
 function frameMeta:SetDrawEdge() end
@@ -906,6 +909,18 @@ assertf(DragonUI.EditableFrames["CooldownViewerBuffBar"] ~= nil, "buffBar is edi
 auraTick("player")
 assertf(shownItems(bIcon) == 0, "no auras -> buff icons empty")
 
+-- Auto-track is OFF out of the box: a newly met aura is recorded and listed under Hidden, but nothing
+-- appears on screen unassigned. Asserted here rather than assumed, because everything below this line
+-- depends on the opposite and would otherwise fail for a reason that looks nothing like the cause.
+assertf(M.IsAutoTrackBuffs() == false, "auto-track defaults OFF (new buffs stay hidden)")
+BUFFS.player = { { name = "Power Infusion", rank = "", icon = "Interface\\Icons\\PI", count = 0,
+                   duration = 15, expiration = NOW + 11, spellID = 10060 } }
+auraTick("player")
+assertf(shownItems(bIcon) == 0, "…so a short buff shows nothing until it is assigned")
+M.SetAutoTrackBuffs(true)
+auraTick("player")
+assertf(shownItems(bIcon) == 1, "…and turning auto-track on brings it straight in")
+
 -- A short buff must auto-track; a long one must not. This is also the arg-shift regression test:
 -- read with modern indices, `duration` would receive the caster string and the window check would
 -- silently reject everything.
@@ -1500,6 +1515,43 @@ do
     end
   end
 
+  -- The inset is a SETTING now, so the invariant cannot be "it equals a number". What must hold at
+  -- every legal value: the frame always covers the icon's edge (never proud of the band's outer
+  -- limit), and the icon never shrinks clean through the frame's opening. The aperture is measured
+  -- from the art, at art 20 of 86 — the first fully transparent texel inward of the border line.
+  for _, v in ipairs({ { "essential", 50, 9, 8 }, { "utility", 30, 6, 5 }, { "buffIcon", 40, 8, 7 } }) do
+    local label, size, ox, oy = v[1], v[2], v[3], v[4]
+    for _, ax in ipairs({ { "horizontally", ox }, { "vertically", oy } }) do
+      local lo = select(1, bandOn(size, ax[2]))
+      local aperture = M.IconAperture(size, ax[2])
+      local atMax = size * (M.ICON_MASK_INSET + M.ICON_INSET_EXTRA_MAX / 100)
+      assertf(atMax <= aperture + 0.01,
+        ("%s stays inside the frame's opening %s even at max inset (%.2f vs %.2f)")
+          :format(label, ax[1], atMax, aperture))
+      local atMin = size * M.ICON_MASK_INSET
+      assertf(atMin >= 0, label .. " min inset is non-negative " .. ax[1])
+      assertf(aperture > lo, label .. "'s opening is inside its border band " .. ax[1])
+    end
+  end
+
+  -- Fractional, not flat. A flat pixel budget generous enough for a 50px tile pushes a 30px one
+  -- through its own opening — the first draft did exactly that and failed here at 3.41 against 3.28.
+  -- Expressed as: the SAME setting must stay legal on the largest and smallest shapes at once.
+  local wide = M.IconInset(50) / 50
+  local narrow = M.IconInset(30) / 30
+  assertf(math.abs(wide - narrow) < 1e-9, "the inset is a fraction of the tile, not a flat pixel count")
+
+  -- And it has to reach tiles that already exist, or the slider does nothing until the next login.
+  do
+    local before = select(4, mb.Icon:GetPoint(1))
+    M.SetIconInsetExtra(M.ICON_INSET_EXTRA_MAX)
+    local after = select(4, mb.Icon:GetPoint(1))
+    assertf(after > before, ("moving the slider re-anchors a built tile (%.2f -> %.2f)")
+      :format(before, after))
+    M.SetIconInsetExtra(M.ICON_INSET_EXTRA)
+    assertf(math.abs(select(4, mb.Icon:GetPoint(1)) - before) < 1e-9, "…and back again")
+  end
+
   -- The flipbook's frame grid has to divide its strip evenly, or the ready-flash sprite samples
   -- across frame boundaries. 94/2 and 517/11 are both 47.
   local e = NE.tex._atlasEntry("UI-HUD-ActionBar-GCD-Flipbook")
@@ -1533,10 +1585,11 @@ do
     ("…and oversized past the tile by %dpx (got %s,%s)"):format(over, tostring(gx), tostring(gy)))
   local ox = select(4, mb.IconOverlay:GetPoint(1))
   assertf(over > math.abs(ox), "…which is wider than the frame art's own overhang")
-  local layer, sub = glow:GetDrawLayer()
-  local _, osub = mb.IconOverlay:GetDrawLayer()
-  assertf(layer == "OVERLAY" and (sub or 0) > (osub or 0),
-    "…above the frame art it lights, not under it")
+  -- BEHIND the icon, which is what keeps a filled glow texture off the icon art. Drawn over the tile
+  -- it veiled the icon instead of haloing it; on BACKGROUND the opaque icon does the masking that
+  -- this client cannot do with a MaskTexture.
+  local layer = glow:GetDrawLayer()
+  assertf(layer == "BACKGROUND", "…drawn behind the icon, so it haloes rather than veils")
   local r, g, b = glow:GetVertexColor()
   assertf(r > g and g > b, "…in gold, the colour retail gives the swipe it cannot set here")
 
@@ -1592,6 +1645,130 @@ do
 
   BUFFS.player[1] = nil
   nextFrame()
+end
+
+print("\n=== BUFFED TILE: WHICH TIMER (Phase 8c follow-up) ===")
+do
+  -- Reported on Prayer of Mending: the tile counted down the 30s BUFF while the player wanted the
+  -- cooldown, and two numbers ticking over the same icon are indistinguishable. Retail can only say
+  -- "buffed" by tinting that swipe, so it has no choice; since 8c the glow says it, and the number
+  -- is free to be the useful one.
+  assertf(M.BuffShowsAuraTime() == false, "the cooldown is the default timer on a buffed tile")
+
+  local cdStart, cdDur = GetTime() - 1, 30
+  COOLDOWNS[10947] = { cdStart, cdDur }
+  BUFFS.player[1] = { name = "Mind Blast", rank = "Rank 3", icon = "i",
+                      duration = 6, expiration = GetTime() + 6 }
+  nextFrame(); mb:RefreshCooldown()
+  assertf(math.abs((mb.Cooldown._cdDur or 0) - cdDur) < 0.01,
+    ("buffed AND on cooldown shows the cooldown (%s, not the 6s aura)")
+      :format(tostring(mb.Cooldown._cdDur)))
+  assertf(mb.BuffGlow:IsShown() == true, "…and the glow still marks it as buffed")
+
+  -- The signal is not the setting: flipping the timer must not silence the glow, or the two numbers
+  -- become indistinguishable again in the other direction.
+  M.SetBuffShowsAuraTime(true)
+  nextFrame(); mb:RefreshCooldown()
+  assertf(math.abs((mb.Cooldown._cdDur or 0) - 6) < 0.01,
+    ("retail's reading shows the aura instead (%s)"):format(tostring(mb.Cooldown._cdDur)))
+  assertf(mb.BuffGlow:IsShown() == true, "…with the glow unchanged either way")
+  M.SetBuffShowsAuraTime(false)
+
+  BUFFS.player[1] = nil
+  COOLDOWNS[10947] = nil
+  nextFrame(); mb:RefreshCooldown()
+end
+
+print("\n=== PER-SPEC LAYOUT ===")
+do
+  local group = 1
+  GetActiveTalentGroup = function() return group end
+  M.ResetTracking()
+  assertf(M.IsPerSpecLayout() == true, "per-spec layout is on by default")
+  assertf(M.LayoutKey() == "spec1", "…and keys off the active talent group")
+
+  -- The reported behaviour: hide a spell in one spec, swap, and it must come back.
+  M.SetSpellEnabled("essential", 8092, false)
+  assertf(M.IsSpellEnabled("essential", 8092) == false, "spell hidden in group 1")
+
+  group = 2
+  M.InvalidateCuratedCache()
+  assertf(M.LayoutKey() == "spec2", "swapping groups moves to the other bucket")
+  assertf(M.IsSpellEnabled("essential", 8092) == true,
+    "…where the spell is still shown — the two layouts are independent")
+
+  M.SetSpellEnabled("essential", 8092, false)
+  M.SetSpellEnabled("essential", 8129, false)
+  group = 1
+  M.InvalidateCuratedCache()
+  assertf(M.IsSpellEnabled("essential", 8129) == true,
+    "…and edits in group 2 do not leak back into group 1")
+  assertf(M.IsSpellEnabled("essential", 8092) == false, "…while group 1 keeps its own edit")
+
+  -- Turning the feature off collapses both onto one shared bucket.
+  M.SetPerSpecLayout(false)
+  assertf(M.LayoutKey() == "shared", "off, both groups share one bucket")
+  group = 2
+  assertf(M.LayoutKey() == "shared", "…whichever group is active")
+  M.SetPerSpecLayout(true)
+  group = 1
+  M.InvalidateCuratedCache()
+
+  -- Reset clears EVERY bucket. Clearing only the active one would leave the other spec's lists in
+  -- place after the player asked for a clean slate.
+  M.ResetTracking()
+  assertf(M.IsSpellEnabled("essential", 8092) == true, "reset clears the active bucket")
+  group = 2
+  M.InvalidateCuratedCache()
+  assertf(M.IsSpellEnabled("essential", 8092) == true, "…and the inactive one too")
+  group = 1
+  M.InvalidateCuratedCache()
+
+  -- The bucket must NOT be the saved-preset table. It was, in the first draft: `cd.layouts` is
+  -- SettingsPresets' own key, so ResetTracking silently deleted every layout the player had saved.
+  local cd = M._store(true)
+  assertf(cd.specLayouts ~= nil, "the buckets live under specLayouts")
+  cd.layouts = { ["A Saved Layout"] = { class = "PRIEST" } }
+  M.ResetTracking()
+  assertf(cd.layouts and cd.layouts["A Saved Layout"] ~= nil,
+    "…so resetting tracking leaves saved layouts alone")
+  cd.layouts = nil
+
+  -- What is knowledge rather than layout stays shared: an aura met in one spec is still an aura this
+  -- character can get, and hiding it from the other spec's picker would be a bug wearing a feature.
+  M.NoteSeenAura(48168, "Improved Spirit Tap", "i", 8)
+  local function seenHas(id)
+    for _, e in ipairs(M.GetSeenAuraList("PRIEST")) do if e.spellID == id then return true end end
+    return false
+  end
+  assertf(seenHas(48168), "an aura seen in group 1 is recorded")
+  group = 2
+  assertf(seenHas(48168), "…and is still known in group 2")
+  group = 1
+
+  -- The swap itself has to reach the screen. This is the reported bug: nothing the viewers already
+  -- listened for fires on a talent-group change, so old-spec abilities sat in the window looking
+  -- castable until the player happened to drag one.
+  --
+  -- The group must move WITHOUT anything else touching the viewer, or the test proves nothing. A
+  -- first version edited a list to set the scene and passed with the handler disabled, because
+  -- SetSpellEnabled rebuilds the viewer itself — the scene-setting was doing the work the event was
+  -- supposed to do.
+  local ev = M.viewers.essential
+  M.SetSpellEnabled("essential", 8092, false)      -- group 1 hides it; this rebuilds, by design
+  local hidden = shownItems(ev)
+  group = 2                                        -- group 2 has never hidden anything
+  assertf(shownItems(ev) == hidden,
+    "the viewer is stale immediately after a silent group change — nothing has told it")
+  fireEvent("ACTIVE_TALENT_GROUP_CHANGED")
+  drain()
+  assertf(shownItems(ev) == hidden + 1,
+    "ACTIVE_TALENT_GROUP_CHANGED rebuilds it onto the other spec's layout, with no interaction")
+  group = 1
+  M.ResetTracking()
+  ev:Rebuild()
+  GetActiveTalentGroup = nil
+  M.InvalidateCuratedCache()
 end
 
 print("\n=== CATEGORY GRIDS (Phase 4b-2) ===")
@@ -2305,7 +2482,7 @@ do
 
   -- ── Collapsible sections ──
   local track = findSection("Buff tracking")
-  local auto  = findRow("Buff tracking", "Auto-track short buffs")
+  local auto  = findRow("Buff tracking", ("Auto-track buffs under %ds"):format(M.BUFF_TRACK_MAX_DURATION))
   assertf(track ~= nil and auto ~= nil, "the Buff tracking section exists")
   assertf(not track.expanded and not auto:IsShown(), "…collapsed, with its rows hidden")
   local shortH = panel.settingsContent:GetHeight()

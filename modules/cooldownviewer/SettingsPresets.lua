@@ -90,11 +90,15 @@ function CDS.SnapshotState()
   local cd = cdLeaf(true)
   if not cd then return nil end
   local _, class = UnitClass("player")
+  -- The three LAYOUT leaves come from the active talent group's bucket, not the flat store, or a
+  -- saved layout would capture whatever the pre-per-spec migration happened to leave behind. Alerts
+  -- and sounds are per-spell preferences rather than layout and stay shared across specs.
+  local lay = M._layoutBucket and M._layoutBucket(true) or cd
   return {
     class       = class,
-    customLists = CDS.DeepCopy(cd.customLists) or {},
-    trackedAura = CDS.DeepCopy(cd.trackedAura) or {},
-    equipAssign = CDS.DeepCopy(cd.equipAssign) or {},
+    customLists = CDS.DeepCopy(lay.customLists) or {},
+    trackedAura = CDS.DeepCopy(lay.trackedAura) or {},
+    equipAssign = CDS.DeepCopy(lay.equipAssign) or {},
     alerts      = CDS.DeepCopy(cd.alerts) or {},
     sounds      = CDS.DeepCopy(cd.sounds) or {},
   }
@@ -112,9 +116,13 @@ function CDS.RestoreState(snap)
   local cd = cdLeaf(true)
   if not cd then return false end
 
-  cd.customLists = CDS.DeepCopy(snap.customLists) or {}
-  cd.trackedAura = CDS.DeepCopy(snap.trackedAura) or {}
-  cd.equipAssign = CDS.DeepCopy(snap.equipAssign) or {}
+  -- Applied to the ACTIVE talent group only. A layout is something you chose for how you are playing
+  -- right now; writing it into both groups would undo the other spec's setup as a side effect of
+  -- loading one.
+  local lay = M._layoutBucket and M._layoutBucket(true) or cd
+  lay.customLists = CDS.DeepCopy(snap.customLists) or {}
+  lay.trackedAura = CDS.DeepCopy(snap.trackedAura) or {}
+  lay.equipAssign = CDS.DeepCopy(snap.equipAssign) or {}
   cd.alerts      = CDS.DeepCopy(snap.alerts) or {}
   cd.sounds      = CDS.DeepCopy(snap.sounds) or {}
 
@@ -227,8 +235,11 @@ function Presets.UseStarter()
   end
   if M.ResetTrackedAura then M.ResetTrackedAura(class) end
   local cd = cdLeaf(true)
+  local lay = M._layoutBucket and M._layoutBucket(true)
+  if lay then
+    lay.equipAssign = {}    -- every trinket back to the source pool: the starter state is opt-in
+  end
   if cd then
-    cd.equipAssign = {}     -- every trinket back to the source pool: the starter state is opt-in
     cd.alerts = {}
     cd.sounds = {}
   end

@@ -71,7 +71,8 @@ end
 
 function M.GetEquipAssignment(token)
   if not token then return nil end
-  local cd = store(false)
+  -- Trinket placement is layout, so it follows the talent group like the spell lists do.
+  local cd = M._layoutBucket and M._layoutBucket(false)
   local reg = cd and cd.equipAssign
   -- A PRESENT key — including "hidden" — is an explicit choice and wins. Only a genuinely absent
   -- token falls through to the class default, which is what makes "hidden" distinct from unassigned.
@@ -81,14 +82,14 @@ end
 
 function M.SetEquipAssignment(token, cat)
   if not token then return end
-  local cd = store(true)
+  local cd = M._layoutBucket and M._layoutBucket(true)
   if not cd then return end
   cd.equipAssign = cd.equipAssign or {}
   cd.equipAssign[token] = cat        -- nil clears back to the source pool
 end
 
 function M.ResetEquipAssignments()
-  local cd = store(true)
+  local cd = M._layoutBucket and M._layoutBucket(true)
   if cd then cd.equipAssign = {} end
 end
 

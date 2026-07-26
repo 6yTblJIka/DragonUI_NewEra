@@ -59,11 +59,16 @@ local function createItem(parent, category)
   -- SetSwipeColor is WoD+. The substitute is a static gold halo on the tile. Its rect is OVERSIZED
   -- rather than matched to the frame or the icon — the glow texture carries a wide transparent
   -- margin of its own, so a tight rect hides the ring inside the icon. See M.BuffGlowInset.
-  item.BuffGlow = item:CreateTexture(nil, "OVERLAY")
+  -- BACKGROUND, under the icon. The ring texture is a filled square glow, brightest around its edge
+  -- but not empty in the middle, so drawn OVER the tile it washes light across the icon art itself —
+  -- reported as "icon glow effect inside frame". Putting it behind means the opaque icon masks its
+  -- interior for free and only the halo that reaches past the icon is ever visible. That also makes
+  -- the exact oversize forgiving: too small now shows less halo, instead of veiling the icon.
+  item.BuffGlow = item:CreateTexture(nil, "BACKGROUND")
   local go = M.BuffGlowInset(spec.size)
   item.BuffGlow:SetPoint("TOPLEFT", item, "TOPLEFT", -go, go)
   item.BuffGlow:SetPoint("BOTTOMRIGHT", item, "BOTTOMRIGHT", go, -go)
-  item.BuffGlow:SetDrawLayer("OVERLAY", 2)   -- above IconOverlay, which sits at the default sublevel
+  item.BuffGlow:SetDrawLayer("BACKGROUND", 0)
   item.BuffGlow:Hide()
 
   -- DOWNPORT: the three regions below are `setAllPoints` on the TILE upstream, and are anchored to the
@@ -124,6 +129,9 @@ function BaseViewerMixin:OnLoad()
   self:RegisterEvent("SPELLS_CHANGED")
   self:RegisterEvent(NE.EV_LEARNED_SPELL)
   self:RegisterEvent("PLAYER_LEVEL_UP")
+  -- Dual spec: the layout, the curated list and the talent gate all change on a group swap.
+  self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
+  self:RegisterEvent("PLAYER_TALENT_UPDATE")
   -- For VisibleSetting = In Combat.
   self:RegisterEvent("PLAYER_REGEN_DISABLED")
   self:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -170,6 +178,18 @@ function BaseViewerMixin:QueueRefreshAll()
 end
 
 function BaseViewerMixin:HandleEvent(event, ...)
+  -- Dual spec. Three separate things go stale at once here: the layout bucket the lists come from
+  -- (per talent group since the per-spec change), the cached curated list, and the talent gate. None
+  -- of the events already handled below fires on a group swap, which is why abilities from the old
+  -- spec sat in the window looking castable until the player happened to drag one — any interaction
+  -- that rebuilt the viewer hid the fault, and nothing else did.
+  if event == "ACTIVE_TALENT_GROUP_CHANGED" or event == "PLAYER_TALENT_UPDATE" then
+    if M.InvalidateCuratedCache then M.InvalidateCuratedCache() end
+    if M.InvalidateTalentCache then M.InvalidateTalentCache() end
+    self:Rebuild()
+    return
+  end
+
   if event == "PLAYER_ENTERING_WORLD"
      or event == "SPELLS_CHANGED"
      or event == NE.EV_LEARNED_SPELL

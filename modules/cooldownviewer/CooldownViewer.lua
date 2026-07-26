@@ -96,6 +96,116 @@ local function store(create)
 end
 M._store = store
 
+-- ── Per-spec layout ─────────────────────────────────────────────────────────────────────────────
+--
+-- What sits in which category is a property of how you PLAY, and on this client that changes with a
+-- click: dual talent specialisation (3.1) gives every character two talent groups. Discipline wants
+-- Mind Blast on Essential and Holy does not, and before this the two shared one list.
+--
+-- So the three tables that describe a layout — the per-category spell lists, the aura assignments and
+-- trinket placement — live in a per-group bucket rather than at the top of the store. Deliberately
+-- NOT in a bucket:
+--
+--   * seenAura, the registry of auras the scan has met. That is knowledge, not layout: an aura you
+--     met in Holy is still an aura this character can get, and hiding it from the Discipline picker
+--     would be a bug wearing a feature's clothes.
+--   * everything under `frames` (position, size, orientation, opacity...). Retail's Edit Mode is not
+--     spec-aware either, and a viewer that jumped across the screen on a respec would read as broken.
+--
+-- Stored under `specLayouts`. NOT `layouts` — that key is already the saved-preset table
+-- (SettingsPresets.lua:64), and the first draft of this both shadowed it and, in ResetTracking,
+-- silently deleted every saved layout the player had. The harness caught it on the presets tests.
+--
+-- Keyed by talent GROUP, not by "spec". A group's identity is what the client actually gives us;
+-- inferring "Discipline" from the heaviest talent tree would be a guess that changes under the player
+-- mid-levelling, and would collide the moment two groups share a tree (two Fire specs, say).
+local LAYOUT_KEYS = { "customLists", "trackedAura", "equipAssign" }
+M.LAYOUT_KEYS = LAYOUT_KEYS
+
+function M.IsPerSpecLayout()
+  local cd = store(false)
+  if cd and cd.perSpecLayout ~= nil then return cd.perSpecLayout and true or false end
+  return true
+end
+
+function M.ActiveTalentGroup()
+  local g = GetActiveTalentGroup and GetActiveTalentGroup()
+  g = tonumber(g) or 1
+  if g < 1 then g = 1 end
+  return g
+end
+
+-- The bucket name. "shared" when the feature is off, which is also the bucket a new per-spec bucket
+-- inherits from — so turning it ON carries the layout you already had into the group you are in,
+-- rather than dropping you onto curated defaults with no warning.
+function M.LayoutKey()
+  if not M.IsPerSpecLayout() then return "shared" end
+  return "spec" .. M.ActiveTalentGroup()
+end
+
+local function deepCopy(v)
+  if type(v) ~= "table" then return v end
+  local out = {}
+  for k, vv in pairs(v) do out[k] = deepCopy(vv) end
+  return out
+end
+M.DeepCopyLayout = deepCopy
+
+-- One-time migration off the flat store. Every existing bucket gets a COPY of what the character had
+-- before, so a respec on an upgraded character lands on the layout they already curated rather than
+-- on curated defaults — the upgrade itself must not look like data loss. The legacy tables are then
+-- cleared, so there is exactly one home for a layout and no dead copy to drift.
+local function migrateLayout(cd)
+  if cd.specLayouts then return end
+  cd.specLayouts = {}
+  local had = false
+  for _, k in ipairs(LAYOUT_KEYS) do
+    if type(cd[k]) == "table" and next(cd[k]) ~= nil then had = true; break end
+  end
+  if not had then return end
+  for _, key in ipairs({ "shared", "spec1", "spec2" }) do
+    local bucket = {}
+    for _, k in ipairs(LAYOUT_KEYS) do bucket[k] = deepCopy(cd[k]) end
+    cd.specLayouts[key] = bucket
+  end
+  for _, k in ipairs(LAYOUT_KEYS) do cd[k] = nil end
+  if NE.Log then NE.Log("CDM", "layout copied into per-spec buckets") end
+end
+
+-- A bucket that does not exist yet inherits from "shared" — so turning the feature ON carries the
+-- layout in front of you into the group you are in, instead of blanking it.
+local function layoutBucket(create)
+  local cd = store(create)
+  if not cd then return nil end
+  if create then migrateLayout(cd) end
+  local key = M.LayoutKey()
+  if not cd.specLayouts then
+    if not create then return nil end
+    cd.specLayouts = {}
+  end
+  if not cd.specLayouts[key] then
+    if not create then return nil end
+    local bucket = {}
+    local shared = key ~= "shared" and cd.specLayouts.shared
+    if shared then
+      for _, k in ipairs(LAYOUT_KEYS) do bucket[k] = deepCopy(shared[k]) end
+    end
+    cd.specLayouts[key] = bucket
+  end
+  return cd.specLayouts[key]
+end
+M._layoutBucket = layoutBucket
+
+function M.SetPerSpecLayout(v)
+  local cd = store(true)
+  if cd then
+    migrateLayout(cd)
+    cd.perSpecLayout = v and true or false
+  end
+  M.InvalidateCuratedCache()
+  M.RefreshActiveViewer()
+end
+
 -- THE settings chokepoint. Upstream read the retail Edit Mode stored-value table here and converted
 -- through the settings codec; we read our own table and store display values directly.
 local function getOpt(frameID, key)
@@ -262,7 +372,7 @@ end
 --   store().customLists[<category>][<CLASS>] = { { spellID=, enabled= }, ... }
 -- nil means "use the curated default for this class".
 local function getCustomTable(category)
-  local cd = store(true)
+  local cd = layoutBucket(true)          -- per talent group; see the Per-spec layout section
   if not (cd and category) then return nil end
   cd.customLists = cd.customLists or {}
   cd.customLists[category] = cd.customLists[category] or {}
@@ -306,8 +416,15 @@ function M.MigrateStaleCustomLists()
   if not cd then return false end
   if cd[CUSTOM_LIST_RESET_VERSION] then return false end
   cd[CUSTOM_LIST_RESET_VERSION] = true
+  -- Both homes: the flat key on a store that predates the per-spec change, and every bucket on one
+  -- that has already been migrated. Clearing only the flat key would have quietly stopped working
+  -- for exactly the characters this exists to repair.
   local had = cd.customLists and next(cd.customLists) ~= nil
   cd.customLists = {}
+  for _, bucket in pairs(cd.specLayouts or {}) do
+    if bucket.customLists and next(bucket.customLists) ~= nil then had = true end
+    bucket.customLists = {}
+  end
   M.InvalidateCuratedCache()
   if had and NE.Log then
     NE.Log("CDM", "cleared stale auto-seeded spell lists; curated defaults restored")
@@ -554,7 +671,7 @@ local BUFF_TRACK_MAX_DURATION = 120
 local VALID_ASSIGNMENT = { icon = true, bar = true, hidden = true }
 
 local function getTrackedAuraTable()
-  local cd = store(true)
+  local cd = layoutBucket(true)          -- per talent group; the seen registry below is NOT
   if not cd then return nil end
   cd.trackedAura = cd.trackedAura or {}
   return cd.trackedAura
@@ -821,11 +938,34 @@ function M.GetBuffOverrides(category)
   return include, exclude
 end
 
--- Auto-track toggle. ON by default; when OFF only explicit assignments track.
+-- Auto-track toggle. OFF by default: a newly met aura is RECORDED (the seen registry, §H.1) and
+-- listed under Hidden on the Tracked Buffs tab, but nothing appears on screen until it is assigned.
+--
+-- This used to default ON, so any buff under two minutes showed itself the first time it landed. That
+-- makes trinket procs and potions work with no setup, and it also means a raid's worth of incidental
+-- buffs — food, flasks, other people's cooldowns, every proc on every trinket — arrive uninvited on a
+-- viewer the player has carefully curated. Discovery is worth keeping; automatic display is not.
+-- Turning it back on restores the old behaviour exactly, and the picker is now populated either way.
 function M.IsAutoTrackBuffs()
   local cd = store(false)
   if cd and cd.autoTrackBuffs ~= nil then return cd.autoTrackBuffs end
-  return true
+  return false
+end
+
+-- While a spell's own buff is on the player, show the AURA's remaining time (retail's behaviour) or
+-- the spell's COOLDOWN (the default here). See the note at RefreshCooldown's aura branch: retail needs
+-- the aura on the swipe because a gold tint is its only "buffed" signal, and since §H.2 8c ours is a
+-- separate glow, so the number is free to be the more useful one.
+function M.BuffShowsAuraTime()
+  local cd = store(false)
+  if cd and cd.buffShowsAuraTime ~= nil then return cd.buffShowsAuraTime and true or false end
+  return false
+end
+
+function M.SetBuffShowsAuraTime(v)
+  local cd = store(true)
+  if cd then cd.buffShowsAuraTime = v and true or false end
+  M.RefreshActiveViewer()
 end
 
 function M.SetAutoTrackBuffs(v)
@@ -930,15 +1070,16 @@ end
 function M.ResetTracking()
   local cd = store(true)
   if not cd then return end
-  cd.customLists = {}
-  cd.trackedAura = {}
+  -- EVERY layout bucket, not just the active one. "Reset spell and buff lists" that silently left the
+  -- other spec's lists sitting there would be the more surprising reading by far — the player is
+  -- asking for a clean slate, not for a clean slate in one talent group. The legacy top-level keys go
+  -- too, so a reset on a store that has not been migrated yet cannot resurrect them.
+  cd.specLayouts = {}
+  for _, k in ipairs(LAYOUT_KEYS) do cd[k] = nil end
   -- Observed history goes too. It is not a choice the player made, but leaving it would mean "reset
   -- tracking" left rows behind that the player could not account for — and the catalog keeps the
   -- picker populated either way, so nothing is lost but the record of one character's procs.
   cd.seenAura = {}
-  -- Trinket placement is a tracking choice like any other, so "reset tracking" returns every
-  -- discovered item to the unassigned source pool.
-  cd.equipAssign = {}
   M.InvalidateCuratedCache()
   M.ForEachViewer(function(v) if v.Rebuild and v:IsShown() then v:Rebuild() end end)
 end

@@ -277,10 +277,12 @@ end
 -- on every 3.3.5a client, it is pale rather than black, and it is built to be tinted.
 M.BUFF_GLOW_TEXTURE = "Interface\\Buttons\\UI-ActionButton-Border"
 
--- Oversize, as a fraction of the tile edge. The texture carries a wide transparent margin, so drawn
--- at the tile's own rect the visible ring lands well inside the icon; 35% is the figure the three
--- call sites above converged on to put the ring ON the edge. It does mean the falloff bleeds past
--- the tile — intended for a glow, and the reason this is a constant rather than a literal.
+-- Oversize, as a fraction of the tile edge; 35% is the figure the three call sites above converged
+-- on. The ring is not hollow — it is a filled square glow, brightest near its edge — so at the tile's
+-- own rect it washes light straight across the icon art ("icon glow effect inside frame"). The fix
+-- is the DRAW LAYER, not this number: Viewers.lua puts the region on BACKGROUND, where the opaque
+-- icon masks the interior and only the halo past the icon survives. This then just controls how far
+-- that halo reaches.
 M.BUFF_GLOW_OVERSIZE = 0.35
 M.BUFF_GLOW_MIN_OVER = 6
 
@@ -629,14 +631,24 @@ function ItemMixin:RefreshCooldown()
   self:RefreshIconColor()
 
   -- 1. Aura precedence.
+  --
+  -- Retail shows the AURA's remaining time here, because its only way to say "this spell's buff is
+  -- up" is to tint that swipe gold. Reported as wrong on Prayer of Mending: the tile showed the 30s
+  -- buff while the player wanted the cooldown, and the two numbers counting down over the same icon
+  -- are indistinguishable. Since 8c the glow says "buffed" on its own, so the swipe no longer has to,
+  -- and the timer can be whichever the player finds useful. Default: the cooldown.
+  --
+  -- The glow is set from `aura` either way — the SIGNAL is not the setting, only the number is.
   local aura = M.findPlayerAuraDataByName(self.spellName)
-  if aura and aura.duration > 0 and aura.expirationTime > GetTime() then
+  local auraUp = aura and aura.duration > 0 and aura.expirationTime > GetTime()
+  self:SetBuffGlow(auraUp and true or false)
+
+  if auraUp and M.BuffShowsAuraTime() then
     local auraStart = aura.expirationTime - aura.duration
     setSwipeColor(self.Cooldown, M.COLOR_AURA)
     if self.Cooldown.SetDrawSwipe then self.Cooldown:SetDrawSwipe(true) end
     CooldownFrame_Set(self.Cooldown, auraStart, aura.duration, 1)
     if self.Icon then self.Icon:SetDesaturated(false) end
-    self:SetBuffGlow(true)
     self:ClearFlash()
     if self.hideWhenInactive then self:Show() end
     return
@@ -659,9 +671,10 @@ function ItemMixin:RefreshCooldown()
     return
   end
 
-  -- Every path from here down is "no effect of ours is up", so the glow comes off exactly once,
-  -- rather than being cleared in each of the branches below.
-  self:SetBuffGlow(false)
+  -- No glow clear here. It USED to sit on this line, on the reasoning that everything below is "no
+  -- effect of ours is up" — which stopped being true the moment the aura timer became optional: with
+  -- the cooldown preferred, a genuinely buffed spell falls straight through to the cooldown path and
+  -- would have its glow wiped on the way past. The one call above covers both readings.
 
   -- 2. Spell cooldown.
   local start, duration, enabled = self:ReadCooldown()
@@ -835,13 +848,57 @@ M.ICON_MASK_INSET = 3 / 64
 -- 2.74..6.58 on Essential). Second, our icon has square corners where retail's is rounded, so its
 -- edge reads harder against the same soft border.
 --
--- One flat pixel fixes both: it puts the icon's edge inside the border band on BOTH axes for all four
--- tile shapes (checked in the harness, per axis). Flat rather than fractional so it stays consistent
--- across the 30-50px shapes, and it scales with the iconSize setting anyway via SetScale.
-M.ICON_ROUNDING_INSET = 1
+-- One flat pixel puts the icon's edge inside the border band on BOTH axes for all four tile shapes.
+--
+-- It is a SETTING rather than a constant, because "still a pixel too large" was reported three times
+-- across three different values and there is no measurement that settles it — the mask inset is
+-- faithful to retail, and retail's icon is ROUNDED, which ours cannot be (§C2: MaskTexture has no
+-- polyfill on 3.3.5a). A square corner against a rounded aperture reads bigger than its own edge
+-- does, by an amount that depends on the viewer's own eye. So: derived default, dial to taste.
+--
+-- FRACTIONAL, not flat pixels, and this is the correction that mattered. The frame art scales with
+-- the tile, so its opening does too: decoding the overlay cell puts the aperture — the first fully
+-- transparent texel inward of the border line — at art 20 of 86, which is
+--
+--   essential (50px, -9/+8): item x 6.81, y 7.35        13.6% of the tile
+--   buffIcon  (40px, -8/+7): item x 5.02, y 5.24        12.6%
+--   utility   (30px, -6/+5): item x 3.77, y 4.30        12.6%
+--
+-- A flat pixel budget that leaves an Essential icon comfortably framed pushes a Utility icon clean
+-- through the opening — the first draft used flat pixels and the harness failed on exactly that, the
+-- utility tile at 3.41 against an inner limit of 3.28. As a fraction the whole range travels.
+--
+-- Inset all the way to the aperture and the icon stops overlapping the frame at all, so every square
+-- corner sits inside the rounded opening: the closest this client gets to "rounded edges", at the
+-- cost of a visibly smaller icon. Below it the frame overlaps the icon's edge, which is what retail
+-- looks like. The slider covers both readings; MAX comes from the tightest shape above.
+M.ICON_INSET_EXTRA     = 4   -- percent of the tile edge, on top of the derived mask inset
+M.ICON_INSET_EXTRA_MAX = 7   -- 4.7% mask + 7% = 11.7%, inside the 12.6% aperture on every shape
+
+function M.GetIconInsetExtra()
+  local cd = M._store and M._store(false)
+  local v = cd and cd.iconInset
+  if type(v) ~= "number" then return M.ICON_INSET_EXTRA end
+  if v < 0 then return 0 end
+  if v > M.ICON_INSET_EXTRA_MAX then return M.ICON_INSET_EXTRA_MAX end
+  return v
+end
+
+function M.SetIconInsetExtra(v)
+  local cd = M._store and M._store(true)
+  if cd then cd.iconInset = tonumber(v) or M.ICON_INSET_EXTRA end
+  M.ReanchorIcons()
+end
 
 function M.IconInset(size)
-  return (size or 0) * M.ICON_MASK_INSET + M.ICON_ROUNDING_INSET
+  return (size or 0) * (M.ICON_MASK_INSET + M.GetIconInsetExtra() / 100)
+end
+
+-- The frame's opening, in tile pixels, on the axis whose outward overhang is `o`. The ceiling for any
+-- inset: past this the icon no longer touches the frame at all.
+function M.IconAperture(size, o)
+  local ext = (size or 0) + 2 * (o or 0)
+  return -o + 20 * ext / 86
 end
 
 -- Anchor a region to the visible ICON's rect. Used for the icon itself and for everything drawn over
@@ -855,7 +912,28 @@ function M.AnchorMaskedIcon(region, parent, size)
   region:ClearAllPoints()
   region:SetPoint("TOPLEFT", parent, "TOPLEFT", pad, -pad)
   region:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -pad, pad)
+  -- Remember every anchoring, so the inset can be re-applied live. These anchors are set ONCE at tile
+  -- construction; without this, moving the slider would change nothing until the next login, which is
+  -- not a slider anyone can use.
+  --
+  -- A flat list rather than a field on the parent, because the parent is not always a pooled tile:
+  -- the BuffBar row anchors its icon to a NESTED frame (BuffViewers.lua:84), which walking
+  -- viewer.items would never reach. Tiles are pooled and never destroyed, so this only ever grows to
+  -- the size of the pool.
+  M._insetAnchors = M._insetAnchors or {}
+  local list = M._insetAnchors
+  for i = 1, #list do
+    if list[i][1] == region then return pad end   -- re-anchoring an already-tracked region
+  end
+  list[#list + 1] = { region, parent, size }
   return pad
+end
+
+-- Re-apply the inset to every region already anchored, in all four viewers.
+function M.ReanchorIcons()
+  for _, a in ipairs(M._insetAnchors or {}) do
+    M.AnchorMaskedIcon(a[1], a[2], a[3])
+  end
 end
 
 function ItemMixin:OnEnter()

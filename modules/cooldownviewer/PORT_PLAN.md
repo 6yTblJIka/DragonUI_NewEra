@@ -5,7 +5,7 @@ TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global conventio
 
 **Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets), 6 (loose
 ends) and 7 (the tracked-aura catalog) implemented — the whole of both phasing tables except the
-deliberate cuts. Offline harnesses pass (`qa/offline/`, 519 boot assertions). Phases 1-3 and the 4b-1
+deliberate cuts. Offline harnesses pass (`qa/offline/`, 565 boot assertions). Phases 1-3 and the 4b-1
 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
 fixed, §G.7.1/§G.7.2).
 
@@ -1706,6 +1706,83 @@ instead of lighting it; without the sublevel it draws under the art it is meant 
 guards confirmed load-bearing by removal, each failing on its own named assertion: the aura-branch
 light, the cooldown-path clear, the pooling clear, the setting's live refresh, the additive blend,
 the glow's source art, and the oversized rect.
+
+### H.2.3 The in-game pass on 8c — four bugs and two features
+
+Six items off one session in the game. Two were about 8c itself, two were older faults that 8c's
+attention surfaced, and two were features the port had simply never had.
+
+**The glow was drawing over the icon** ("icon glow effect inside frame"). `UI-ActionButton-Border` is
+not a hollow ring — it is a filled square glow, brightest near its edge — so drawn over the tile it
+washes light straight across the icon art. Fixed by DRAW LAYER rather than by geometry: the region
+moved to `BACKGROUND`, where the opaque icon masks its interior and only the halo that reaches past
+the icon survives. That is also the closest this client has to the mask it does not have, and it makes
+the oversize forgiving — too small now shows less halo instead of veiling the icon.
+
+**"Icons too large still and no rounded edges."** The third report on this, at the third value, which
+is the signal that it is not a number to be found. The mask inset is faithful to retail and retail's
+icon is ROUNDED; ours cannot be (§C2), and a square corner reads larger than its own edge does. So it
+became a setting — with a measured ceiling. Decoding the overlay's aperture (the first fully
+transparent texel inward of the border line) puts it at art 20 of 86:
+
+| tile | anchor | aperture x | aperture y | as a fraction |
+|---|---|---|---|---|
+| essential 50px | -9/+8 | 6.81 | 7.35 | 13.6% |
+| buffIcon 40px | -8/+7 | 5.02 | 5.24 | 12.6% |
+| utility 30px | -6/+5 | 3.77 | 4.30 | 12.6% |
+
+Inset that far and the icon clears the frame's opening entirely, so every square corner sits inside
+the rounded aperture — the closest this gets to rounded edges, at the cost of a visibly smaller icon.
+The slider spans from retail-faithful to that limit.
+
+The correction inside the correction: the extra had to become a **fraction of the tile**, not flat
+pixels. The frame art scales with the tile, so its opening does too, and a flat budget generous enough
+for a 50px Essential tile pushes a 30px Utility icon clean through its own opening. The first draft
+used flat pixels and the harness failed on exactly that — utility at 3.41 against an inner limit of
+3.28. The invariant it now checks is not a value but a range: the frame always covers the icon's edge,
+and the icon never shrinks past the opening, at every legal setting on every shape.
+
+**Prayer of Mending showed the 30s buff, not the cooldown.** Retail puts the aura's remaining time on
+a buffed tile because tinting that swipe gold is its ONLY way to say "buffed" — it has no spare
+channel. Since 8c we do, so the number is free to be the useful one. Aura precedence became a setting
+defaulting to the cooldown, and the glow carries the signal on both settings. This is the first thing
+8c has paid for rather than cost.
+
+It also moved a guard. `SetBuffGlow(false)` used to sit below both precedence branches, on the
+reasoning that everything past them meant "no effect of ours is up" — which stopped being true the
+moment the timer became optional, since a genuinely buffed spell now falls straight through to the
+cooldown path. One call above both branches covers both readings.
+
+**Old-spec abilities stayed in the window until touched.** Nothing the viewers listened for fires on a
+talent-group change, and any interaction that rebuilt a viewer hid it. `ACTIVE_TALENT_GROUP_CHANGED`
+and `PLAYER_TALENT_UPDATE` now rebuild and invalidate both the curated-list cache and the talent gate.
+
+**Per-spec layouts (new).** Dual talent specialisation is a 3.1 feature this port had ignored: one
+character genuinely wants Mind Blast on Essential in Discipline and not in Holy. The three tables that
+describe a layout — spell lists, aura assignments, trinket placement — moved into a per-talent-group
+bucket. Deliberately NOT bucketed: `seenAura`, which is knowledge rather than layout (an aura met in
+Holy is still an aura this character can get), and everything under `frames`, since a viewer that
+jumped across the screen on a respec would read as broken — retail's Edit Mode is not spec-aware
+either. Keyed by talent GROUP, not by inferred spec name: the group is what the client actually gives
+us, and inferring "Discipline" from the heaviest tree would be a guess that changes mid-levelling and
+collides outright when two groups share a tree.
+
+The harness caught a real one here. The first draft stored buckets under `cd.layouts` — which is
+already SettingsPresets' saved-layout table, so `ResetTracking` silently deleted every layout the
+player had saved. Renamed to `specLayouts`, with an assertion that a saved layout survives a tracking
+reset.
+
+**New buffs are hidden by default (new).** Auto-track flipped OFF. A newly met aura is still recorded
+and still listed under Hidden — discovery is worth keeping — but nothing reaches the screen until it
+is assigned. On by default meant a raid arrived as other people's cooldowns, food and flasks on a
+viewer the player had carefully curated.
+
+Harness: 519 → 565. Two stub fidelity fixes: `CreateTexture` was discarding its LAYER argument, so a
+region created on the wrong layer was unassertable, and `SetDrawLayer`/`SetBlendMode` now record.
+Eight guards confirmed load-bearing. Two mutations came back green first time and both were the test's
+fault, not the guard's: the spec-swap test set its scene with `SetSpellEnabled`, which rebuilds the
+viewer itself, so the scene-setting was doing the work the event was meant to do; and the glow-layer
+test could not see `CreateTexture`'s argument at all. Both rewritten, both now load-bearing.
 
 ### 8d. Bar theming
 

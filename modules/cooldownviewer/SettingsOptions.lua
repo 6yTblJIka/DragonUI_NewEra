@@ -200,28 +200,63 @@ local function build(parent)
   end
 
   -- ── Buffed spells. Retail tints the swipe gold while a spell's own buff is on you; that setter is
-  -- WoD+, so ours lights the tile's frame instead (PORT_PLAN §H.2 8c).
+  -- WoD+, so ours haloes the icon instead (PORT_PLAN §H.2 8c) — which then frees the timer to show
+  -- whichever number is more useful, rather than being retail's only way to say "buffed".
   c:AddSection("Buffed spells", false)
-  c:AddText("While a spell's own buff is active on you, its icon in Essential or Utility shows the "
-    .. "buff's remaining time instead of the cooldown. This marks those icons so the two are not "
-    .. "mistaken for each other.")
+  c:AddText("A spell can be on cooldown and buffing you at the same time. The glow says which icons "
+    .. "are buffed; the timer says how long.")
   c:AddCheckbox({
     label = "Glow while buffed",
-    desc  = "Light the icon's frame gold while the spell's buff (or, for a shaman, its totem) is up.",
+    desc  = "Halo the icon gold while the spell's buff (or, for a shaman, its totem) is up.",
     get   = function() return M.IsBuffGlowEnabled() end,
     set   = function(v) M.SetBuffGlowEnabled(v) end,
+  })
+  c:AddCheckbox({
+    label = "Show the buff's time, not the cooldown",
+    desc  = "Retail's behaviour: while buffed, the icon counts down the BUFF. Off, it counts down the "
+            .. "spell's cooldown and the glow alone marks it as buffed — which is clearer when the "
+            .. "two differ, as on Prayer of Mending.",
+    get   = function() return M.BuffShowsAuraTime() end,
+    set   = function(v) M.SetBuffShowsAuraTime(v) end,
+  })
+
+  -- ── Icon fit. Retail masks its icons, which both insets and rounds them; §C2 records that
+  -- MaskTexture has no polyfill on this client, so the inset is reproducible and the rounding is not.
+  c:AddSection("Icon fit", false)
+  c:AddText("Icons are inset so the frame sits on their edge, the way the masked retail icons do. "
+    .. "Corners cannot be rounded on this client, and a square corner reads larger than its own edge "
+    .. "— raise this if the icons still look too big for their frames. At the maximum they clear the "
+    .. "frame's opening entirely, which is as close to rounded as this gets.")
+  c:AddSlider({
+    label = "Icon inset", min = 0, max = M.ICON_INSET_EXTRA_MAX, step = 1, format = pct,
+    get = function() return M.GetIconInsetExtra() end,
+    set = function(v) M.SetIconInsetExtra(v) end,
+  })
+
+  -- ── Per-spec layout. Dual talent specialisation means one character genuinely wants two layouts.
+  c:AddSection("Talent specs", false)
+  c:AddText("Which spells and buffs you track is remembered separately for each talent spec, so a "
+    .. "Discipline layout and a Holy one do not overwrite each other. Position, size and the other "
+    .. "appearance settings are shared, as they are in retail.")
+  c:AddCheckbox({
+    label = "Separate layout per spec",
+    desc  = "Off, both specs share one set of lists. Turning it on copies the layout you have now "
+            .. "into the spec you are in.",
+    get   = function() return M.IsPerSpecLayout() end,
+    set   = function(v) M.SetPerSpecLayout(v) end,
   })
 
   -- ── Buff tracking. The buff viewers have no curated list: any player buff shorter than the
   -- auto-track window shows automatically, which is what makes trinket, potion and proc buffs work
   -- without enumerating them in advance.
   c:AddSection("Buff tracking", false)
-  c:AddText(("Buff Icons and Buff Bars automatically track any buff on you lasting %d seconds or "):format(
-      M.BUFF_TRACK_MAX_DURATION or 120)
-    .. "less. Longer buffs and permanent toggles are ignored, so the viewers stay quiet out of combat.")
+  c:AddText("Buffs you have not seen before are recorded and listed under Hidden on the Tracked Buffs "
+    .. "tab, where you can assign the ones you want. Nothing appears on screen until you do.")
   c:AddCheckbox({
-    label = "Auto-track short buffs",
-    desc  = "Turn off to show only auras you have explicitly assigned on the Tracked Buffs tab.",
+    label = ("Auto-track buffs under %ds"):format(M.BUFF_TRACK_MAX_DURATION or 120),
+    desc  = "Show every short buff the moment it lands, without assigning it first. Convenient on a "
+            .. "character you are still setting up; in a raid it fills the viewers with other "
+            .. "people's cooldowns, food and flasks.",
     get   = function() return M.IsAutoTrackBuffs() end,
     set   = function(v) M.SetAutoTrackBuffs(v) end,
     onChanged = function() if M.RefreshActiveViewer then M.RefreshActiveViewer() end end,
