@@ -233,13 +233,12 @@ modules\cooldownviewer\Viewers.lua
 # ItemMixins; BuffViewers needs M.BaseViewerMixin from Viewers — so both load after those two.
 modules\cooldownviewer\AuraItemMixins.lua
 modules\cooldownviewer\BuffViewers.lua
-# Phase 4: per-cooldown alerts and ready sounds, plus the right-click assignment menu.
-# AlertData is generated (tools/cdm-spellgen/gen_alertdata.py) and must precede Alerts, which reads
-# it; ItemMenu needs M.VIEWER_SPECS from Register, but only at click time, so file order is free.
+# Phase 4a: per-cooldown alerts and ready sounds. The ENGINE and its stores only — assignment UI
+# belongs to the Phase 4b settings panel. AlertData is generated
+# (tools/cdm-spellgen/gen_alertdata.py) and must precede Alerts, which reads it.
 modules\cooldownviewer\AlertData.lua
 modules\cooldownviewer\SoundAlertData.lua
 modules\cooldownviewer\Alerts.lua
-modules\cooldownviewer\ItemMenu.lua
 modules\cooldownviewer\Register.lua
 
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---

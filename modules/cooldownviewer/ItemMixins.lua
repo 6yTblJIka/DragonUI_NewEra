@@ -37,6 +37,19 @@ local function applyItemAtlases(item)
   if not set then return end
   if item.IconOverlay then set(item.IconOverlay, "UI-HUD-CoolDownManager-IconOverlay", false) end
   if item.OutOfRange  then set(item.OutOfRange,  "UI-CooldownManager-OORshadow",       false) end
+
+  -- The ready-flash sprite. The retail GCD flipbook atlas is not registered on this client, so give
+  -- the texture the fallback highlight the stepper pulses instead (see the Ready flash section).
+  local flash = item.CooldownFlash
+  if flash and flash.Flipbook then
+    if NE.tex.HasAtlas and NE.tex.HasAtlas("UI-HUD-ActionBar-GCD-Flipbook") then
+      set(flash.Flipbook, "UI-HUD-ActionBar-GCD-Flipbook", false)
+    else
+      flash.Flipbook:SetTexture(M.FLASH_FALLBACK_TEXTURE)
+      flash.Flipbook:SetBlendMode("ADD")
+    end
+    flash.Flipbook:SetAlpha(0)
+  end
   -- Normalise the inconsistent baked borders on 3.3.5a icon art (8% zoom). This is also what stands
   -- in for the removed rounded mask.
   if NE.tex.CropIcon then
@@ -363,18 +376,39 @@ function ItemMixin:UpdateShownState()
 end
 
 -- ── Ready flash ─────────────────────────────────────────────────────────────────────────────────
--- The GCD flipbook sprite stepper. DOWNPORT: the source drives this from the generated NE_ATLAS
--- table; we read our own NE.tex registry. Phase 1 does not ship the flipbook art, so getFlashAtlas
--- returns nil and the whole path degrades to "no flash" rather than erroring — the structure is
--- kept so dropping the BLP in later is the only change needed.
+-- The cue that an ability has just come off cooldown. Retail plays a 22-frame flipbook sprite; the
+-- source steps it by hand (the animation system was unavailable to it too), and that stepper ports.
+--
+-- TWO FAULTS FIXED HERE, both of which made the flash silently never appear:
+--
+--  1. `NE.tex.GetAtlasRect` returns FOUR NUMBERS (left, right, top, bottom), not a table. The
+--     stepper indexed the result as `atlas.right`, so `atlas` was the number `left` and every
+--     access errored inside an OnUpdate.
+--  2. The "art not shipped, degrade quietly" guard was `if not getFlashAtlas()`. GetAtlasRect
+--     returns `0, 1, 0, 1` for an UNKNOWN atlas, and `0` is truthy in Lua — so the guard passed
+--     precisely when the art was missing. `NE.tex.HasAtlas` is the correct test.
+--
+-- The retail flipbook art is not registered on this client, so the flipbook path is dormant. Rather
+-- than leave the feature invisible, an undecorated fallback pulses the square button highlight —
+-- a base-client texture DragonUI itself uses, so it cannot fail to load. If the flipbook atlas is
+-- ever registered, the sprite path takes over with no further change.
 local FLASH_DURATION = 0.75
 local FLASH_FRAMES   = 22
 local FLASH_ROWS     = 11
 local FLASH_COLS     = 2
 
+-- A base-client texture DragonUI itself uses (modules/bagsort.lua et al), so it cannot fail to load.
+M.FLASH_FALLBACK_TEXTURE = "Interface\\Buttons\\ButtonHilight-Square"
+
+local function hasFlipbook()
+  return NE.tex and NE.tex.HasAtlas and NE.tex.HasAtlas("UI-HUD-ActionBar-GCD-Flipbook")
+end
+
+-- left, right, top, bottom as a table, or nil when the atlas is unknown.
 local function getFlashAtlas()
-  if not (NE.tex and NE.tex.GetAtlasRect) then return nil end
-  return NE.tex.GetAtlasRect("UI-HUD-ActionBar-GCD-Flipbook")
+  if not hasFlipbook() then return nil end
+  local l, r, t, b = NE.tex.GetAtlasRect("UI-HUD-ActionBar-GCD-Flipbook")
+  return { left = l, right = r, top = t, bottom = b }
 end
 
 local function flashOnUpdate(flash)
@@ -390,9 +424,18 @@ local function flashOnUpdate(flash)
     flash._flashStartTime = nil
     return
   end
-  if flash.Flipbook then flash.Flipbook:SetAlpha(1) end
+  if not flash.Flipbook then return end
+
   local atlas = getFlashAtlas()
-  if not (atlas and flash.Flipbook) then return end
+  if not atlas then
+    -- Fallback: fade a plain highlight in over the first third, then out. No sprite sheet needed.
+    local alpha = (progress < 0.33) and (progress / 0.33) or (1 - (progress - 0.33) / 0.67)
+    if alpha < 0 then alpha = 0 elseif alpha > 1 then alpha = 1 end
+    flash.Flipbook:SetAlpha(alpha)
+    return
+  end
+
+  flash.Flipbook:SetAlpha(1)
   local frame = math.floor(progress * FLASH_FRAMES)
   if frame >= FLASH_FRAMES then frame = FLASH_FRAMES - 1 end
   local col = frame % FLASH_COLS
@@ -406,8 +449,9 @@ end
 
 function ItemMixin:ScheduleFlash(start, duration)
   local flash = self.CooldownFlash
-  if not flash then return end
-  if not getFlashAtlas() then return end   -- art not shipped yet: no-op cleanly
+  if not (flash and flash.Flipbook) then return end
+  -- No atlas gate here any more: the fallback pulse needs no art, so the flash is always available.
+  -- The old guard could not detect a missing atlas anyway (see the note above).
   if self._flashScheduledFor == start and self._flashScheduledDur == duration then return end
   self._flashScheduledFor = start
   self._flashScheduledDur = duration
@@ -467,9 +511,16 @@ function ItemMixin:RefreshIconColor()
   if not self.spellID then return end
 
   -- DOWNPORT: C_Spell.IsSpellUsable is absent on this client (neither ClassicAPI nor compat provides
-  -- it), so we use the 3.3.5a global directly.
+  -- it), so we use the 3.3.5a global directly — and it must be given the spell NAME.
+  --
+  -- 3.3.5a's IsUsableSpell takes a name, or a spellbook INDEX with a bookType. It does not take a
+  -- spellID. Passing one is read as an index far past the end of the book, so it returns nil rather
+  -- than erroring — and nil is neither usable nor out-of-mana, so every icon fell through to
+  -- ICON_UNUSABLE and the whole viewer rendered permanently grey. DragonUI's own action bars pass a
+  -- name for this reason (modules/actionbars/extrabar.lua:1049). The id is kept as a fallback for a
+  -- nameless entry only.
   local usable, oom
-  if IsUsableSpell then usable, oom = IsUsableSpell(self.spellID) end
+  if IsUsableSpell then usable, oom = IsUsableSpell(self.spellName or self.spellID) end
 
   -- Range only matters with a live target and a spell that actually range-checks. 3.3.5a's
   -- IsSpellInRange takes a NAME and returns 1/0/nil (nil = no range check applies).

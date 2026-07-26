@@ -61,6 +61,7 @@ local function boot()
 
       NE.RegisterHUDFrame({
         name    = spec.id,
+        label   = spec.label,   -- shown on the editor handle; also silences AceLocale's missing-key warning
         frame   = frame,
         section = "widgets",
         key     = "ne" .. spec.id,
@@ -355,15 +356,14 @@ NE.RegisterOptionSection({
       setFunc = function() M.ResetTracking() end,
     })
 
-    -- Alerts and sounds are assigned PER SPELL, from the icon's own right-click menu. There is
-    -- nothing global to toggle, so this section exists to make the feature discoverable — an
-    -- opt-in that nothing advertises is an opt-in nobody finds — plus the one global escape hatch.
+    -- The alert/sound ENGINE ships here; the per-spell picker that drives it belongs to the
+    -- settings panel (PORT_PLAN §E6, Phase 4b). Until then nothing can be assigned, so this
+    -- section says so plainly rather than advertising a feature with no way in.
     if C.AddSpacer then C:AddSpacer(scroll) end
     C:AddHeading(scroll, "Alerts and sounds")
     C:AddDescription(scroll,
-      "Right-click any cooldown icon to give that spell a visual alert (when it comes off cooldown, "
-      .. "when its aura is running out, or when it becomes usable), a sound for when it is ready, or "
-      .. "to hide it from its viewer.")
+      "Cooldowns can carry a visual alert and a ready sound. Choosing them per spell needs the "
+      .. "settings panel, which is not built yet — this clears anything already stored.")
 
     C:AddToggle(scroll, {
       label   = "Clear all alerts and sounds",

@@ -161,6 +161,19 @@ function NE.RegisterHUDFrame(spec)
     local key     = spec.key or spec.name
     local content = spec.frame
 
+    -- DragonUI's CreateUIFrame labels the editor handle with `addon.L[frameName]`. AceLocale's
+    -- read metatable fires a non-breaking error for any key its locale doesn't define, so every
+    -- frame we register printed "Missing entry for 'CooldownViewerBuffBar'" on login.
+    --
+    -- The table GetLocale returns has an `__index` hook but NO `__newindex`, so seeding our own key
+    -- is a plain assignment into a runtime table — it does not modify DragonUI (CONTRACTS §0), and
+    -- it upgrades the handle's label from the raw frame name to something readable.
+    if spec.label and type(dragon.L) == "table" then
+        pcall(function()
+            if rawget(dragon.L, spec.name) == nil then dragon.L[spec.name] = spec.label end
+        end)
+    end
+
     -- The draggable handle. Sized to the content's current footprint; kept in sync below.
     local w = math.max(content:GetWidth() or 0, 32)
     local h = math.max(content:GetHeight() or 0, 32)

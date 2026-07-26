@@ -3,7 +3,8 @@
 Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/` (Classic 1.15 /
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
-**Status:** Phases 0-4a implemented. Offline harnesses pass (`qa/offline/`, 153 boot assertions).
+**Status:** Phases 0-4a implemented (engine only — no assignment UI, see §E6). Offline harnesses
+pass (`qa/offline/`, 154 boot assertions).
 Phases 1-3 are confirmed working in-game. Remaining: Phase 4b, the standalone settings panel —
 re-scoped in §E6 and deferred as its own phase.
 
@@ -225,8 +226,8 @@ rank resolver (`highestKnownRankID`) picks the learned rank live.
 | **1** | Essential + Utility viewers. Mask and swipe stripped. One mover each. Settings in options tab. | Icons appear, swipe on cast, timer counts down, `/dnetest` PASS. The "does it feel right" checkpoint. |
 | **2** | `CdmSeedWotLK.lua` + `RacialsWotLK.lua` + Death Knight. | Every class shows a sensible default set at 80. |
 | **3** | ~~BuffIcon + BuffBar (aura-driven; more moving parts).~~ **DONE** — see §E2. | Buff bars track, auto-window catches procs, no empty-row churn. |
-| **4a** | `Alerts.lua` + `SoundAlertData.lua` + `AlertData.lua`, plus a right-click assignment menu. **DONE** — see §E6. | An alert and a sound can be assigned to a spell and both fire. |
-| **4b** | The `CooldownViewerSettings/` panel (spell picker, drag reorder, presets). Re-scoped in §E6; deferred. | — |
+| **4a** | `Alerts.lua` + `SoundAlertData.lua` + `AlertData.lua` — the ENGINE and its stores. **DONE** — see §E6. | Assigning an alert or sound programmatically makes it fire. |
+| **4b** | The `CooldownViewerSettings/` panel: spell picker, per-spell alert/sound assignment, drag reorder, presets. Re-scoped in §E6. | Alerts, sounds and spell visibility are all settable from the UI. |
 
 Phases 1 and 2 are the shippable unit. Phase 3 onward is optional polish.
 
@@ -421,20 +422,53 @@ the next rank. `_baseSpellID` / `GetSettingsKey()` now carries the stable id, an
 the two differ. This is the same rank gotcha the cooldown path already documents, resurfacing in a
 new place.
 
-**An assignment surface was not optional.** Alerts and sounds are strictly opt-in per spell, so
-without one this phase would have shipped as dormant code. `ItemMenu.lua` is a right-click menu on
-the icon itself — where a player looks first, and it writes exactly the stored shape the Phase 4b
-panel will later read. It needs three menu levels (Ready Sound → category → entry); 3.3.5a's own
-`UIDropDownMenu` caps at two, so it drives ClassicAPI's `C_UIDropDownMenu`, which grows
-`C_UIDROPDOWNMENU_MAXLEVELS` on demand. The menu also carries "Hide from this viewer" — the first
-user-facing way to author a custom list, and now the *only* caller of `GetEditableList`, which is
-precisely the point of the §E5 fix: seeding is correct there because the user just chose something.
+**The assignment surface was tried as a right-click menu, and removed.** Alerts and sounds are
+strictly opt-in per spell, so 4a otherwise ships dormant. `ItemMenu.lua` put the choices on the icon
+itself. It did not open in-game, and rather than debug a surface the Phase 4b panel replaces, the
+owner called it: delete it and do assignment in the settings panel. So the ENGINE and its stores
+ship here and nothing drives them yet — the options tab says so rather than advertising a way in
+that does not exist.
+
+`M.SetSpellEnabled` / `M.IsSpellEnabled` survive that removal and are the panel's seam for showing
+and hiding a spell. `SetSpellEnabled` is the only caller of `GetEditableList`, which is the point of
+the §E5 fix: seeding a custom list is correct exactly when the user has just chosen something.
 
 **Phase 4b, re-scoped.** `CooldownViewerSettings/` is 2,139 lines across six files, and its retail
 dependencies are heavier than §F3 assumed: `MenuUtil` (absent), `GLOBAL_MOUSE_UP` (retail 9.x,
 absent — `Reorder.lua` is built entirely on it), `LargeSideTabButtonTemplate` (absent), clipboard
 export (no `CopyToClipboard` on 3.3.5a), and the CDM side-tab art. It is a phase in its own right,
 not a tail on this one. The per-spell menu covers the assignment need in the meantime.
+
+## E7. Three faults found on the first in-game test of Phase 4a
+
+All three predate this phase and had been invisible because the offline stubs were too generous.
+
+1. **Every icon rendered grey.** `RefreshIconColor` called `IsUsableSpell(self.spellID)`. On 3.3.5a
+   that function takes a spell NAME, or a spellbook INDEX with a bookType — never a spellID. Given
+   one it reads it as an index far past the end of the book and returns **nil**, without erroring.
+   nil is neither usable nor out-of-mana, so every icon fell through to `ICON_UNUSABLE` and the
+   whole viewer dimmed to 40%. DragonUI's own action bars pass a name
+   (`modules/actionbars/extrabar.lua:1049`). The harness stub returned a blanket `true` regardless
+   of argument, which is exactly why it never caught this; it now mimics the client.
+
+2. **The ready flash never played, for two compounding reasons.** `NE.tex.GetAtlasRect` returns four
+   NUMBERS, not a table, and the flipbook stepper indexed the result as `atlas.right` — so `atlas`
+   was the number `left` and every access inside an OnUpdate was an error waiting to happen. It
+   never got that far, because the "art not shipped, degrade quietly" guard was
+   `if not getFlashAtlas()`, and `GetAtlasRect` returns `0, 1, 0, 1` for an unknown atlas — `0` is
+   truthy in Lua, so the guard passed precisely when the art was missing and `ScheduleFlash` bailed
+   for the wrong reason. `NE.tex.HasAtlas` is the correct test. The retail GCD flipbook is not
+   registered on this client, so the sprite path stays dormant and an undecorated alpha pulse on
+   `Interface\Buttons\ButtonHilight-Square` (a base texture DragonUI itself uses) provides the cue.
+   The sprite path takes over automatically if the atlas is ever registered.
+
+3. **`AceLocale: Missing entry for 'CooldownViewerBuffBar'` on every login.** DragonUI's
+   `CreateUIFrame` labels the editor handle with `addon.L[frameName]`, and AceLocale's read metatable
+   fires a non-breaking error for any undefined key. Harmless but noisy, once per registered frame.
+   The table `GetLocale` returns has an `__index` hook but **no `__newindex`**, so `NE.RegisterHUDFrame`
+   now seeds its own key — a plain assignment into a runtime table, not a change to DragonUI — which
+   both silences the warning and upgrades the handle's label from `CooldownViewerBuffBar` to
+   "Buff Bars".
 
 ## F. Open questions / unverified
 

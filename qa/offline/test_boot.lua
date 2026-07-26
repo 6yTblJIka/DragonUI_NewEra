@@ -40,6 +40,7 @@ local function newRegion(kind)
   function r:SetHeight() end
   function r:SetJustifyH() end
   function r:SetJustifyV() end
+  function r:SetBlendMode() end
   return r
 end
 
@@ -151,7 +152,14 @@ function UnitCastingInfo() return nil end
 function UnitChannelInfo() return nil end
 function InCombatLockdown() return false end
 function GetTotemInfo() return false end
-function IsUsableSpell() return true, false end
+-- Mirrors 3.3.5a: IsUsableSpell takes a spell NAME (or a spellbook index + bookType). Given a
+-- spellID it reads it as an index past the end of the book and returns nil — no error, just a
+-- silent nil that is neither usable nor out-of-mana. Returning a blanket `true` here is what let
+-- the viewer ship rendering every icon permanently grey.
+function IsUsableSpell(arg)
+  if type(arg) == "string" then return true, false end
+  return nil
+end
 function IsSpellInRange() return nil end
 function IsUsableItem() return true end
 function IsSpellKnown(id) return true end
@@ -284,19 +292,6 @@ function LibStub(name, silent)
   return nil
 end
 
--- Dropdown surface. ItemMenu builds against ClassicAPI's C_UIDropDownMenu; the stub captures the
--- buttons each level would render so the menu can be walked without a UI.
-MENU_BUTTONS = {}
-function C_UIDropDownMenu_CreateInfo() return {} end
-function C_UIDropDownMenu_AddButton(info, level)
-  MENU_BUTTONS[level or 1] = MENU_BUTTONS[level or 1] or {}
-  local t = MENU_BUTTONS[level or 1]
-  t[#t + 1] = info
-end
-function C_UIDropDownMenu_Initialize(frame, fn) frame._init = fn end
-function ToggleDropDownMenu() end
-function CloseDropDownMenus() end
-CLOSE = "Close"
 
 -- ── DragonUI host stub ──────────────────────────────────────────────────────
 local profile = { newera = { enabled = true, modules = {} }, movers = {}, widgets = {} }
@@ -347,7 +342,6 @@ local FILES = {
   "modules/cooldownviewer/AlertData.lua",
   "modules/cooldownviewer/SoundAlertData.lua",
   "modules/cooldownviewer/Alerts.lua",
-  "modules/cooldownviewer/ItemMenu.lua",
   "modules/cooldownviewer/Register.lua",
 }
 
@@ -410,6 +404,28 @@ local mb
 for _, it in ipairs(ess.items) do if it.spellName == "Mind Blast" then mb = it end end
 assertf(mb ~= nil, "Mind Blast tile present")
 if mb then assertf(mb.spellID == 10947, "Mind Blast tile bound to highest rank (" .. tostring(mb.spellID) .. ")") end
+
+print("\n=== ICON TINT ===")
+-- Reported in-game: every icon rendered grey. IsUsableSpell was being handed a spellID, which this
+-- client reads as a spellbook index and answers nil for, so the tint fell through to ICON_UNUSABLE.
+mb:RefreshIconColor()
+local tint = mb.Icon._color
+assertf(tint and tint[1] == M.ICON_USABLE[1] and tint[2] == M.ICON_USABLE[2],
+        "a usable spell tints white, not grey (got "
+        .. table.concat({ tostring(tint and tint[1]), tostring(tint and tint[2]) }, ",") .. ")")
+
+-- The ready flash must be armed without the retail flipbook atlas, which this client lacks. The old
+-- guard read GetAtlasRect's first return (0 for an unknown atlas) as truthy and never fired.
+mb:ClearFlash()
+mb:ScheduleFlash(GetTime() + 5, 10)
+assertf(mb.CooldownFlash._flashStartTime ~= nil, "ready flash schedules without the flipbook atlas")
+assertf(mb.CooldownFlash.Flipbook:GetTexture() == M.FLASH_FALLBACK_TEXTURE,
+        "…using the fallback highlight texture")
+-- Step into the flash window and confirm the pulse drives alpha rather than erroring on a number.
+mb.CooldownFlash._flashStartTime = GetTime() - 0.2
+mb.CooldownFlash:GetScript("OnUpdate")(mb.CooldownFlash)
+assertf((mb.CooldownFlash.Flipbook:GetAlpha() or 0) > 0, "…and the pulse raises its alpha")
+mb:ClearFlash()
 
 print("\n=== EVENTS: cast a cooldown ===")
 COOLDOWNS[10947] = { NOW, 8 }          -- Mind Blast rank 3, 8s cooldown
@@ -889,26 +905,6 @@ M.SetSpellEnabled("essential", 8092, true)
 assertf(M.IsSpellEnabled("essential", 8092) == true, "and it can be shown again")
 M.ResetCustomList("essential", "PRIEST")
 
-print("\n=== ITEM MENU (Phase 4) ===")
-M.ShowItemMenu(mb)
-MENU_BUTTONS = {}
-menuFrameInit = _G.NE_CooldownViewerItemMenu and _G.NE_CooldownViewerItemMenu._init
-assertf(menuFrameInit ~= nil, "right-click menu initialises")
-if menuFrameInit then
-  menuFrameInit(nil, 1)
-  local labels = {}
-  for _, b in ipairs(MENU_BUTTONS[1] or {}) do labels[#labels + 1] = b.text end
-  assertf(labels[1] == "Mind Blast", "menu titled with the spell name")
-  local joined = table.concat(labels, "|")
-  assertf(joined:find("Alert") and joined:find("Ready Sound"), "menu offers Alert and Ready Sound")
-  assertf(joined:find("Hide from"), "menu offers hiding the spell")
-
-  -- The sound list lives at level 3, which is what the ClassicAPI dropdown is needed for.
-  MENU_BUTTONS = {}
-  menuFrameInit(nil, 3, "sound:Animals")
-  assertf(#(MENU_BUTTONS[3] or {}) == 10, "sound category renders its entries at level 3 ("
-          .. #(MENU_BUTTONS[3] or {}) .. ")")
-end
 
 print("\n=== UNIT-EVENT FILTER ===")
 local probe = CreateFrame("Frame")
