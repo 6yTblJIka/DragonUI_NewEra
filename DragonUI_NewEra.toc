@@ -239,6 +239,11 @@ modules\cooldownviewer\BuffViewers.lua
 modules\cooldownviewer\AlertData.lua
 modules\cooldownviewer\SoundAlertData.lua
 modules\cooldownviewer\Alerts.lua
+# Phase 4b-1: the standalone /cdm settings window (shell). SettingsAssets registers the side-tab
+# art and must load before the panel builds tabs from it. Both need core/Tabs.lua and
+# core/PanelChrome.lua, which load far earlier.
+modules\cooldownviewer\SettingsAssets.lua
+modules\cooldownviewer\SettingsPanel.lua
 modules\cooldownviewer\Register.lua
 
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---

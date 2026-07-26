@@ -36,8 +36,15 @@ local function newRegion(kind)
   function r:SetFontObject(f) self._font = f end
   function r:SetText(t) self._text = t end
   function r:GetText() return self._text end
-  function r:SetWidth() end
-  function r:SetHeight() end
+  function r:SetWidth(w) self._w = w end
+  function r:SetHeight(h) self._h = h end
+  function r:SetSize(w, h) self._w, self._h = w, h end
+  function r:GetWidth() return self._w or 0 end
+  function r:GetHeight() return self._h or 0 end
+  function r:GetSize() return self._w or 0, self._h or 0 end
+  function r:SetDrawLayer() end
+  function r:SetTexCoordModifiesRect() end
+  function r:SetRotation() end
   function r:SetJustifyH() end
   function r:SetJustifyV() end
   function r:SetBlendMode() end
@@ -96,6 +103,46 @@ function frameMeta:SetParent(p) self._parent = p end
 function frameMeta:GetParent() return self._parent end
 function frameMeta:SetMovable() end
 function frameMeta:SetUserPlaced() end
+-- Window surface: what a draggable, ESC-closable panel touches.
+function frameMeta:SetClampedToScreen() end
+function frameMeta:SetToplevel() end
+function frameMeta:RegisterForDrag() end
+function frameMeta:StartMoving() end
+function frameMeta:StopMovingOrSizing() end
+function frameMeta:EnableMouseWheel() end
+function frameMeta:EnableKeyboard() end
+function frameMeta:SetHitRectInsets() end
+function frameMeta:RegisterForClicks() end
+function frameMeta:SetResizable() end
+function frameMeta:SetMinResize() end
+function frameMeta:SetMaxResize() end
+function frameMeta:GetRegions() return unpack(self._regions) end
+function frameMeta:GetObjectType() return self._kind end
+function frameMeta:SetBackdrop() end
+function frameMeta:SetBackdropColor() end
+function frameMeta:SetBackdropBorderColor() end
+-- ScrollFrame surface.
+function frameMeta:SetScrollChild(c) self._scrollChild = c end
+function frameMeta:GetScrollChild() return self._scrollChild end
+function frameMeta:SetVerticalScroll(v) self._vscroll = v end
+function frameMeta:GetVerticalScroll() return self._vscroll or 0 end
+function frameMeta:GetVerticalScrollRange() return 0 end
+function frameMeta:UpdateScrollChildRect() end
+-- EditBox surface (the search box).
+function frameMeta:SetAutoFocus() end
+function frameMeta:ClearFocus() end
+function frameMeta:SetTextInsets() end
+function frameMeta:SetText(t) self._text = t end
+function frameMeta:GetText() return self._text or "" end
+function frameMeta:SetFontObject() end
+function frameMeta:SetNormalTexture() end
+function frameMeta:SetHighlightTexture() end
+function frameMeta:SetPushedTexture() end
+function frameMeta:GetNormalTexture() return newRegion("Texture") end
+function frameMeta:SetDisabledTexture() end
+function frameMeta:Enable() self._enabled = true end
+function frameMeta:Disable() self._enabled = false end
+function frameMeta:IsEnabled() return self._enabled ~= false end
 function frameMeta:RegisterEvent(e) self._events[e] = true end
 function frameMeta:UnregisterEvent(e) self._events[e] = nil end
 function frameMeta:SetScript(s, fn) self._scripts[s] = fn end
@@ -124,6 +171,13 @@ local function fireEvent(event, ...)
 end
 
 -- ── game API stubs ──────────────────────────────────────────────────────────
+-- WoW exposes the Lua stdlib under short global aliases and addon code uses them freely.
+tinsert, tremove, tContains = table.insert, table.remove, nil
+sort, wipe = table.sort, function(t) for k in pairs(t) do t[k] = nil end return t end
+strfind, strsub, strupper, strlower, strrep, strlen = string.find, string.sub, string.upper, string.lower, string.rep, string.len
+format, gsub, strmatch, strsplit = string.format, string.gsub, string.match, nil
+abs, floor, ceil, max, min, sqrt = math.abs, math.floor, math.ceil, math.max, math.min, math.sqrt
+
 UIParent = CreateFrame("Frame", "UIParent")
 BOOKTYPE_SPELL = "spell"
 MAX_TOTEMS = 4
@@ -269,6 +323,7 @@ end
 C_Container = {}
 C_Item = {}
 SlashCmdList = {}
+UISpecialFrames = {}
 DEFAULT_CHAT_FRAME = { AddMessage = function() end }
 
 -- ── Phase 4 stubs: alerts, sounds, menu ─────────────────────────────────────
@@ -353,6 +408,12 @@ local FILES = {
   "modules/cooldownviewer/AlertData.lua",
   "modules/cooldownviewer/SoundAlertData.lua",
   "modules/cooldownviewer/Alerts.lua",
+  "core/Texture.lua",
+  "core/Tabs.lua",
+  "core/PanelChrome.lua",
+  "core/FrameUtil.lua",
+  "modules/cooldownviewer/SettingsAssets.lua",
+  "modules/cooldownviewer/SettingsPanel.lua",
   "modules/cooldownviewer/Register.lua",
 }
 
@@ -929,6 +990,43 @@ M.SetSpellEnabled("essential", 8092, true)
 assertf(M.IsSpellEnabled("essential", 8092) == true, "and it can be shown again")
 M.ResetCustomList("essential", "PRIEST")
 
+
+print("\n=== SETTINGS PANEL (Phase 4b-1) ===")
+local CDS = NE.cooldownviewersettings
+assertf(CDS ~= nil, "settings panel namespace exists")
+assertf(SlashCmdList["NECDMSETTINGS"] ~= nil, "/cdm slash command registered")
+assertf(_G.NE_CooldownViewerSettings == nil, "panel not built before first open (lazy)")
+
+SlashCmdList["NECDMSETTINGS"]()
+local sp = _G.NE_CooldownViewerSettings
+assertf(sp ~= nil, "/cdm builds and shows the panel")
+if sp then
+  assertf(sp:IsShown(), "panel shown after first /cdm")
+  assertf(sp._w == 399 and sp._h == 609, "panel sized 399x609 (" .. sp._w .. "x" .. sp._h .. ")")
+  assertf(CDS.GetDisplayMode() == "spells", "opens on the Spells tab")
+  assertf(#sp.tabButtons == 2, "two side tabs, not three (" .. #sp.tabButtons .. ")")
+  assertf(sp.scroll ~= nil and sp.content ~= nil, "scroll body built")
+  assertf(sp.search ~= nil, "search box built")
+
+  local esc = false
+  for _, n in ipairs(UISpecialFrames) do if n == "NE_CooldownViewerSettings" then esc = true end end
+  assertf(esc, "registered with UISpecialFrames for ESC-close")
+
+  CDS.SetDisplayMode("auras")
+  assertf(CDS.GetDisplayMode() == "auras", "switches to the Auras tab")
+
+  SlashCmdList["NECDMSETTINGS"]()
+  assertf(not sp:IsShown(), "/cdm toggles the panel closed")
+  CDS.OpenTo("buffBar")
+  assertf(sp:IsShown() and CDS.GetDisplayMode() == "auras", "OpenTo(buffBar) opens on the Auras tab")
+  CDS.HidePanel()
+end
+
+-- The side-tab art must resolve or the tabs are transparent gaps. This is what would have caught
+-- core/Tabs.lua's stale "sheet not shipped" note.
+assertf(NE.tex.HasAtlas("questlog-tab-side"), "side-tab body atlas registered")
+assertf(NE.tex.HasAtlas("icon_cooldownmanager"), "Spells tab glyph registered")
+assertf(NE.tex.HasAtlas("icon_trackedbuffs"), "Auras tab glyph registered")
 
 print("\n=== UNIT-EVENT FILTER ===")
 local probe = CreateFrame("Frame")
