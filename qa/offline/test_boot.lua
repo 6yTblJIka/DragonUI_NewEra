@@ -295,6 +295,12 @@ function GameTooltip:SetOwner() end
 function GameTooltip:SetHyperlink() end
 function GameTooltip:SetInventoryItem() end
 function GameTooltip:SetItemByID() end
+-- Record the lines so a test can assert what a tooltip actually said, not just that it opened.
+GameTooltip.lines = {}
+function GameTooltip:ClearLines() self.lines = {} end
+function GameTooltip:SetText(t) self.lines = { t } end
+function GameTooltip:AddLine(t) self.lines[#self.lines + 1] = t end
+function GameTooltip:SetSpellByID(id) self.lines = { "spell " .. tostring(id) } end
 
 -- Deferred callbacks, run at a drain point — but only once their delay has actually elapsed on the
 -- stub clock. Honouring the delay matters: the cooldown-expiry refresh schedules itself for the end
@@ -358,6 +364,15 @@ function LibStub(name, silent)
   return nil
 end
 
+-- The destructive cog entries route through a confirm popup rather than firing on click. Record
+-- which one was raised; a test then calls its OnAccept, which is the path the player takes.
+StaticPopupDialogs = {}
+POPUPS_SHOWN = {}
+function StaticPopup_Show(which)
+  POPUPS_SHOWN[#POPUPS_SHOWN + 1] = which
+  return StaticPopupDialogs[which]
+end
+
 
 -- ── DragonUI host stub ──────────────────────────────────────────────────────
 local profile = { newera = { enabled = true, modules = {} }, movers = {}, widgets = {} }
@@ -410,6 +425,7 @@ local FILES = {
   "modules/cooldownviewer/Alerts.lua",
   "core/Texture.lua",
   "core/Tabs.lua",
+  "core/Menu.lua",
   "core/PanelChrome.lua",
   "core/FrameUtil.lua",
   "modules/cooldownviewer/SettingsAssets.lua",
@@ -417,6 +433,7 @@ local FILES = {
   "modules/cooldownviewer/CdmArsenal.lua",
   "modules/cooldownviewer/SettingsAdapter.lua",
   "modules/cooldownviewer/SettingsCategories.lua",
+  "modules/cooldownviewer/SettingsMenu.lua",
   "modules/cooldownviewer/Register.lua",
 }
 
@@ -1101,6 +1118,109 @@ assertf(#bars == 1 and bars[1] == 10060, "aura assigned to bars shows under Trac
 assertf(grids.trackedBar ~= nil and grids.trackedBar.kind == "bar", "bar category uses bar rows")
 M.ResetTracking()
 CDS.HidePanel()
+
+print("\n=== ITEM MENU + COG (Phase 4b-3) ===")
+-- Scoped: the menu tree is built and driven WITHOUT any UIDropDownMenu present. That separation is
+-- the point of NE.menu.BuildRoot — menu content is logic and gets tested like logic; only the
+-- rendering needs a client.
+do
+  local S  = NE.cooldownviewersettings
+  local A2 = S.adapter
+  local AL = M.alerts
+
+  M.ResetTracking()
+  M.ResetAlerts()
+  S.OpenTo("essential")
+
+  local tile = S._categories.essential.items[1]
+  local sid  = tile and tile.spellID
+  assertf(tile ~= nil and tile._catID == "essential", "tile carries its own category")
+  assertf(not NE.menu.IsAvailable(), "no dropdown backend here — menus build but do not render")
+
+  local root = NE.menu.BuildRoot(S.ItemMenuGenerator(tile, "PRIEST"))
+  assertf(root ~= nil, "item menu builds")
+  assertf(root.children[1] and root.children[1].kind == "title", "…opening with the spell name")
+
+  -- The reason core/Menu.lua uses ClassicAPI's dropdown rather than the native one: the native
+  -- C_UIDROPDOWNMENU_MAXLEVELS is 2, and this menu needs three.
+  local function depth(n)
+    local d = 0
+    for _, c in ipairs(n.children) do
+      local cd = depth(c) + 1
+      if cd > d then d = cd end
+    end
+    return d
+  end
+  assertf(depth(root) >= 3, "menu nests " .. depth(root) .. " levels — past the native 2-level cap")
+
+  -- Ready sound: category submenu -> entry radio.
+  local soundRoot = root:Child("Ready Sound")
+  local animals   = soundRoot and soundRoot:Child("Animals")
+  local catSound  = animals and animals:Child("Cat")
+  assertf(catSound ~= nil, "sound catalogue nests category -> entry")
+  local playedBefore = #SOUNDS_PLAYED
+  catSound:Invoke()
+  assertf(M.GetReadySoundKit(sid) == 316401, "selecting a sound writes the per-spell kit")
+  assertf(#SOUNDS_PLAYED > playedBefore, "…and previews it")
+  assertf(catSound.isSelected() == true, "its radio reads selected")
+  assertf(soundRoot:Child("None").isSelected() == false, "…and None does not")
+
+  -- Alerts. The FX list is GENERATED from AL.FX; upstream hardcodes 1 = ants / 6 = flash, and 6 has
+  -- no renderer here, so a verbatim port would have written a dead value.
+  local alertRoot = root:Child("Alert")
+  local fxSub     = alertRoot and alertRoot:Child("FX Style")
+  assertf(fxSub ~= nil and #fxSub.children == #AL.FX,
+          "FX submenu generated from AL.FX (" .. (fxSub and #fxSub.children or 0) .. " entries)")
+  assertf(fxSub.children[1].text == AL.FX[1].name, "…using our names, not upstream's ants/flash pair")
+
+  alertRoot:Child("Available"):Invoke()
+  assertf(AL.GetType(sid) == "available", "alert type written")
+  assertf(GLOWS[tile] ~= nil, "…and previewed on the tile itself")
+  alertRoot:Child("Refresh Window"):Child("40%"):Invoke()
+  assertf(math.abs(AL.GetWindow(sid) - 0.40) < 0.001, "refresh window stored as a fraction")
+
+  -- The grid has to show its own state, or the only way to read it is to right-click every icon.
+  assertf(tile.AlertBG ~= nil and tile.AlertBG:IsShown(), "configured tile shows the alert badge")
+  GameTooltip:ClearLines()
+  S._itemTooltipExtra(tile, GameTooltip)
+  local tip = table.concat(GameTooltip.lines, "|")
+  assertf(tip:find("Alert: available", 1, true) ~= nil, "tooltip names the configured alert")
+  assertf(tip:find("Ready sound: Cat", 1, true) ~= nil, "tooltip names the configured sound")
+
+  alertRoot:Child("None"):Invoke()
+  soundRoot:Child("None"):Invoke()
+  assertf(not tile.AlertBG:IsShown(), "badge clears when both go back to None")
+
+  -- Moves. Done last: it rebuilds the grid under us.
+  local mv = root:Child("Move to " .. A2.Label("utility"))
+  assertf(mv ~= nil, "Move to Utility is offered")
+  mv:Invoke()
+  local arrived = false
+  for _, id in ipairs(A2.GetItems("utility", "PRIEST")) do if id == sid then arrived = true end end
+  assertf(arrived, "invoking the entry actually moved the spell")
+
+  S.OnItemClick(tile, "RightButton")   -- must be a no-op, not an error, with no backend
+
+  -- Cog menu.
+  local cog = NE.menu.BuildRoot(S.SettingsMenuGenerator)
+  local su  = cog:Child("Show Unlearned")
+  assertf(su ~= nil and su.kind == "checkbox", "cog menu carries Show Unlearned as a checkbox")
+  local wasUnlearned = M.GetShowUnlearned()
+  su:Invoke()
+  assertf(M.GetShowUnlearned() ~= wasUnlearned, "toggling it flips the stored option")
+  su:Invoke()
+
+  POPUPS_SHOWN = {}
+  cog:Child("Clear All Alerts"):Invoke()
+  assertf(POPUPS_SHOWN[1] == "NE_CDM_RESET_ALERTS", "destructive cog entries confirm before acting")
+  AL.SetType(sid, "available")
+  StaticPopupDialogs["NE_CDM_RESET_ALERTS"].OnAccept()
+  assertf(AL.GetType(sid) == nil, "…and confirming clears them")
+
+  M.ResetTracking()
+  M.ResetAlerts()
+  S.HidePanel()
+end
 
 print("\n=== UNIT-EVENT FILTER ===")
 local probe = CreateFrame("Frame")

@@ -40,6 +40,9 @@ core\NineSliceLayouts.lua
 core\PanelChrome.lua
 core\Portrait.lua
 core\Tabs.lua
+# Menu = a MenuUtil-shaped context-menu builder over UIDropDownMenu. Resolves its backend lazily,
+# so it does not care where ClassicAPI sits in the load order.
+core\Menu.lua
 core\ButtonSkin.lua
 core\ScrollbarReskin.lua
 core\ItemButton.lua
@@ -250,6 +253,9 @@ modules\cooldownviewer\SettingsPanel.lua
 modules\cooldownviewer\CdmArsenal.lua
 modules\cooldownviewer\SettingsAdapter.lua
 modules\cooldownviewer\SettingsCategories.lua
+# 4b-3: the right-click item menu and the settings cog — the assignment surface that finally makes
+# the Phase 4a alert and ready-sound stores reachable. Needs core/Menu.lua and CDS.adapter.
+modules\cooldownviewer\SettingsMenu.lua
 modules\cooldownviewer\Register.lua
 
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---

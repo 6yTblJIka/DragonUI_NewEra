@@ -20,9 +20,8 @@
 --     Phase 4b-5, and the Auras tab's auto-track dropdown already has a working equivalent in the
 --     options tab, so neither is rebuilt here.
 --
---   * The settings cog and Revert button are deferred, not dropped: the cog's menu needs the
---     MenuUtil-shaped shim (4b-3) and Revert needs the snapshot/restore pair that only becomes
---     meaningful once edits are possible (4b-2).
+--   * The settings cog landed in 4b-3, once core/Menu.lua existed to give it a menu. Revert is
+--     still deferred: it needs the snapshot/restore pair, which belongs with presets (4b-5).
 --
 -- Taint: a plain display window. No secure templates, no protected frames, SavedVariables reads
 -- only. Nothing here can taint the combat path.
@@ -149,6 +148,38 @@ local function build()
   f.search:HookScript("OnTextChanged", function(self)
     if CDS.ApplyItemFilter then CDS.ApplyItemFilter(self:GetText()) end
   end)
+
+  -- Settings cog, immediately right of the search box (retail anchors its SettingsDropdown
+  -- LEFT -> SearchBox.RIGHT +5). Same 16x18 native-atlas recipe as the spellbook and professions
+  -- cogs; the menu itself is SettingsMenu.lua's, opened through NE.menu so it toggles closed on a
+  -- second click.
+  local cog = CreateFrame("Button", nil, f)
+  cog:SetSize(16, 18)
+  cog:SetPoint("LEFT", f.search, "RIGHT", 5, 0)
+  cog.Icon = cog:CreateTexture(nil, "ARTWORK")
+  if not (NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(cog.Icon, "questlog-icon-setting", true)) then
+    cog.Icon:SetTexture("Interface\\Buttons\\UI-OptionsButton")
+    cog.Icon:SetSize(16, 16)
+  end
+  cog.Icon:SetPoint("CENTER")
+  cog.Hi = cog:CreateTexture(nil, "HIGHLIGHT")
+  if not (NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(cog.Hi, "questlog-icon-setting", true)) then
+    cog.Hi:SetTexture("Interface\\Buttons\\UI-OptionsButton")
+    cog.Hi:SetSize(16, 16)
+  end
+  cog.Hi:SetPoint("CENTER")
+  cog.Hi:SetBlendMode("ADD")
+  cog.Hi:SetAlpha(0.4)
+  cog:SetScript("OnClick", function(self)
+    if CDS.ToggleSettingsMenu then CDS.ToggleSettingsMenu(self) end
+  end)
+  cog:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Options")
+    GameTooltip:Show()
+  end)
+  cog:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  f.settingsCog = cog
 
   -- Scrollable body. A plain UIPanelScrollFrameTemplate — upstream uses the same, and there is no
   -- WowScrollBox anywhere in the source to have to replace.

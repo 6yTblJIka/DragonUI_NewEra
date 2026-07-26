@@ -9,9 +9,9 @@
 -- have. Built inline here instead — the same substitution modules/character/Reputation.lua made for
 -- the same missing helper, using the client's own +/- buttons for the collapse affordance.
 --
--- Phase 4b-2 renders and tooltips. Clicking is wired but inert: the context menu that moves, hides
--- and assigns alerts arrives in 4b-3 through CDS.OnItemClick, which this file calls and that file
--- provides.
+-- Phase 4b-2 rendered and tooltipped. 4b-3 made the tiles live: right-click routes to
+-- CDS.OnItemClick, and the alert badge / tooltip extras come from SettingsMenu.lua. Both are
+-- called through CDS with a nil-guard, so this file stays loadable on its own.
 
 local NE = DragonUI_NewEra
 local M  = NE.cooldownviewer
@@ -53,6 +53,8 @@ local function itemOnEnter(self)
   if self._unlearned then
     GameTooltip:AddLine("Not yet learned", 1, 0.3, 0.3)
   end
+  -- What the corner badge means for this tile. Provided by SettingsMenu (4b-3).
+  if CDS._itemTooltipExtra then CDS._itemTooltipExtra(self, GameTooltip) end
   GameTooltip:Show()
 end
 
@@ -88,6 +90,7 @@ local function makeIconItem(parent)
     self.spellName = name
     self.Icon:SetTexture(icon or QUESTION_MARK)
     applyLearnedTint(self)
+    if CDS._applyAlertBadge then CDS._applyAlertBadge(self) end
   end
 
   wireItem(b)
@@ -124,6 +127,7 @@ local function makeBarItem(parent)
     self.Icon:SetTexture(icon or QUESTION_MARK)
     self.Label:SetText(name or ("Spell " .. tostring(spellID)))
     applyLearnedTint(self)
+    if CDS._applyAlertBadge then CDS._applyAlertBadge(self) end
   end
 
   wireItem(b)

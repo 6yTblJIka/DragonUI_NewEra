@@ -3,10 +3,10 @@
 Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/` (Classic 1.15 /
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
-**Status:** Phases 0-4a plus 4b-1 and 4b-2 implemented. Offline harnesses pass (`qa/offline/`, 203
-boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working in-game. Remaining:
-4b-3 (the item menu, which is what makes alerts and sounds reachable), 4b-4 drag reorder, 4b-5
-presets, plus the trinket/equip port — all scoped in §G.
+**Status:** Phases 0-4a plus 4b-1, 4b-2 and 4b-3 implemented. Offline harnesses pass (`qa/offline/`,
+230 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working in-game; 4b-2 and
+4b-3 are harness-verified and awaiting an in-game pass. Remaining: 4b-4 drag reorder, 4b-5 presets,
+plus the trinket/equip port — all scoped in §G.
 
 ---
 
@@ -597,7 +597,7 @@ it is separable from the picker and does not gate 4b-3.
 |---|---|---|
 | **4b-1** | Window shell: chrome, Spells/Auras side tabs, scroll body, search box, `/cdm` toggle, ESC-close. **DONE** | `/cdm` opens and closes a correctly-chromed empty window |
 | **4b-2** | `SettingsAdapter` + `SettingsCategories` grids, read-only. **DONE** | All categories render the player's real spells |
-| **4b-3** | `core/Menu.lua` + the item context menu | **The payoff.** Spell visibility, alerts and sounds are all settable, and Phase 4a stops being dormant |
+| **4b-3** | `core/Menu.lua` + the item context menu. **DONE** | **The payoff.** Spell visibility, alerts and sounds are all settable, and Phase 4a stops being dormant |
 | **4b-4** | Drag reorder | Items can be dragged between categories and reordered |
 | **4b-5** | Presets / import / export | Optional |
 
@@ -627,3 +627,55 @@ is what sends `isPlaced` to the curated defaults. It returned `false` for a miss
 nil, so the curated fallback was unreachable and every curated spell appeared in Hidden alongside
 itself. Caught by asserting the two sets do not overlap — a property that is obvious to state and
 was not obvious to eyeball.
+
+## G.7. 4b-3 notes (the menu shim and the item menu)
+
+**`core/Menu.lua` reimplements the MenuUtil builder API, not the menus.** Every menu in the source
+is written as a generator that receives a root description and calls `root:CreateTitle`,
+`CreateButton`, `CreateRadio`, `CreateCheckbox`, `CreateDivider`, nesting by adding children to a
+returned description. Rebuilding that API once over `UIDropDownMenu` (~250 lines) means the three
+menu sites port close to verbatim. Rewriting each by hand into the init-callback idiom would have
+been more code in total and a fresh chance to get the level plumbing wrong at every site.
+
+**Why ClassicAPI's `C_UIDropDownMenu` and not the native one.** The native 3.3.5a
+`UIDROPDOWNMENU_MAXLEVELS` is a hard 2. The ready-sound menu is three deep — item → Ready Sound →
+category → entry — and the alert menu is three as well (item → Alert → FX Style). ClassicAPI's copy
+grows the cap inside `C_UIDropDownMenu_CreateFrames`. The native API is kept as a fallback (same
+shape, different list-frame name prefix), so the shim still works two levels deep if ClassicAPI is
+ever absent. `compat/COVERAGE.md` previously recorded this symbol as having "no current consumer";
+`core/Menu.lua` is now that consumer.
+
+**The tree is built separately from the render.** `NE.menu.BuildRoot` runs a generator and returns a
+plain node tree with no widget touched. That is what makes menu CONTENT testable offline: the
+harness builds the item menu, walks it, and invokes a leaf's callback to assert that selecting
+"Cat" writes kit 316401 and previews it — none of `UIDropDownMenu` is stubbed. The 4b-3 block adds
+26 assertions on that basis.
+
+**Two client-behaviour traps in `UIDropDownMenu`, both worth remembering.**
+
+1. *A submenu parent must be `notClickable`, not a no-op `func`.* `UIDropDownMenuButton_OnClick`
+   toggles the row's Check texture **before** it looks at `func`, so a clickable-but-inert parent
+   paints a stray checkmark on itself. Disabling the row leaves `OnEnter` — which is what actually
+   opens the submenu — firing normally.
+2. *`C_UIDropDownMenu_Refresh` cannot refresh our radios.* It keys off
+   `frame.selectedName/selectedID/selectedValue`, which say nothing about a function-valued
+   `checked`. Calling it would hide every check. The shim repaints a level's marks itself, from the
+   predicates, after any radio or checkbox fires.
+
+**One deliberate divergence from upstream: the FX enum.** Upstream's fx values index
+`NE.groupbuff.VISUAL_ALERT` (`1` = marching ants, `6` = flash), an enum this addon does not have.
+Ours is `AL.FX` — 1/2/3 over LibCustomGlow. The FX submenu is therefore *generated from* `AL.FX`
+rather than hardcoding upstream's pair; porting those two lines verbatim would have silently
+written `6`, for which there is no renderer. Pinned by a test that compares the submenu against
+`AL.FX` rather than against a literal.
+
+**The grid now shows its own state.** A tile with an alert or a ready sound configured carries a
+corner badge, and its tooltip names both. Without that, the only way to read the configuration is
+to right-click every icon in turn. Upstream's `common-icon-visual` glyph is not registered here, so
+the badge uses upstream's own fallback (a gold dot) — asked via `HasAtlas` rather than by letting
+`SetAtlas` fail, because a failed `SetAtlas` logs an ATLAS MISS and this runs once per tile per
+rebuild.
+
+**Both cog resets confirm first.** "Reset Spell Lists" and "Clear All Alerts" are irreversible until
+4b-5 brings a snapshot store, so both route through a `StaticPopup`. The harness asserts the click
+raises the popup rather than acting, then drives `OnAccept` separately.
