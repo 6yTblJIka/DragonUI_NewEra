@@ -3,8 +3,10 @@
 Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/` (Classic 1.15 /
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
-**Status:** Phases 0 and 1 implemented, not yet run in-game. Offline harnesses pass
-(`qa/offline/`). Phase 2 (WotLK data) is the next shippable step.
+**Status:** Phases 0, 1 and 3 implemented. Offline harnesses pass (`qa/offline/`). Phase 1 has been
+smoke-tested in-game; Phase 3 has not. **Phase 2 (WotLK data incl. Death Knight) is still
+outstanding** and is now the main gap — Phase 3 was done first because the aura viewers are driven
+by the auto-track window rather than the curated class lists, so they never depended on it.
 
 ---
 
@@ -223,7 +225,7 @@ rank resolver (`highestKnownRankID`) picks the learned rank live.
 | **0** | `core/GridLayout.lua`; `RegisterUnitEvent` shim; `EV_LEARNED_SPELL`; spellbook rank table. No CDM code. | A throwaway grid of 12 test frames lays out, wraps at stride, and reflows on padding change. |
 | **1** | Essential + Utility viewers. Mask and swipe stripped. One mover each. Settings in options tab. | Icons appear, swipe on cast, timer counts down, `/dnetest` PASS. The "does it feel right" checkpoint. |
 | **2** | `CdmSeedWotLK.lua` + `RacialsWotLK.lua` + Death Knight. | Every class shows a sensible default set at 80. |
-| **3** | BuffIcon + BuffBar (aura-driven; more moving parts). | Buff bars track, auto-window catches procs, no empty-row churn. |
+| **3** | ~~BuffIcon + BuffBar (aura-driven; more moving parts).~~ **DONE** — see §E2. | Buff bars track, auto-window catches procs, no empty-row churn. |
 | **4** | `Alerts.lua` + `SoundAlertData.lua`, then the `CooldownViewerSettings/` panel port if the options-tab version proves too cramped. | — |
 
 Phases 1 and 2 are the shippable unit. Phase 3 onward is optional polish.
@@ -254,6 +256,36 @@ Three things the scope did not anticipate, all resolved:
 
 Also deferred deliberately in Phase 1: `CooldownViewerEquip.lua` (trinket/potion discovery) is
 stubbed to return empty, with the consuming loop left in place so the Phase 2 port drops in.
+
+## E2. Phase 3 notes (aura viewers)
+
+Built out of order, ahead of Phase 2, because the buff viewers need **no class data**: they read
+live auras, not curated cooldown lists. Three parts:
+
+- `AuraItemMixins.lua` — the BuffIcon tile (reverse swipe = aura elapsed, stack count, dispel
+  border) and the BuffBar row (depleting StatusBar + pip, driven by a per-frame OnUpdate off cached
+  expiration/duration rather than a per-frame aura scan).
+- `BuffViewers.lua` — both viewer frames plus the shared aura-scan rebuild.
+- Tracked-aura pool in `CooldownViewer.lua` — ONE pool as retail models it: each aura is `icon`,
+  `bar` or `hidden`, so a bar-assigned aura never also renders as an icon.
+
+Model: any player buff with `0 < duration <= 120s` auto-tracks, which is what makes trinket, potion
+and proc buffs work without enumerating them. Longer buffs and permanent toggles are excluded, so
+the viewers stay quiet out of combat. Explicit assignments override the window in both directions.
+Target auras are a secondary source for EXPLICITLY tracked entries only — never the auto window,
+which would flood the viewer with every enemy debuff.
+
+**The trap worth naming:** the 1.15 source scans with
+`local name, icon, count, _, duration, expiration, _, _, _, spellID = UnitBuff("player", i)` — the
+MODERN return layout. On 3.3.5a `rank` occupies index 2 and shifts everything after it, so ported
+verbatim `icon` receives the rank string and `duration` the caster. All scanning here goes through
+`NE.aura` (core/AuraSnapshot.lua), which owns the correction in one place. `test_boot.lua` asserts
+the icon comes from index 3 specifically, as a regression guard.
+
+Two stride subtleties preserved from upstream, both of which otherwise wrap the stack into a
+phantom extra column: `GetStride` counts LAYOUT children (has `layoutIndex`, not `ignoreInLayout`)
+rather than SHOWN ones, and `BuffBarItem:UpdateShownState` keeps `ignoreInLayout` mirroring
+visibility.
 
 ## F. Open questions / unverified
 

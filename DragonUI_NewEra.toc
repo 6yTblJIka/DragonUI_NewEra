@@ -225,6 +225,10 @@ modules\cooldownviewer\ClassData.lua
 modules\cooldownviewer\CooldownViewer.lua
 modules\cooldownviewer\ItemMixins.lua
 modules\cooldownviewer\Viewers.lua
+# Phase 3, the aura-driven viewers. AuraItemMixins needs M.CropIcon/M.TooltipSetSpell from
+# ItemMixins; BuffViewers needs M.BaseViewerMixin from Viewers — so both load after those two.
+modules\cooldownviewer\AuraItemMixins.lua
+modules\cooldownviewer\BuffViewers.lua
 modules\cooldownviewer\Register.lua
 
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---

@@ -15,12 +15,18 @@
 local NE = DragonUI_NewEra
 local M  = NE.cooldownviewer
 
--- Phase 1 ships the two cooldown viewers. buffIcon/buffBar join this table in Phase 3.
+-- All four retail viewers. essential/utility read spell cooldowns from the curated class lists;
+-- buffIcon/buffBar read live auras (Phase 3) and need no class data.
 local VIEWERS = {
   { category = "essential", id = "CooldownViewerEssential", label = "Essential Cooldowns",
     desc = "Offensive burst and damage cooldowns.", order = 40 },
   { category = "utility",   id = "CooldownViewerUtility",   label = "Utility Cooldowns",
     desc = "Defensives, interrupts, CC and escapes.", order = 41 },
+  { category = "buffIcon",  id = "CooldownViewerBuffIcon",  label = "Buff Icons",
+    desc = "Short-duration buffs and procs, as icons.", order = 42, aura = true },
+  { category = "buffBar",   id = "CooldownViewerBuffBar",   label = "Buff Bars",
+    desc = "Short-duration buffs and procs, as depleting bars.", order = 43,
+    aura = true, bar = true },
 }
 M.VIEWER_SPECS = VIEWERS
 
@@ -43,34 +49,40 @@ local function boot()
   booted = true
 
   for _, spec in ipairs(VIEWERS) do
-    local frame = M.CreateViewer(spec.category)
+    local frame = spec.aura and M.CreateBuffViewer(spec.category) or M.CreateViewer(spec.category)
+    if not frame then
+      if NE.Log then NE.Log("CDM", "viewer '" .. spec.category .. "' failed to build") end
+    else
 
-    NE.RegisterHUDFrame({
-      name    = spec.id,
-      frame   = frame,
-      section = "widgets",
-      key     = "ne" .. spec.id,
-      defaultPoint = {
-        point = "BOTTOM", relativePoint = "BOTTOM",
-        x = 0, y = M.VIEWER_DEFAULT_Y[spec.category] or 300,
-      },
-      -- Demo icons while the editor is open. Without this a viewer whose spells the character
-      -- hasn't learned (or a Death Knight, whose data is Phase 2) renders as an empty box with
-      -- nothing to grab.
-      showTest = function()
-        frame._editPreview = true
-        frame:Show()
-        frame:Rebuild()
-      end,
-      hideTest = function()
-        frame._editPreview = false
-        frame:Rebuild()
-        frame:UpdateVisibility()
-      end,
-    })
+      NE.RegisterHUDFrame({
+        name    = spec.id,
+        frame   = frame,
+        section = "widgets",
+        key     = "ne" .. spec.id,
+        defaultPoint = {
+          point = "BOTTOM", relativePoint = "BOTTOM",
+          -- BuffBar sits off to the side in retail's preset; the rest are centred.
+          x = (spec.category == "buffBar") and 420 or 0,
+          y = M.VIEWER_DEFAULT_Y[spec.category] or 300,
+        },
+        -- Demo content while the editor is open. Essential/Utility would otherwise be empty for a
+        -- character who hasn't learned those spells (or any Death Knight, pending Phase 2), and the
+        -- aura viewers are empty by nature whenever no short buff happens to be up.
+        showTest = function()
+          frame._editPreview = true
+          frame:Show()
+          frame:Rebuild()
+        end,
+        hideTest = function()
+          frame._editPreview = false
+          frame:Rebuild()
+          frame:UpdateVisibility()
+        end,
+      })
 
-    frame:RefreshLayout()
-    frame:UpdateVisibility()
+      frame:RefreshLayout()
+      frame:UpdateVisibility()
+    end
   end
 end
 
@@ -160,16 +172,36 @@ local function buildViewerControls(parent, C, spec)
     getFunc = function() return get("showTooltips") and true or false end,
     setFunc = set("showTooltips"),
   })
-  -- Hide When Inactive is exposed for completeness, but note that retail's Essential/Utility
-  -- templates do not set allowHideWhenInactive — they always show every known cooldown regardless.
-  -- It only takes effect on the Phase 3 buff viewers.
+  -- Hide When Inactive only takes effect on the aura viewers: retail's Essential/Utility templates
+  -- do not set allowHideWhenInactive, so those always show every known cooldown.
   C:AddToggle(parent, {
     label   = "Hide when inactive",
-    desc    = "Only affects the Buff viewers (Essential and Utility always show known cooldowns, "
-              .. "matching retail).",
+    desc    = spec.aura
+      and "Show a slot only while its aura is active."
+      or  "No effect here — Essential and Utility always show known cooldowns, matching retail.",
     getFunc = function() return get("hideWhenInactive") and true or false end,
     setFunc = set("hideWhenInactive"),
   })
+
+  -- Bar-only settings (retail exposes these on the BuffBar system alone).
+  if spec.bar then
+    if C.AddDropdown then
+      C:AddDropdown(parent, {
+        label   = "Bar content",
+        values  = { iconAndName = "Icon and Name", iconOnly = "Icon Only", nameOnly = "Name Only" },
+        getFunc = function() return get("barContent") end,
+        setFunc = set("barContent"),
+      })
+    end
+    if C.AddSlider then
+      C:AddSlider(parent, {
+        label   = "Bar width (%)",
+        min = 50, max = 200, step = 5,
+        getFunc = function() return get("barWidthScale") end,
+        setFunc = set("barWidthScale"),
+      })
+    end
+  end
 end
 
 NE.RegisterOptionSection({
@@ -206,10 +238,35 @@ NE.RegisterOptionSection({
       end
     end
 
+    -- Aura auto-tracking. The buff viewers have no curated list: any player buff shorter than the
+    -- auto-track window shows automatically, which is what makes trinket/potion/proc buffs work
+    -- without enumerating them in advance.
+    if C.AddSpacer then C:AddSpacer(scroll) end
+    C:AddHeading(scroll, "Buff tracking")
+    C:AddDescription(scroll,
+      ("Buff Icons and Buff Bars automatically track any buff on you lasting %d seconds or less. "):format(
+        M.BUFF_TRACK_MAX_DURATION or 120)
+      .. "Longer buffs and permanent toggles are ignored, so the viewers stay quiet out of combat.")
+
     C:AddToggle(scroll, {
-      label   = "Reset tracked spells",
-      desc    = "Clear per-character spell-list overrides and fall back to the curated defaults. "
-                .. "Does not move or resize the viewers.",
+      label   = "Auto-track short buffs",
+      desc    = "Turn off to show only auras you have explicitly assigned.",
+      getFunc = function() return M.IsAutoTrackBuffs() end,
+      setFunc = function(v) M.SetAutoTrackBuffs(v) end,
+    })
+    if C.AddDropdown then
+      C:AddDropdown(scroll, {
+        label   = "Show auto-tracked buffs as",
+        values  = { both = "Both icons and bars", icon = "Icons only", bar = "Bars only" },
+        getFunc = function() return M.AutoTrackDest() end,
+        setFunc = function(v) M.SetAutoTrackDest(v) end,
+      })
+    end
+
+    C:AddToggle(scroll, {
+      label   = "Reset tracked spells and auras",
+      desc    = "Clear per-character spell-list overrides and aura assignments, falling back to the "
+                .. "curated defaults and the auto-track window. Does not move or resize the viewers.",
       getFunc = function() return false end,
       setFunc = function() M.ResetTracking() end,
     })

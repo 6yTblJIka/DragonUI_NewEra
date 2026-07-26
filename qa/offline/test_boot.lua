@@ -8,8 +8,12 @@
 local ADDON = os.getenv("NE_ADDON_ROOT") or "./"
 
 -- ── clock ───────────────────────────────────────────────────────────────────
+-- GetTime() is constant within a frame in the real client, which is exactly what NE.aura's
+-- snapshot cache keys on. So a test that changes auras must also step the clock, or it will keep
+-- reading the previous frame's cached scan.
 local NOW = 1000.0
 function GetTime() return NOW end
+local function nextFrame(dt) NOW = NOW + (dt or 0.05) end
 
 -- ── widget stubs ────────────────────────────────────────────────────────────
 local allFrames = {}
@@ -35,6 +39,7 @@ local function newRegion(kind)
   function r:SetWidth() end
   function r:SetHeight() end
   function r:SetJustifyH() end
+  function r:SetJustifyV() end
   return r
 end
 
@@ -99,6 +104,14 @@ function frameMeta:CreateTexture() local t = newRegion("Texture"); self._regions
 function frameMeta:CreateFontString() local t = newRegion("FontString"); self._regions[#self._regions+1] = t; return t end
 function frameMeta:SetCooldown(s, d) self._cdStart, self._cdDur = s, d end
 function frameMeta:SetDrawEdge() end
+function frameMeta:SetReverse(v) self._reverse = v end
+-- StatusBar surface (BuffBar rows).
+function frameMeta:SetMinMaxValues(lo, hi) self._min, self._max = lo, hi end
+function frameMeta:SetValue(v) self._value = v end
+function frameMeta:GetValue() return self._value end
+function frameMeta:SetStatusBarColor(...) self._barColor = { ... } end
+function frameMeta:SetStatusBarTexture(t) self._barTex = t end
+function frameMeta:GetStatusBarTexture() return self._barTex end
 
 -- Fire an event at every frame registered for it (respecting the unit filter shim).
 local function fireEvent(event, ...)
@@ -117,8 +130,23 @@ MAX_TOTEMS = 4
 function UnitClass(u) return "Priest", "PRIEST" end
 function UnitRace(u) return "Human", "Human" end
 function UnitExists(u) return u == "player" end
-function UnitBuff() return nil end
-function UnitDebuff() return nil end
+-- Live aura tables, keyed by unit. Each entry uses the 3.3.5a return order, which is what makes
+-- this stub worth having: name, RANK, icon, count, dispelType, duration, expiration, caster,
+-- isStealable, shouldConsolidate, spellID. `rank` at index 2 is the shift that breaks any code
+-- ported straight from a modern client.
+BUFFS   = { player = {}, target = {} }
+DEBUFFS = { player = {}, target = {} }
+
+local function auraGetter(tbl)
+  return function(unit, i)
+    local a = tbl[unit] and tbl[unit][i]
+    if not a then return nil end
+    return a.name, a.rank or "", a.icon, a.count or 0, a.dispelType,
+           a.duration or 0, a.expiration or 0, a.caster, false, false, a.spellID
+  end
+end
+UnitBuff   = auraGetter(BUFFS)
+UnitDebuff = auraGetter(DEBUFFS)
 function UnitCastingInfo() return nil end
 function UnitChannelInfo() return nil end
 function InCombatLockdown() return false end
@@ -266,6 +294,8 @@ local FILES = {
   "modules/cooldownviewer/CooldownViewer.lua",
   "modules/cooldownviewer/ItemMixins.lua",
   "modules/cooldownviewer/Viewers.lua",
+  "modules/cooldownviewer/AuraItemMixins.lua",
+  "modules/cooldownviewer/BuffViewers.lua",
   "modules/cooldownviewer/Register.lua",
 }
 
@@ -416,6 +446,107 @@ edEss.showTest()
 assertf(ess._w > 1 and ess._h > 1, "empty viewer still grabbable in preview (" .. ess._w .. "x" .. ess._h .. ")")
 M.GetActiveSpellList = savedList
 edEss.hideTest()
+
+print("\n=== BUFF VIEWERS (Phase 3) ===")
+
+-- The clock MUST advance before the scan, not after: NE.aura caches its snapshot per frame, so an
+-- aura change with a stale GetTime() is re-read from the previous frame's cache and looks invisible.
+local function auraTick(unit)
+  nextFrame()
+  fireEvent("UNIT_AURA", unit)
+  drain()
+end
+-- Same requirement for anything that rebuilds directly rather than through an event.
+local function settle(fn)
+  nextFrame()
+  fn()
+  drain()
+end
+
+local bIcon, bBar = M.viewers.buffIcon, M.viewers.buffBar
+assertf(bIcon ~= nil and bBar ~= nil, "both aura viewers created")
+assertf(DragonUI.EditableFrames["CooldownViewerBuffIcon"] ~= nil, "buffIcon is editable")
+assertf(DragonUI.EditableFrames["CooldownViewerBuffBar"] ~= nil, "buffBar is editable")
+
+-- Nothing up -> nothing shown.
+auraTick("player")
+assertf(shownItems(bIcon) == 0, "no auras -> buff icons empty")
+
+-- A short buff must auto-track; a long one must not. This is also the arg-shift regression test:
+-- read with modern indices, `duration` would receive the caster string and the window check would
+-- silently reject everything.
+BUFFS.player = {
+  { name = "Power Infusion", rank = "", icon = "Interface\\Icons\\PI", count = 0,
+    duration = 15, expiration = NOW + 11, spellID = 10060 },
+  { name = "Arcane Intellect", rank = "Rank 3", icon = "Interface\\Icons\\AI", count = 0,
+    duration = 1800, expiration = NOW + 1700, spellID = 10157 },
+  { name = "Fortitude", rank = "Rank 1", icon = "Interface\\Icons\\PWF", count = 0,
+    duration = 0, expiration = 0, spellID = 1243 },
+}
+auraTick("player")
+assertf(shownItems(bIcon) == 1, "only the <=120s buff auto-tracks (" .. shownItems(bIcon) .. " of 3)")
+assertf(bIcon.items[1].spellName == "Power Infusion",
+        "tracked the right aura: " .. tostring(bIcon.items[1].spellName))
+assertf(bIcon.items[1].Icon:GetTexture() == "Interface\\Icons\\PI",
+        "icon read from index 3, not the rank at index 2")
+assertf(shownItems(bBar) == 1, "bar viewer tracks it too (dest=both)")
+assertf(math.abs((bBar.items[1]._auraDuration or 0) - 15) < 0.001,
+        "bar cached duration 15 (" .. tostring(bBar.items[1]._auraDuration) .. ")")
+
+-- The bar animates from cached values without re-scanning.
+bBar.items[1]:RefreshCooldownInfo()
+-- Expected remaining is expiration - now; the clock has stepped since the aura was authored, so
+-- compare against the live figure rather than the literal 11 it started at.
+local expectRemaining = bBar.items[1]._auraExpiration - GetTime()
+assertf(math.abs((bBar.items[1].Bar._value or 0) - expectRemaining) < 0.001,
+        ("bar value tracks remaining (%.2f)"):format(bBar.items[1].Bar._value or -1))
+assertf(bBar.items[1].Bar._max == 15, "bar max = full duration 15")
+
+-- Auto-track destination routing.
+settle(function() M.SetAutoTrackDest("icon") end)
+assertf(shownItems(bIcon) == 1 and shownItems(bBar) == 0, "dest=icon routes to icons only")
+settle(function() M.SetAutoTrackDest("bar") end)
+assertf(shownItems(bIcon) == 0 and shownItems(bBar) == 1, "dest=bar routes to bars only")
+settle(function() M.SetAutoTrackDest("both") end)
+
+-- Explicit assignment overrides the window: pin a PERMANENT toggle the auto path always rejects.
+settle(function() M.SetAuraAssignment("PRIEST", 1243, "icon") end)
+local names = {}
+for _, it in ipairs(bIcon.items) do if it:IsShown() then names[it.spellName] = true end end
+assertf(names["Fortitude"] == true, "explicitly assigned duration-0 aura is force-included")
+assertf(names["Power Infusion"] == true, "auto-tracked aura still present alongside it")
+
+-- ...and 'hidden' force-excludes one the window would have taken.
+settle(function() M.SetAuraAssignment("PRIEST", 10060, "hidden") end)
+names = {}
+for _, it in ipairs(bIcon.items) do if it:IsShown() then names[it.spellName] = true end end
+assertf(names["Power Infusion"] == nil, "hidden assignment excludes an auto-tracked aura")
+
+-- One pool: assigning to the bar removes it from icons.
+settle(function() M.SetAuraAssignment("PRIEST", 1243, "bar") end)
+names = {}
+for _, it in ipairs(bIcon.items) do if it:IsShown() then names[it.spellName] = true end end
+assertf(names["Fortitude"] == nil, "bar-assigned aura no longer shows as an icon")
+settle(function() M.ResetTrackedAura("PRIEST") end)
+
+-- Buffs falling off must retire slots, not leave stale duplicates.
+BUFFS.player = {}
+auraTick("player")
+assertf(shownItems(bIcon) == 0 and shownItems(bBar) == 0, "all auras gone -> both viewers empty")
+assertf(bBar.items[1].spellID == nil, "retired bar slot cleared its spell identity")
+
+-- Tracked DoT on the target (explicit assignments only; the auto window must never reach targets).
+DEBUFFS.target = {
+  { name = "Devouring Plague", rank = "Rank 1", icon = "Interface\\Icons\\DP", count = 0,
+    duration = 24, expiration = NOW + 20, spellID = 2944 },
+}
+UnitExists = function(u) return u == "player" or u == "target" end
+auraTick("target")
+assertf(shownItems(bIcon) == 0, "untracked target debuff is ignored by the auto window")
+settle(function() M.SetAuraAssignment("PRIEST", 2944, "icon") end)
+assertf(shownItems(bIcon) == 1, "explicitly tracked target DoT appears")
+DEBUFFS.target = {}
+settle(function() M.ResetTrackedAura("PRIEST") end)
 
 print("\n=== UNIT-EVENT FILTER ===")
 local probe = CreateFrame("Frame")

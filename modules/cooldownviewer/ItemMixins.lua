@@ -586,6 +586,17 @@ local function tooltipSetSpell(tip, spellID)
   end
   return pcall(tip.SetHyperlink, tip, "spell:" .. spellID)
 end
+M.TooltipSetSpell = tooltipSetSpell   -- reused by the aura item mixins (AuraItemMixins.lua)
+
+-- Shared icon-crop helper: what stands in for the removed rounded MaskTexture.
+function M.CropIcon(tex)
+  if not tex then return end
+  if NE.tex and NE.tex.CropIcon then
+    NE.tex.CropIcon(tex)
+  elseif tex.SetTexCoord then
+    tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+  end
+end
 
 function ItemMixin:OnEnter()
   if self.tooltipsShown == false then return end

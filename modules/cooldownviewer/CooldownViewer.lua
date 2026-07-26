@@ -43,6 +43,11 @@ M.DEFAULTS = {
   hideWhenInactive = true,
   showTimer        = true,
   showTooltips     = true,
+  -- BuffBar-only (Phase 3). Retail's Modern preset stores BarWidthScale such that it displays as
+  -- 150%; upstream's owner reduced that to 100% once the pixel pin was removed, which is what we
+  -- take here.
+  barContent       = "iconAndName",
+  barWidthScale    = 100,
 }
 
 M.FRAME_ID = {
@@ -67,7 +72,9 @@ local PER_FRAME_DEFAULT_OVERRIDES = {
 M.PER_FRAME_DEFAULT_OVERRIDES = PER_FRAME_DEFAULT_OVERRIDES
 
 -- Default anchors (retail Mainline preset), consumed by Register.lua as the movers' defaultPoint.
-M.VIEWER_DEFAULT_Y = { utility = 240, essential = 310, buffIcon = 370 }
+-- BuffBar is offset to x=420 in retail's preset (see BuffViewers.lua CreateBuffViewer), the others
+-- are horizontally centred.
+M.VIEWER_DEFAULT_Y = { utility = 240, essential = 310, buffIcon = 370, buffBar = 430 }
 
 -- ── Settings store ──────────────────────────────────────────────────────────────────────────────
 -- Lives in DragonUI's profile alongside every other NewEra setting (integration/Register.lua
@@ -402,6 +409,169 @@ function M.GetActiveSpellList(category, includeUnlearned)
   return out
 end
 
+-- ── Tracked auras (BuffIcon / BuffBar) ──────────────────────────────────────────────────────────
+--
+-- Retail's TrackedBuff/TrackedBar read a Blizzard-curated per-spec aura set from C_CooldownViewer.
+-- With no such data, upstream drives both buff viewers from an AUTO-TRACK window — any live player
+-- buff with 0 < duration <= BUFF_TRACK_MAX_DURATION — plus a manual override pool. That is what
+-- ports; the curated BUFFICON_BY_CLASS / BUFFBAR_BY_CLASS tables in ClassData.lua are unused here
+-- (they were full of duration-0 permanent toggles, which is the wrong thing for these viewers).
+--
+-- ONE pool, like retail: each aura is in exactly one state — "icon" (TrackedBuff), "bar"
+-- (TrackedBar) or "hidden" (force-excluded from both).
+--   store().trackedAura[<CLASS>] = { { spellID = 10060, assignment = "icon" }, ... }
+-- It starts EMPTY by design: the auto window provides the defaults, this is the override registry.
+
+local BUFF_TRACK_MAX_DURATION = 120
+
+local VALID_ASSIGNMENT = { icon = true, bar = true, hidden = true }
+
+local function getTrackedAuraTable()
+  local cd = store(true)
+  if not cd then return nil end
+  cd.trackedAura = cd.trackedAura or {}
+  return cd.trackedAura
+end
+
+function M.GetTrackedAuraList(class)
+  if not class then local _; _, class = UnitClass("player") end
+  local t = getTrackedAuraTable()
+  if not (t and class) then return nil end
+  t[class] = t[class] or {}
+  return t[class]
+end
+
+function M.SetAuraAssignment(class, spellID, assignment)
+  if not VALID_ASSIGNMENT[assignment] then return end
+  local list = M.GetTrackedAuraList(class)
+  if not (list and spellID) then return end
+  for _, e in ipairs(list) do
+    if e.spellID == spellID then e.assignment = assignment; M.RefreshActiveViewer(); return end
+  end
+  list[#list + 1] = { spellID = spellID, assignment = assignment }
+  M.RefreshActiveViewer()
+end
+
+function M.RemoveTrackedAura(class, spellID)
+  local list = M.GetTrackedAuraList(class)
+  if not list then return end
+  for i = #list, 1, -1 do
+    if list[i].spellID == spellID then table.remove(list, i) end
+  end
+  M.RefreshActiveViewer()
+end
+
+function M.ResetTrackedAura(class)
+  if not class then local _; _, class = UnitClass("player") end
+  local t = getTrackedAuraTable()
+  if t and class then t[class] = {} end
+  M.RefreshActiveViewer()
+end
+
+-- Auras never to auto-track, by spellID. Starts empty; populate as real noise turns up.
+M.BUFFBAR_EXCLUDE = M.BUFFBAR_EXCLUDE or {}
+
+-- Derive the include/exclude sets for one buff viewer from the single pool. An aura assigned to
+-- THIS viewer is a force-include; assigned to the other viewer, or hidden, is a force-exclude — so
+-- a bar-assigned aura never also shows as an icon.
+function M.GetBuffOverrides(category)
+  local include, exclude = {}, {}
+  local _, class = UnitClass("player")
+  local tracked = class and M.GetTrackedAuraList(class)
+  if tracked then
+    for _, e in ipairs(tracked) do
+      if e.spellID then
+        local here = (category == "buffIcon" and e.assignment == "icon")
+                  or (category == "buffBar"  and e.assignment == "bar")
+        if here then include[e.spellID] = true else exclude[e.spellID] = true end
+      end
+    end
+  end
+  return include, exclude
+end
+
+-- Auto-track toggle. ON by default; when OFF only explicit assignments track.
+function M.IsAutoTrackBuffs()
+  local cd = store(false)
+  if cd and cd.autoTrackBuffs ~= nil then return cd.autoTrackBuffs end
+  return true
+end
+
+function M.SetAutoTrackBuffs(v)
+  local cd = store(true)
+  if cd then cd.autoTrackBuffs = v and true or false end
+  M.RefreshActiveViewer("buffIcon")
+  M.RefreshActiveViewer("buffBar")
+end
+
+-- Where auto-tracked short buffs render: "icon" | "bar" | "both".
+function M.AutoTrackDest()
+  local cd = store(false)
+  if cd and cd.autoTrackDest then return cd.autoTrackDest end
+  return "both"
+end
+
+function M.SetAutoTrackDest(v)
+  local cd = store(true)
+  if cd then cd.autoTrackDest = v end
+  M.RefreshActiveViewer("buffIcon")
+  M.RefreshActiveViewer("buffBar")
+end
+
+M.BUFF_TRACK_MAX_DURATION = BUFF_TRACK_MAX_DURATION
+
+-- The per-aura decision. Explicit assignments win; otherwise the auto window applies, honouring
+-- the icon/bar/both destination.
+function M.ShouldTrackBuff(spellID, duration, include, exclude, category)
+  if spellID and include[spellID] then return true end
+  if spellID and (exclude[spellID] or M.BUFFBAR_EXCLUDE[spellID]) then return false end
+  if not M.IsAutoTrackBuffs() then return false end
+  if category then
+    local dest = M.AutoTrackDest()
+    if dest == "icon" and category ~= "buffIcon" then return false end
+    if dest == "bar"  and category ~= "buffBar"  then return false end
+  end
+  return (duration and duration > 0 and duration <= BUFF_TRACK_MAX_DURATION) and true or false
+end
+
+-- Tracked auras on the TARGET (DoTs). Retail registers UNIT_AURA for player and target, so a
+-- tracked debuff on the target shows in the buff viewers. This adds the target as a SECONDARY
+-- source for EXPLICITLY tracked auras only — never the auto window, which would flood the viewer
+-- with every enemy debuff. Matched by NAME so a down-ranked DoT still resolves.
+function M.ScanTargetTrackedAuras(include, shownNames)
+  local out = {}
+  if not include then return out end
+  if not (UnitExists and UnitExists("target")) then return out end
+
+  local wantName = {}
+  for spellID in pairs(include) do
+    local nm = GetSpellInfo(spellID)
+    if nm then wantName[nm] = true end
+  end
+  if not next(wantName) then return out end
+
+  -- DOWNPORT: the source iterates UnitDebuff/UnitBuff directly with MODERN return positions. On
+  -- 3.3.5a every field after the first is shifted by one (`rank` at index 2). Going through
+  -- NE.aura keeps that correction in exactly one place.
+  local function scan(filter)
+    local snap = NE.aura and NE.aura.GetSnapshot("target", filter)
+    if not snap then return end
+    for i = 1, snap.n do
+      local row = snap.list[i]
+      if row.name and wantName[row.name] and not (shownNames and shownNames[row.name]) then
+        out[#out + 1] = {
+          name = row.name, icon = row.icon, count = row.count,
+          duration = row.duration, expiration = row.expiration, spellID = row.spellID,
+        }
+        if shownNames then shownNames[row.name] = true end
+      end
+    end
+  end
+  scan("HARMFUL")   -- DoTs are debuffs on the target (primary case)
+  scan("HELPFUL")   -- (rare) a tracked buff the player placed on the target
+  return out
+end
+
 function M.RefreshActiveViewer(category)
   if category == nil then
     M.ForEachViewer(function(v) if v:IsShown() then v:Rebuild() end end)
@@ -419,6 +589,7 @@ function M.ResetTracking()
   local cd = store(true)
   if not cd then return end
   cd.customLists = {}
+  cd.trackedAura = {}
   M.InvalidateCuratedCache()
   M.ForEachViewer(function(v) if v.Rebuild and v:IsShown() then v:Rebuild() end end)
 end
