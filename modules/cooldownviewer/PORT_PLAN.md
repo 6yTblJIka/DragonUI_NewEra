@@ -5,8 +5,8 @@ TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global conventio
 
 **Status:** Phases 0-4a implemented (engine only — no assignment UI, see §E6). Offline harnesses
 pass (`qa/offline/`, 156 boot assertions).
-Phases 1-3 are confirmed working in-game. Remaining: Phase 4b, the standalone settings panel —
-re-scoped in §E6 and deferred as its own phase.
+Phases 1-3 are confirmed working in-game. Remaining: Phase 4b, the standalone `/cdm` settings panel —
+scoped in §G.
 
 ---
 
@@ -496,11 +496,113 @@ player looking at the screen, not by the 156 assertions.
 
 1. **`Cooldown:SetDrawEdge` on 3.3.5a** — ClassicAPI assumes it exists (C3). Confirm.
 2. ~~`Alerts.lua` and `SoundAlertData.lua` not dependency-mapped.~~ **Done — see §E6.**
-3. **`CooldownViewerSettings/`** — dependency-mapped in §E6; the blockers are named but no
-   substitution is designed yet. Drag-reorder in particular needs a replacement for
-   `GLOBAL_MOUSE_UP`.
+3. ~~`CooldownViewerSettings/` blockers named but not designed.~~ **Done — scoped in §G.** Two of
+   the blockers §E6 listed were wrong; see §G.1.
 4. **Taint.** The viewers are pure display frames with no secure attributes, and `EnsureGroup`
    reparents them freely, so taint should be a non-issue — but Phase 1 must verify no combat-lockdown
    errors on `SetPoint` during a live restack.
 5. **Whether four separate movers is tolerable UX** in DragonUI's editor mode versus one grouped
    handle. Decide during Phase 1 with the frames on screen.
+
+---
+
+# G. Phase 4b — the settings panel (`/cdm`)
+
+Scope for porting `ReferenceAddons/NewEra/CooldownViewerSettings/` (2,139 lines / 6 files) as a
+**standalone window opened with `/cdm`**, matching upstream's own choice of a free dialog rather
+than a managed UIPanel.
+
+This is where spell picking and per-spell alert/sound assignment live. Phase 4a shipped the engines
+and their stores with nothing driving them; this closes that.
+
+## G.1. Corrections to §E6
+
+Two blockers named there do not exist. Checking beats remembering:
+
+- **`LargeSideTabButtonTemplate` is not a problem.** Upstream synthesized it because Era lacks it —
+  and so did we, already, for another module: `NE.tabs.MakeSideTab` (`core/Tabs.lua:222`) is the
+  same substitution, complete with tooltip wiring. The Spells/Auras side tabs use it as-is.
+- **Clipboard export is not a problem.** `CopyToClipboard` appears nowhere in the source. Export
+  goes through a `StaticPopup` with a pre-selected edit box (`Presets.lua:260`) — the classic
+  manual-copy pattern, native on 3.3.5a.
+
+Also better than expected: **no `WowScrollBox` / `ScrollUtil` anywhere.** The body is a plain
+`UIPanelScrollFrameTemplate` with a `SetScrollChild` (`Panel.lua:377`), which is native here and
+which `NE.scrollbar.Reskin` already knows how to restyle.
+
+## G.2. What already exists
+
+| Need | Have | Where |
+|---|---|---|
+| Side tabs | `NE.tabs.MakeSideTab` | `core/Tabs.lua:222` |
+| Window chrome | `NE.chrome.Apply` | `core/PanelChrome.lua:277`; precedent `modules/collections/Window.lua:264` |
+| Scrollbar restyle | `NE.scrollbar.Reskin` | `core/ScrollbarReskin.lua:156` |
+| Portrait cutout | `NE.portrait.ApplyCutout` | `core/Portrait.lua` |
+| Open/close sounds | `NE.FrameUtil.WirePanelSounds` | `core/FrameUtil.lua:246` |
+| Templates | `ButtonFrameTemplate`, `SearchBoxTemplate` (ClassicAPI); `UIPanelScrollFrameTemplate`, `UIPanelButtonTemplate`, `StaticPopupDialogs` (native) | — |
+| Panel background art | `character-panel-background` (5882640) already registered | `modules/character/Assets.lua:35` |
+| Alert + sound stores | shipped in Phase 4a | `Alerts.lua`, `SoundAlertData.lua` |
+| Show/hide a spell | `M.SetSpellEnabled` / `M.IsSpellEnabled` | `CooldownViewer.lua` |
+| ESC-to-close, slash command | `UISpecialFrames` + `SLASH_*` | precedent `modules/encounterjournal:643` |
+
+## G.3. What must be built
+
+1. **`core/Menu.lua` — a MenuUtil-shaped builder over `UIDropDownMenu`.** The highest-leverage
+   piece by far. All three menu sites (`Categories.lua:42` item menu, `Panel.lua:192` settings menu,
+   `Presets.lua:348` layout menu) are written against MenuUtil's builder API — `root:CreateTitle`,
+   `CreateButton`, `CreateRadio`, `CreateDivider`, arbitrarily nested. Reimplementing that API over
+   3.3.5a's `UIDropDownMenu` (~120 lines) lets all three port close to verbatim, instead of
+   rewriting each by hand. Use ClassicAPI's `C_UIDropDownMenu`, which grows
+   `C_UIDROPDOWNMENU_MAXLEVELS` on demand — the sound menu needs four levels
+   (item → Ready Sound → category → entry) and the native one caps at two.
+
+   This is also the correct home for the Phase 4a right-click menu that was deleted: upstream's
+   `showItemMenu` already carries Move-to / Remove / Ready Sound / Alert (type, FX, window), and it
+   maps onto the 4a API almost one-to-one. Only the FX enum differs — upstream uses `1 = ants`,
+   `6 = flash`; ours is `1/2/3` over LibCustomGlow (`AL.FX`), so drive the submenu off `AL.FX`.
+
+2. **Drag reorder without `GLOBAL_MOUSE_UP`** (`Reorder.lua`, 6 uses). That event is retail 9.x.
+   The file already runs an `OnUpdate` driver while a drag is active, so the substitution is to
+   watch `IsMouseButtonDown` transitions there and call the existing `endChange` / `CancelOrderChange`
+   on release. ~30 lines changed, not a rewrite. `GetMouseFoci` → `GetMouseFocus` is already
+   fallback-handled at `Reorder.lua:23`.
+
+3. **`NE.listheader`** — the collapsible category header. Absent, but with in-repo precedent:
+   `modules/character/Reputation.lua:68` notes the same gap and builds one inline.
+
+4. **Small shims:** `NE.button.Skin` and `NE.dropdown.SkinStyle` (cosmetic — may no-op initially),
+   `NE.OpenOptions` (point at our `NE.optionSections` tab), `SetShown` → the local `setShown`
+   helper (10 sites, CONTRACTS §0).
+
+5. **Art:** copy `7289697-cdmadvanced.blp` from the reference `Art/CooldownViewerSettings/`. Only
+   two of its three glyphs are needed (`icon_cooldownmanager`, `icon_trackedbuffs`).
+
+## G.4. Deliberate cuts
+
+- **The Group Buffs side tab.** 12 references to `NE.groupbuff.filter`, a module this addon does not
+  have. Two tabs, not three — `CDS.UpdateGroupBuffsTabState` goes with it.
+- **`NE.editmode.Toggle` / `SelectFrame`** (4 refs). No Edit Mode here (§B1). Either drop the
+  "position this frame" affordance or route it at `/dui edit`.
+- **Presets / layouts** (`Presets.lua`, 378 lines) — self-contained and genuinely portable
+  (StaticPopup + base64 + a hand-rolled parser, no `loadstring`), but it is a convenience on top of
+  a picker that does not exist yet. Defer to last.
+
+**Open decision — the Equip categories.** `DataAdapter` renders "Equip Active" and "Equip Passive"
+pools from `M.GetEquipItemsForCategory`, which is still the Phase 1 stub returning `{}`. Either port
+`CooldownViewerEquip.lua` (182 lines, assessed "ports as-is") or hide those two categories. Porting
+it is the better answer — on-use trinkets are exactly what a cooldown viewer is for — but it is
+separable and should not gate the picker.
+
+## G.5. Phasing
+
+| Step | Scope | Exit criterion |
+|---|---|---|
+| **4b-1** | Window shell: chrome, Spells/Auras side tabs, scroll body, search box, `/cdm` toggle, ESC-close | `/cdm` opens and closes a correctly-chromed empty window |
+| **4b-2** | `DataAdapter` + `Categories` grid, read-only | All six categories render the player's real spells |
+| **4b-3** | `core/Menu.lua` + the item context menu | **The payoff.** Spell visibility, alerts and sounds are all settable, and Phase 4a stops being dormant |
+| **4b-4** | Drag reorder | Items can be dragged between categories and reordered |
+| **4b-5** | Presets / import / export | Optional |
+
+4b-3 is the milestone that matters; 4b-4 and 4b-5 are polish. Rough size: ~1,400 lines adapted from
+the source plus ~200 of new shim, against 2,139 in the original — the difference being the Group
+Buffs tab, Edit Mode wiring, and the retail menu framework.
