@@ -4,7 +4,7 @@ Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/`
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
 **Status:** Phases 0-4a plus 4b-1, 4b-2 and 4b-3 implemented. Offline harnesses pass (`qa/offline/`,
-241 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working in-game; 4b-2 and
+245 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working in-game; 4b-2 and
 4b-3 are harness-verified and awaiting an in-game pass. Remaining: 4b-4 drag reorder, 4b-5 presets,
 plus the trinket/equip port — all scoped in §G.
 

@@ -85,6 +85,14 @@ function Node:CreateCheckbox(text, isSelected, onClick, data)
   return self:Add(n)
 end
 
+-- Hover text for one row. UIDropDownMenu shows this from the row's own OnEnter, and shows it on
+-- disabled rows too when tooltipWhileDisabled is set — which is what lets an entry explain why it
+-- cannot do anything rather than just sitting there inert.
+function Node:SetTooltip(title, text)
+  self.tipTitle, self.tipText = title, text
+  return self
+end
+
 -- First child with this exact text. For callers that want to drive a built menu (tests, mostly)
 -- without counting indices.
 function Node:Child(text)
@@ -218,6 +226,13 @@ local function initLevel(frame, level, menuList)
       info.text = child.text
       info.notCheckable = true
       info.func = function() if child.onClick then child.onClick(child.data) end end
+    end
+
+    if child.tipTitle then
+      info.tooltipTitle = child.tipTitle
+      info.tooltipText = child.tipText
+      info.tooltipOnButton = true
+      info.tooltipWhileDisabled = true
     end
 
     b.AddButton(info, level)

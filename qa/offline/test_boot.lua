@@ -1261,6 +1261,16 @@ do
   -- no renderer here, so a verbatim port would have written a dead value.
   local alertRoot = root:Child("Alert")
   local fxSub     = alertRoot and alertRoot:Child("FX Style")
+  -- Every event says what it needs, so an event that cannot fire for this spell says so instead of
+  -- sitting there inert. Refresh is the one that genuinely cannot, for a cooldown with no aura.
+  local refreshEntry = alertRoot:Child("Refresh")
+  assertf(refreshEntry ~= nil and refreshEntry.tipTitle == "Refresh", "Refresh carries an explanatory tooltip")
+  assertf(refreshEntry.tipText:find("no aura", 1, true) ~= nil,
+          "…naming the case where it can never trigger")
+  assertf(alertRoot:Child("Available").tipText:find("every spell", 1, true) ~= nil,
+          "Available says it works for everything")
+  assertf(alertRoot:Child("Usable").tipTitle == "Usable", "Usable carries one too")
+
   assertf(fxSub ~= nil and #fxSub.children == #AL.FX,
           "FX submenu generated from AL.FX (" .. (fxSub and #fxSub.children or 0) .. " entries)")
   assertf(fxSub.children[1].text == AL.FX[1].name, "…using our names, not upstream's ants/flash pair")

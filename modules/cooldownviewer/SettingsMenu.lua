@@ -121,6 +121,23 @@ local function addSoundEntries(root, item)
   end
 end
 
+-- Does this spell have an aura of its own name up right now? The same lookup the Refresh alert
+-- makes at runtime (Alerts.lua's inRefreshWindow): player first, then target.
+--
+-- A "yes" here is proof Refresh will work. A "no" is NOT proof it will not — the aura may simply be
+-- inactive at the moment you opened the menu. So the tooltip states the REQUIREMENT and adds a live
+-- sighting when there is one, rather than greying the entry out on a guess. Knowing for certain
+-- would mean shipping a generated "applies an aura named after itself" table out of Spell.dbc; that
+-- is a real option, but it is a generator pass, not a menu tweak.
+local function auraSeen(name)
+  if not (name and NE.aura and NE.aura.FindByName) then return false end
+  for _, unit in ipairs({ "player", "target" }) do
+    local row = NE.aura.FindByName(unit, name)
+    if row and row.duration and row.duration > 0 then return true end
+  end
+  return false
+end
+
 -- Event (None / Available / Refresh / Usable), FX style, and — for Refresh — the window %.
 -- Choosing an event or an FX flashes a sample on the tile itself, the same "see it before you
 -- commit" contract as the sound preview.
@@ -141,10 +158,30 @@ local function addAlertEntries(root, item)
     end
   end
 
-  alertRoot:CreateRadio("None",      function() return AL.GetType(item.spellID) == nil end, pick(nil))
-  alertRoot:CreateRadio("Available", function() return isType("available") end,             pick("available"))
-  alertRoot:CreateRadio("Refresh",   function() return isType("refresh")   end,             pick("refresh"))
-  alertRoot:CreateRadio("Usable",    function() return isType("usable")    end,             pick("usable"))
+  alertRoot:CreateRadio("None", function() return AL.GetType(item.spellID) == nil end, pick(nil))
+
+  alertRoot:CreateRadio("Available", function() return isType("available") end, pick("available"))
+    :SetTooltip("Available", "Flashes once, the moment the cooldown finishes.|nWorks for every spell.")
+
+  -- Refresh is the one event that genuinely cannot fire for some spells, so it says what it needs.
+  local pct = math.floor((AL.GetWindow(item.spellID) or 0.3) * 100 + 0.5)
+  local refreshText = ("Glows during the last %d%% of this spell's own|nbuff or debuff."):format(pct)
+    .. "|n|nA cooldown that applies no aura — Shadowfiend,|nPsychic Scream — can never trigger it."
+  refreshText = refreshText .. (auraSeen(item.spellName)
+    and "|n|n|cff40ff40Its aura is active now, so this will work.|r"
+    or  "|n|n|cffffd200No aura of this name is up right now.|r")
+  alertRoot:CreateRadio("Refresh", function() return isType("refresh") end, pick("refresh"))
+    :SetTooltip("Refresh", refreshText)
+
+  local usableText = "Glows for as long as the spell is off cooldown|nand affordable."
+  local threshold = M.alertdata and M.alertdata.ExecuteThreshold
+    and M.alertdata.ExecuteThreshold(item.spellID, item._rankCDIDs)
+  if threshold then
+    usableText = usableText .. ("|n|nThis one also waits for a target below %d%% health."):format(threshold * 100)
+  end
+  alertRoot:CreateRadio("Usable", function() return isType("usable") end, pick("usable"))
+    :SetTooltip("Usable", usableText)
+
   alertRoot:CreateDivider()
 
   -- Generated from AL.FX, not from upstream's hardcoded pair. See the header.
