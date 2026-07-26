@@ -126,6 +126,11 @@ function frameMeta:SetPoint(p, rel, relP, x, y) self._points[#self._points + 1] 
 function frameMeta:SetAllPoints(rel) self._points[#self._points + 1] = { "ALL", rel } end
 function frameMeta:ClearAllPoints() self._points = {} end
 function frameMeta:GetNumPoints() return #self._points end
+function frameMeta:GetPoint(i)
+  local pt = self._points[i or 1]
+  if not pt then return nil end
+  return pt[1], pt[2], pt[3], pt[4], pt[5]
+end
 function frameMeta:GetChildren() return unpack(self._children) end
 function frameMeta:EnableMouse() end
 function frameMeta:SetFrameLevel() end
@@ -1439,31 +1444,52 @@ do
     "the mask inset is the one decoded from 6707800 (3 of 64)")
 
   -- The border line's position in tile coordinates, derived from the art rather than restated: the
-  -- crisp line sits at art x 14-19 and 67-71 of the 86px cell, mapped through the overlay's outward
-  -- anchor. The icon's edge must land INSIDE that line, which is what makes the frame overlap the
-  -- icon the way retail's does.
-  local function lineAt(artX, size, ox)
-    return -ox + artX * (size + 2 * ox) / 86
+  -- crisp line sits at art 14-19 of the 86px cell, mapped through the overlay's outward anchor. The
+  -- icon's edge must land INSIDE that band — outside it the frame floats off the icon (the old
+  -- full-bleed behaviour), well inside it the frame eats into the art.
+  --
+  -- PER AXIS, which is the point. The overlay is anchored ±9 horizontally but ±8 vertically, so the
+  -- band sits at a different offset on each axis while the mask is square. A first version of this
+  -- checked the horizontal band only and passed while the icon's top and bottom edges were still
+  -- outside their band on three of the four tile shapes — reported from the game as "still 1px too
+  -- large in all directions".
+  local function bandOn(size, o)
+    local ext = size + 2 * o
+    return -o + 14 * ext / 86, -o + 19 * ext / 86
   end
-  for _, v in ipairs({ { "essential", M.viewers.essential, 50, 9 },
-                       { "utility",   M.viewers.utility,   30, 6 },
-                       { "buffIcon",  M.viewers.buffIcon,  40, 8 } }) do
-    local label, viewer, size, ox = v[1], v[2], v[3], v[4]
+  for _, v in ipairs({ { "essential", M.viewers.essential, 50, 9, 8 },
+                       { "utility",   M.viewers.utility,   30, 6, 5 },
+                       { "buffIcon",  M.viewers.buffIcon,  40, 8, 7 } }) do
+    local label, viewer, size, ox, oy = v[1], v[2], v[3], v[4], v[5]
     local item = viewer and viewer.items and viewer.items[1]
     if item and item.Icon then
+      local want = M.IconInset(size)
       local p, _, _, x, y = item.Icon:GetPoint(1)
-      local want = size * M.ICON_MASK_INSET
       assertf(p == "TOPLEFT" and math.abs((x or 0) - want) < 0.01 and math.abs((y or 0) + want) < 0.01,
-        ("%s icon is inset by the mask's %.2fpx (got %s %s,%s)")
+        ("%s icon is inset by %.2fpx (got %s %s,%s)")
           :format(label, want, tostring(p), tostring(x), tostring(y)))
-      -- The real statement of intent, and not merely "the inset is nonzero": the overlay's crisp
-      -- border line must land ON the icon's edge. The line occupies art x 14-19 of the cell, so the
-      -- icon's edge has to fall inside that band — outside it and the frame floats off the icon
-      -- (which is the old full-bleed behaviour), inside it and the frame eats into the art.
-      local bandOuter, bandInner = lineAt(14, size, ox), lineAt(19, size, ox)
-      assertf(want >= bandOuter - 0.01 and want <= bandInner + 0.01,
-        ("…so the overlay's border line lands on the icon's edge (%.2f within %.2f..%.2f)")
-          :format(want, bandOuter, bandInner))
+      for _, ax in ipairs({ { "horizontally", ox }, { "vertically", oy } }) do
+        local lo, hi = bandOn(size, ax[2])
+        assertf(want >= lo - 0.01 and want <= hi + 0.01,
+          ("…and the border line lands on its edge %s (%.2f within %.2f..%.2f)")
+            :format(ax[1], want, lo, hi))
+      end
+
+      -- Everything drawn OVER the icon shares its rect. Anchored to the tile instead, each one draws
+      -- proud of the icon and shows the old footprint — which is exactly how the cooldown sweep gave
+      -- itself away once the frame art shipped.
+      for _, r in ipairs({ { "cooldown sweep", item.Cooldown },
+                           { "out-of-range shade", item.OutOfRange },
+                           { "ready flash", item.CooldownFlash } }) do
+        local rn, reg = r[1], r[2]
+        if reg then
+          local rp, _, _, rx, ry = reg:GetPoint(1)
+          assertf(rp == "TOPLEFT" and math.abs((rx or 0) - want) < 0.01
+                    and math.abs((ry or 0) + want) < 0.01,
+            ("…%s's %s shares the icon's rect (got %s %s,%s)")
+              :format(label, rn, tostring(rp), tostring(rx), tostring(ry)))
+        end
+      end
     else
       assertf(false, label .. " has an item to measure")
     end

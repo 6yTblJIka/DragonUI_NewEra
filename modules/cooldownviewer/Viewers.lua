@@ -55,19 +55,23 @@ local function createItem(parent, category)
   item.IconOverlay:SetPoint("TOPLEFT", item, "TOPLEFT", -ox, oy)
   item.IconOverlay:SetPoint("BOTTOMRIGHT", item, "BOTTOMRIGHT", ox, -oy)
 
+  -- DOWNPORT: the three regions below are `setAllPoints` on the TILE upstream, and are anchored to the
+  -- ICON's rect here. Retail can use the tile because its swipe, shadow and flash are rounded art cut
+  -- to the masked icon; ours are the engine's plain sweep, a flat shade and a square-ish sprite, so at
+  -- tile size each one draws proud of the icon and re-advertises the old, larger footprint. That was
+  -- visible the moment the frame art shipped: the swipe "sits at the old icon size".
   item.OutOfRange = item:CreateTexture(nil, "OVERLAY")
-  item.OutOfRange:SetAllPoints(item)
+  M.AnchorMaskedIcon(item.OutOfRange, item, spec.size)
   item.OutOfRange:SetVertexColor(1, 1, 1, 0.5)
   item.OutOfRange:Hide()
 
   item.Cooldown = CreateFrame("Cooldown", nil, item)
-  item.Cooldown:SetAllPoints(item)
+  M.AnchorMaskedIcon(item.Cooldown, item, spec.size)
   -- DOWNPORT: the XML attaches <SwipeTexture>/<EdgeTexture> here. 3.3.5a's Cooldown has no
   -- SetSwipeTexture/SetEdgeTexture, so we take the engine's built-in sweep (PORT_PLAN §C3).
 
   item.CooldownFlash = CreateFrame("Frame", nil, item)
-  item.CooldownFlash:SetPoint("TOPLEFT", item, "TOPLEFT", 0, 1)
-  item.CooldownFlash:SetPoint("BOTTOMRIGHT", item, "BOTTOMRIGHT", 0, 1)
+  M.AnchorMaskedIcon(item.CooldownFlash, item, spec.size)
   -- Above the Cooldown swipe: the ready burst plays as the swipe finishes, and would otherwise be
   -- competing with it for the same draw layer.
   item.CooldownFlash:SetFrameLevel((item.Cooldown:GetFrameLevel() or 1) + 2)

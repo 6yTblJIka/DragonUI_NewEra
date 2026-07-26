@@ -754,14 +754,41 @@ end
 --
 -- iconSize is applied with SetScale (Viewers.lua), not SetSize, so a fixed pixel inset computed from
 -- the tile's authored size stays correct at every size setting.
+--
+-- The mask's edge is HARD, incidentally: texels 3..60 of 64 at alpha 255, the rest at 0, no
+-- antialiasing. So 3/64 is exact rather than a reading off a ramp.
 M.ICON_MASK_INSET = 3 / 64
 
-function M.AnchorMaskedIcon(icon, parent, size)
-  if not (icon and parent) then return end
-  local pad = (size or 0) * M.ICON_MASK_INSET
-  icon:ClearAllPoints()
-  icon:SetPoint("TOPLEFT", parent, "TOPLEFT", pad, -pad)
-  icon:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -pad, pad)
+-- One further pixel, and this one is a JUDGEMENT rather than a derivation — kept separate so the two
+-- are not confused.
+--
+-- The mask inset alone is faithful, and still reads a pixel too big, for two compounding reasons.
+-- First, the overlay is anchored +-9 horizontally but +-8 vertically, so its border line falls at a
+-- different tile offset per axis; the mask is square, so on the VERTICAL axis the icon's edge lands
+-- just outside the border band on Essential, Utility and the bar's icon (2.34 against a band of
+-- 2.74..6.58 on Essential). Second, our icon has square corners where retail's is rounded, so its
+-- edge reads harder against the same soft border.
+--
+-- One flat pixel fixes both: it puts the icon's edge inside the border band on BOTH axes for all four
+-- tile shapes (checked in the harness, per axis). Flat rather than fractional so it stays consistent
+-- across the 30-50px shapes, and it scales with the iconSize setting anyway via SetScale.
+M.ICON_ROUNDING_INSET = 1
+
+function M.IconInset(size)
+  return (size or 0) * M.ICON_MASK_INSET + M.ICON_ROUNDING_INSET
+end
+
+-- Anchor a region to the visible ICON's rect. Used for the icon itself and for everything drawn over
+-- it: on this client the cooldown sweep, the out-of-range shade and the ready flash are all
+-- unshaped substitutes, so any of them anchored to the TILE would sit proud of the icon by the inset
+-- above and betray the old, larger footprint. Retail can anchor them to the tile because its swipe
+-- and shadow are themselves rounded art.
+function M.AnchorMaskedIcon(region, parent, size)
+  if not (region and parent) then return end
+  local pad = M.IconInset(size)
+  region:ClearAllPoints()
+  region:SetPoint("TOPLEFT", parent, "TOPLEFT", pad, -pad)
+  region:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -pad, pad)
   return pad
 end
 

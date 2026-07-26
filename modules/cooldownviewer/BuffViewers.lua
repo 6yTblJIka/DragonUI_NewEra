@@ -41,7 +41,9 @@ local function createBuffIconItem(parent)
   item.IconOverlay:SetPoint("BOTTOMRIGHT", item, "BOTTOMRIGHT", 8, -7)
 
   item.Cooldown = CreateFrame("Cooldown", nil, item)
-  item.Cooldown:SetAllPoints(item)
+  -- Icon rect, not the tile: the sweep would otherwise overhang the icon by the mask inset. See
+  -- M.AnchorMaskedIcon.
+  M.AnchorMaskedIcon(item.Cooldown, item, 40)
 
   -- Stack count.
   item.Applications = CreateFrame("Frame", nil, item)

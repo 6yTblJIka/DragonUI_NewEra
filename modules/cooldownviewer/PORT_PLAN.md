@@ -1552,6 +1552,41 @@ restated, and the magnitude is mutation-checked as well as the presence — 1/64
 This was unassertable before: the stub discarded texture anchors entirely, so a texture's geometry
 could not be seen. It records them now.
 
+**SECOND PASS, from the next look in game: "still 1px too large in all directions", and the swipe
+"sits at the old icon sizes".** Both right, and they are two different faults.
+
+*The swipe* was mine to have caught. Upstream anchors the Cooldown, the out-of-range shade and the
+flash to the TILE with `setAllPoints`, and I kept that, reasoning that retail's mask only masks the
+Icon. It does — but retail's swipe and shadow are themselves rounded art cut to the masked icon, while
+ours are the engine's plain sweep, a flat shade and a squarish sprite. At tile size each one draws
+proud of the inset icon and re-advertises the old footprint. All three now anchor to the icon's rect;
+this is a deliberate divergence from upstream's anchors, for a reason that only exists on this client.
+
+*The pixel* is the more interesting one, because the mask value was not wrong. Re-measured, the mask's
+edge is HARD — texels 3..60 of 64 at alpha 255, nothing in between — so 3/64 is exact, not a reading off
+a ramp. What was wrong is that the mask is SQUARE while the overlay is anchored **±9 horizontally and
+±8 vertically**, so the border band sits at a different tile offset per axis:
+
+| tile | axis | border band | mask inset alone | +1px |
+|---|---|---|---|---|
+| essential | x | 2.07..6.02 | 2.34 in | 3.34 in |
+| essential | y | 2.74..6.58 | 2.34 **out** | 3.34 in |
+| utility | y | 1.51..3.84 | 1.41 **out** | 2.41 in |
+| buffIcon | y | 1.79..4.93 | 1.88 in | 2.88 in |
+| bar icon | y | 1.51..3.84 | 1.41 **out** | 2.41 in |
+
+On three of the four shapes the icon's top and bottom edges were outside their band — the icon
+overshot the frame line vertically while sitting correctly inside it horizontally, which is precisely
+"1px too large in all directions" to look at. `M.ICON_ROUNDING_INSET = 1` puts every shape inside the
+band on both axes, and it is kept as a SEPARATE constant from `ICON_MASK_INSET` because it is a
+judgement (it also absorbs our square corners reading harder than retail's rounded ones), not a
+derivation. Mutating it to 0 fails the vertical assertion specifically.
+
+**The harness had checked one axis.** The first version of the fit assertion derived the band from the
+art and compared the horizontal one only, so it went green with the vertical edges still outside. It
+now checks per axis, and separately that each icon-space overlay shares the icon's rect — the
+assertion the swipe fault needed. Four mutations confirm the lot.
+
 **And a note on the ready flash, since it reads as unchanged.** The retail GCD flipbook is a thin pale
 rounded-square OUTLINE that traces the tile edge over 22 frames — not a burst. It is genuinely subtler
 than the gold expanding highlight it replaced, so "that still looks like the fallback" is a fair
