@@ -4,7 +4,7 @@ Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/`
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
 **Status:** Phases 0-4a plus 4b-1, 4b-2 and 4b-3 implemented. Offline harnesses pass (`qa/offline/`,
-237 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working in-game; 4b-2 and
+241 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working in-game; 4b-2 and
 4b-3 are harness-verified and awaiting an in-game pass. Remaining: 4b-4 drag reorder, 4b-5 presets,
 plus the trinket/equip port — all scoped in §G.
 
@@ -725,3 +725,38 @@ scale changes.
 bug into a stub in order to "catch" it would be circular. What the stub records is the shape of the
 `info` tables *we* produce, and the invariant that keeps us clear of the bug ("never hand the client
 a predicate") is checkable without reproducing it.
+
+### G.7.2 Alert engine faults (second in-game pass)
+
+**"The FX come out green when actually used on the bars."** The preview was lying. `AL.Preview`
+hardcoded the alert type `"usable"`, so every preview flashed the usable YELLOW regardless of which
+event the player had just chosen — then the live icon glowed in that event's real tint (available
+green, refresh pandemic-orange). `Preview` now takes the type and the menu passes the one being
+configured. A preview whose whole job is "see it before you commit" has to show the colour you will
+actually get.
+
+**"The only FX Alert type that seems to do anything is available."** Two compounding causes.
+
+1. **`IsUsableSpell(spellID)` again, in `Alerts.lua:262`.** The same fault fixed in
+   `ItemMixins.lua:545` — 3.3.5a's `IsUsableSpell` takes a NAME or a spellbook index, never an id;
+   given an id it reads it as an index past the end of the book and returns nil. `isSpellUsableNow`
+   therefore returned false unconditionally, so the Usable event could never fire for anybody. The
+   ItemMixins fix did not sweep for other call sites. It should have.
+
+2. **The curated gate made Usable a dead entry for six classes.** `inUsableState` returned false for
+   any spell not in AlertData's EXECUTE or REACTIVE tables — eight abilities across Hunter, Paladin,
+   Warrior and Rogue. A Priest or a Mage could select "Usable" and nothing could ever happen. That
+   gate is defensible upstream, where the alert can be attached to spells with no cooldown at all;
+   here it contradicts the label. **Semantics changed:** Usable now means castable right now.
+   EXECUTE stays as the stricter condition where it applies, because target health is something
+   `IsUsableSpell` knows nothing about — without it Kill Shot would glow all fight instead of in
+   execute range. `A.IsReactive` is no longer consulted at all: the client already reports Overpower
+   and Revenge as unusable outside their proc window, so the curated check only restated it.
+   `A.REACTIVE` stays in AlertData as data with no reader.
+
+**The test that shielded the bug.** The 4a suite asserted, in as many words, *"a spell with no
+execute/reactive entry never glows on 'usable'"* — and it passed, for the wrong reason: with
+`isSpellUsableNow` hard-false, nothing glowed whatever the data said. The assertion agreed with the
+bug and hid it until the owner reported the feature did nothing. **A test that encodes "this feature
+is off here" cannot tell you the feature is broken.** Where the intended behaviour is negative,
+assert the positive case somewhere too, or the negative one proves nothing.

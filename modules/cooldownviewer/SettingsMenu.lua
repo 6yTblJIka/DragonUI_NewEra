@@ -131,10 +131,12 @@ local function addAlertEntries(root, item)
   local alertRoot = root:CreateButton("Alert")
 
   local function isType(t) return AL.GetType(item.spellID) == t end
+  -- Preview in the alert type's OWN colour. Each type has a distinct tint, so previewing everything
+  -- as "usable" showed a yellow flash for a choice that would glow green in play.
   local function pick(t)
     return function()
       AL.SetType(item.spellID, t)
-      if t then AL.Preview(item, AL.GetFX(item.spellID)) elseif AL.ClearFX then AL.ClearFX(item) end
+      if t then AL.Preview(item, AL.GetFX(item.spellID), t) elseif AL.ClearFX then AL.ClearFX(item) end
       applyAlertBadge(item)
     end
   end
@@ -150,7 +152,10 @@ local function addAlertEntries(root, item)
   for _, fx in ipairs(AL.FX or {}) do
     fxSub:CreateRadio(fx.name,
       function() return AL.GetFX(item.spellID) == fx.id end,
-      function() AL.SetFX(item.spellID, fx.id); AL.Preview(item, fx.id) end)
+      function()
+        AL.SetFX(item.spellID, fx.id)
+        AL.Preview(item, fx.id, AL.GetType(item.spellID) or "available")
+      end)
   end
 
   local winSub = alertRoot:CreateButton("Refresh Window")

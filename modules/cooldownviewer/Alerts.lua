@@ -228,9 +228,13 @@ function AL.FlashOnce(item, fx, alertType)
 end
 
 -- Settings preview: flash any frame so the user can see their choice. Safe on a non-item frame.
-function AL.Preview(frame, fx)
+--
+-- The alert type matters here, because it picks the TINT. Previewing everything as "usable" made
+-- the settings tile flash yellow while the live icon then glowed green — the preview was showing a
+-- colour the player had not chosen and would never see. Callers pass the type being configured.
+function AL.Preview(frame, fx, alertType)
   if not frame then return end
-  AL.FlashOnce(frame, fx or DEFAULT_FX, "usable")
+  AL.FlashOnce(frame, fx or DEFAULT_FX, TINT[alertType] and alertType or "usable")
 end
 
 -- ── Trigger evaluators ──────────────────────────────────────────────────────────────────────────
@@ -259,20 +263,37 @@ end
 -- count as a cooldown — the same heuristic the viewer applies everywhere else.
 local function isSpellUsableNow(spellID, item)
   if not spellID then return false end
-  if not (IsUsableSpell and IsUsableSpell(spellID)) then return false end
+  -- 3.3.5a's IsUsableSpell takes a NAME (or a spellbook index + bookType), never a spellID. Passing
+  -- an id reads it as an index past the end of the book and returns nil — no error, just a silent
+  -- false. That made this function return false unconditionally, which is why the Usable alert
+  -- never fired for anyone. Same fault, same fix as ItemMixins.lua:545; this site was missed.
+  if not IsUsableSpell then return false end
+  if not IsUsableSpell((item and item.spellName) or spellID) then return false end
   local start, dur = M.SpellCD(spellID, item and item.spellName, item and item._rankCDIDs)
   if start and start > 0 and dur and dur > (M.GCD_MAX or 1.51) then return false end
   return true
 end
 
--- Execute (target below an HP threshold) or Reactive (a curated ability becoming castable).
--- A spell in neither table never flashes on this event.
+-- "Usable" = castable right now.
+--
+-- DIVERGENCE FROM UPSTREAM, and the reason for it: upstream flashes ONLY spells listed in
+-- AlertData's EXECUTE or REACTIVE tables and returns false for everything else. That is defensible
+-- upstream, where the alert can be attached to spells with no cooldown at all. Here it made
+-- "Usable" a dead menu entry for six of the ten classes — AlertData covers eight abilities across
+-- Hunter, Paladin, Warrior and Rogue, so a Priest or a Mage could select it and nothing could ever
+-- happen. The label says what it does: a spell off cooldown and affordable IS usable.
+--
+-- EXECUTE stays as the stricter condition, because target health is something IsUsableSpell knows
+-- nothing about — without it Kill Shot would glow all fight instead of in execute range.
+-- A.IsReactive is deliberately NOT consulted any more: 3.3.5a's IsUsableSpell already reports
+-- Overpower and Revenge as unusable outside their proc window, so the curated check was only
+-- restating what the client says. A.REACTIVE stays in AlertData as data; nothing reads it.
 local function inUsableState(item)
   local sid = item.spellID
+  if not sid then return false end
   local A = M.alertdata
-  if not (sid and A) then return false end
 
-  local threshold = A.ExecuteThreshold and A.ExecuteThreshold(sid, item._rankCDIDs)
+  local threshold = A and A.ExecuteThreshold and A.ExecuteThreshold(sid, item._rankCDIDs)
   if threshold then
     if not (UnitExists and UnitExists("target")) then return false end
     if UnitIsDeadOrGhost and UnitIsDeadOrGhost("target") then return false end
@@ -282,10 +303,7 @@ local function inUsableState(item)
     return isSpellUsableNow(sid, item)
   end
 
-  if A.IsReactive and A.IsReactive(sid, item._rankCDIDs) then
-    return isSpellUsableNow(sid, item)
-  end
-  return false
+  return isSpellUsableNow(sid, item)
 end
 
 -- Evaluate one item's assigned alert. `available` is edge-triggered elsewhere, so the ticker leaves

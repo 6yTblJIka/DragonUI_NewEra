@@ -1027,11 +1027,25 @@ if dp then
 end
 AL.SetType(2944, nil)
 
--- "usable": data-driven. Only an execute/reactive spell ever glows, and only when its condition holds.
+-- "usable": castable right now.
+--
+-- This block used to assert the OPPOSITE — "a spell with no execute/reactive entry never glows" —
+-- and it passed for the wrong reason. isSpellUsableNow was calling IsUsableSpell with a spellID,
+-- which this client answers with nil, so nothing could glow on this event whatever the data said.
+-- The assertion agreed with the bug and shielded it, until the owner reported that Usable did
+-- nothing at all. A test that encodes "feature off" cannot tell you the feature is broken.
 AL.SetType(8092, "usable")
-TARGET_HP = 10
+AL.ClearFX(mb)
+COOLDOWNS[10947] = nil; mb:RefreshCooldown()
 nextFrame(); tick()
-assertf(GLOWS[mb] == nil, "a spell with no execute/reactive entry never glows on 'usable'")
+assertf(GLOWS[mb] ~= nil, "usable alert glows while the spell is castable")
+local usableColour = GLOWS[mb] and GLOWS[mb].color
+assertf(usableColour and usableColour[1] == 0.95 and usableColour[3] == 0.32,
+        "…in the usable yellow, not the available green")
+COOLDOWNS[10947] = { GetTime(), 30 }; mb:RefreshCooldown()
+nextFrame(); tick()
+assertf(GLOWS[mb] == nil, "…and clears while it is on cooldown")
+COOLDOWNS[10947] = nil; mb:RefreshCooldown()
 AL.SetType(8092, nil); AL.ClearFX(mb)
 TARGET_HP = 100
 
@@ -1044,6 +1058,20 @@ assertf(GLOWS[mb] ~= nil, "…and the ticker leaves it up for its hold")
 nextFrame(2)   -- past AVAILABLE_HOLD
 tick()
 assertf(GLOWS[mb] == nil, "…then it clears once the hold expires")
+
+-- The preview must show the colour the player will actually SEE. It used to flash everything as
+-- "usable", so choosing Available previewed yellow and then glowed green in play.
+AL.ClearFX(mb)
+AL.Preview(mb, 1, "available")
+local previewColour = GLOWS[mb] and GLOWS[mb].color
+assertf(previewColour and previewColour[1] == 0.35 and previewColour[2] == 1.00,
+        "preview uses the chosen alert type's tint, not always the usable yellow")
+AL.ClearFX(mb)
+AL.Preview(mb, 1, "refresh")
+previewColour = GLOWS[mb] and GLOWS[mb].color
+assertf(previewColour and previewColour[1] == 1.00 and previewColour[2] == 0.50,
+        "…and refresh previews pandemic-orange")
+AL.ClearFX(mb)
 
 -- The global escape hatch in the options tab.
 AL.SetType(8092, "available")
