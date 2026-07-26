@@ -525,6 +525,18 @@ DragonUI = {
     f._draggable = true
     return f
   end,
+  -- Editor mode, as NE.OpenFrameEditor drives it (DragonUI modules/editor_mode.lua). Show() refusing
+  -- in combat is faithful and load-bearing: the real one returns from an empty branch with no message,
+  -- which is why the caller re-checks IsActive instead of trusting the call.
+  EditorMode = {
+    _active = false,
+    Show    = function(self) if not (InCombatLockdown and InCombatLockdown()) then self._active = true end end,
+    Hide    = function(self) self._active = false end,
+    IsActive = function(self) return self._active end,
+  },
+  -- Records the frame the editor was told to select. Which frame that is, is the whole point: the
+  -- editor knows the ANCHOR, never the HUD content hung off it.
+  SelectEditorFrame = function(frame) DragonUI._selected = frame end,
 }
 
 DragonUI_NewEra = { dragon = DragonUI, db = {} }
@@ -1990,10 +2002,69 @@ do
   assertf(panel:IsShown() and S.GetDisplayMode() == "settings",
           "its button opens /cdm on the Settings tab")
 
+  -- ── "Position this viewer" (Phase 6: §G.4's last undecided item) ──
+  S.SetDisplayMode("settings")
+  local posRow
+  for _, e in ipairs(col.entries) do
+    local f = e.frame
+    if f.Button and f.Button:GetText() == "Position this viewer"
+      and e.section and e.section.title == "Essential Cooldowns" then
+      posRow = f
+    end
+  end
+  assertf(posRow ~= nil, "each viewer section carries a Position this viewer button")
+
+  -- In combat it must refuse AND leave the window up. Hiding the panel first and then failing would
+  -- take away the only place the reason could be read.
+  local realCombat = InCombatLockdown
+  InCombatLockdown = function() return true end
+  DragonUI.EditorMode._active, DragonUI._selected = false, nil
+  S.ShowPanel()
+  posRow.Button:GetScript("OnClick")(posRow.Button)
+  assertf(not DragonUI.EditorMode:IsActive(), "Position refuses to open the editor in combat")
+  assertf(S.panel:IsShown(), "…and leaves the settings window up to say why")
+  -- The REASON, not just the refusal. EditorMode:Show() already no-ops in combat and the IsActive
+  -- re-check would catch that on its own, so the explicit combat branch earns its place only by naming
+  -- combat: "editor mode declined to open" mid-fight tells the player nothing to act on.
+  local okc, whyc = NE.OpenFrameEditor(M.viewers.essential)
+  assertf(okc == false and (whyc or ""):lower():find("combat") ~= nil,
+          "…and the reason names combat rather than a generic refusal (" .. tostring(whyc) .. ")")
+  InCombatLockdown = realCombat
+
+  -- Out of combat: the editor opens, the panel closes, and the frame handed to SelectEditorFrame is
+  -- the ANCHOR. This is the trap the whole helper exists for — RegisterHUDFrame registers the
+  -- CreateUIFrame anchor and hangs the viewer off it, so selecting the viewer itself would put the
+  -- editor's coordinate readout and Reset button on a frame it cannot move, and it would look fine.
+  posRow.Button:GetScript("OnClick")(posRow.Button)
+  local anchor = DragonUI.EditableFrames["CooldownViewerEssential"].frame
+  assertf(DragonUI.EditorMode:IsActive(), "out of combat it opens the editor")
+  assertf(DragonUI._selected == anchor, "…selecting the registered anchor")
+  assertf(DragonUI._selected ~= M.viewers.essential, "…and NOT the viewer frame hung off it")
+  assertf(M.viewers.essential.editorAnchor == anchor, "…which is what .editorAnchor points at")
+  assertf(not S.panel:IsShown(), "…and closes the settings window, which would cover the viewer")
+  DragonUI.EditorMode:Hide()
+
+  -- A missing editor is a returned reason, not an error: some DragonUI builds have no EditorMode.
+  local savedEM = DragonUI.EditorMode
+  DragonUI.EditorMode = nil
+  local ok6, why6 = NE.OpenFrameEditor(M.viewers.essential)
+  assertf(ok6 == false and type(why6) == "string", "no editor mode reports a reason rather than erroring")
+  DragonUI.EditorMode = savedEM
+
   -- Leave the store as we found it.
   for _, id in pairs(M.FRAME_ID) do M.ResetOpts(id) end
   S.SetDisplayMode("spells")
   S.HidePanel()
+end
+
+-- The /necdm diagnostic is ~70 lines of formatting that nothing else touches, including the §F1
+-- widget probe. Run it once: a nil-format or a bad select() in there would otherwise only surface
+-- when someone reached for it to debug something else.
+print("\n=== DIAGNOSTIC (/necdm) ===")
+do
+  local okDiag, errDiag = pcall(SlashCmdList["NECDM"])
+  assertf(okDiag, "/necdm runs without erroring" .. (okDiag and "" or (": " .. tostring(errDiag))))
+  assertf(M._widgetProbe ~= nil, "…and leaves its one throwaway Cooldown probe frame cached")
 end
 
 print("\n=== UNIT-EVENT FILTER ===")

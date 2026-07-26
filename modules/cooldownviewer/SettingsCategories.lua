@@ -336,7 +336,6 @@ end
 function CDS.RefreshLayout()
   local panel = CDS.panel
   if not panel then return end
-  if panel.placeholder then panel.placeholder:Hide() end
 
   local _, class = UnitClass("player")
   local mode = CDS.GetDisplayMode() or "spells"

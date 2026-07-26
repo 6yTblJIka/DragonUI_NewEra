@@ -23,8 +23,8 @@
 --     Phase 4b-5, and the Auras tab's auto-track dropdown already has a working equivalent in the
 --     options tab, so neither is rebuilt here.
 --
---   * The settings cog landed in 4b-3, once core/Menu.lua existed to give it a menu. Revert is
---     still deferred: it needs the snapshot/restore pair, which belongs with presets (4b-5).
+--   * The settings cog landed in 4b-3, once core/Menu.lua existed to give it a menu; Revert became
+--     real in 4b-5, when SettingsPresets.lua brought the snapshot/restore pair it needs.
 --
 -- Taint: a plain display window. No secure templates, no protected frames, SavedVariables reads
 -- only. Nothing here can taint the combat path.
@@ -268,13 +268,6 @@ local function build()
   end)
   f.revertButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-  -- Placeholder while the grids are unbuilt. Removed in 4b-2.
-  f.placeholder = f.content:CreateFontString(nil, "ARTWORK", "GameFontDisableLarge")
-  f.placeholder:SetPoint("TOP", f.content, "TOP", 0, -40)
-  f.placeholder:SetWidth(300)
-  f.placeholder:SetJustifyH("CENTER")
-  f.placeholder:SetText("Spell list coming in the next step.")
-
   panel = f
   CDS.panel = f
   return f
@@ -364,15 +357,10 @@ function CDS.GetSearchText()
   return t
 end
 
--- Replaced in 4b-2 by the real category-grid builder.
-function CDS.RefreshLayout()
-  if not panel then return end
-  if panel.placeholder then
-    panel.placeholder:SetText(currentMode == "auras"
-      and "Tracked buff list coming in the next step."
-      or  "Spell list coming in the next step.")
-  end
-end
+-- Replaced by the real category-grid builder in SettingsCategories.lua, which loads after this file.
+-- Kept as a no-op so a load failure there costs the grids, not every SetDisplayMode call. (It used to
+-- paint a "coming in the next step" placeholder; that placeholder outlived 4b-2 by four phases.)
+function CDS.RefreshLayout() end
 
 -- ── Public entry points ─────────────────────────────────────────────────────────────────────────
 

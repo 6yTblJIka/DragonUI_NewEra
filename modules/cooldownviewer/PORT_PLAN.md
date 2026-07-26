@@ -3,11 +3,15 @@
 Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/` (Classic 1.15 /
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
-**Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab) and 5a (on-use trinkets)
-implemented — the whole of §G.5 except the deliberate cuts. Offline harnesses pass (`qa/offline/`,
-382 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working in-game; 4b-2 and
-4b-3 are confirmed in-game (three faults found and fixed, §G.7.1/§G.7.2). Remaining: the consumable
-half of the equip port (§G.9 — blocked on a generator pass, not on effort).
+**Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets) and 6 (loose
+ends) implemented — the whole of both phasing tables except the deliberate cuts. Offline harnesses pass
+(`qa/offline/`, 394 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working
+in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and fixed, §G.7.1/§G.7.2).
+
+**Nothing is left that offline work can close.** Remaining: consumables (§G.9, parked as a stretch goal
+by the owner — blocked on a generator pass, not on effort), and three items that need the game rather
+than the harness — §F4 taint under a combat restack, §F5's four-movers-versus-one call, and an in-game
+pass over 4b-4, 4b-5, 5a and 4c. See the end of §G.13.
 
 ---
 
@@ -495,7 +499,15 @@ player looking at the screen, not by the 156 assertions.
 
 ## F. Open questions / unverified
 
-1. **`Cooldown:SetDrawEdge` on 3.3.5a** — ClassicAPI assumes it exists (C3). Confirm.
+1. ~~**`Cooldown:SetDrawEdge` on 3.3.5a**~~ — **answered on the evidence, and `/necdm` now prints the
+   runtime answer.** ClassicAPI stubs `SetEdgeTexture` / `SetEdgeColor` / `SetEdgeScale` as
+   "Incompatible (3.3.5)" (`Util/WidgetAPI.lua:1024-1026`) but does NOT stub `SetDrawEdge`, and its own
+   cooldown-capture path calls `Self:GetDrawEdge()` unguarded (`Util/Cooldown.lua:204`) on every
+   captured cooldown's OnShow — which would error constantly on every action button if the method were
+   missing. `Process` injects unconditionally rather than filling gaps (`WidgetAPI.lua:1338`), so an
+   absence from its table means native, not forgotten. Both call sites of ours guard anyway
+   (`ItemMixins.lua:81`), so nothing depends on the answer; the `/necdm` line settles it rather than
+   leaving an inference from someone else's code standing as fact.
 2. ~~`Alerts.lua` and `SoundAlertData.lua` not dependency-mapped.~~ **Done — see §E6.**
 3. ~~`CooldownViewerSettings/` blockers named but not designed.~~ **Done — scoped in §G.** Two of
    the blockers §E6 listed were wrong; see §G.1.
@@ -582,8 +594,18 @@ which `NE.scrollbar.Reskin` already knows how to restyle.
 
 - **The Group Buffs side tab.** 12 references to `NE.groupbuff.filter`, a module this addon does not
   have. Two tabs, not three — `CDS.UpdateGroupBuffsTabState` goes with it.
-- **`NE.editmode.Toggle` / `SelectFrame`** (4 refs). No Edit Mode here (§B1). Either drop the
-  "position this frame" affordance or route it at `/dui edit`.
+- ~~**`NE.editmode.Toggle` / `SelectFrame`** (4 refs)~~ — **routed, in Phase 6 (§G.13).** Upstream's cog
+  menu carried an "Edit Mode" entry that hid the window and toggled retail Edit Mode
+  (`Panel.lua:211`); ours is a **per-viewer** "Position this viewer" button on the Settings tab, going
+  through the new `NE.OpenFrameEditor` seam. Per viewer rather than once globally because DragonUI's
+  editor can be told which frame to select, so the button under Buff Bars' sliders opens the editor
+  with Buff Bars selected. The fourth ref, `RepositionHandle` (`CooldownViewer.lua:977` — re-anchor the
+  drag rect as items come and go), needs no port: `RegisterHUDFrame` syncs the anchor to the content's
+  size from the content's own `OnSizeChanged`.
+- **`NE.OpenOptions`** (upstream's "Show Options" jump out to the addon's option surface) — **not
+  ported, and now pointless.** The traffic runs the other way since §G.12: DragonUI's section is an
+  enable toggle and a button that opens `/cdm`. A link back to a page holding one checkbox would be
+  worse than its absence.
 - ~~**Presets / layouts**~~ — deferred to last as planned, and **shipped as 4b-5** (§G.11) once the
   picker it sits on top of was working.
 
@@ -605,7 +627,8 @@ bucketed potion list cannot be generated from client data. §G.9 scopes the rout
 | **4b-5** | Presets / import / export, and the snapshot pair that makes Revert real (§G.11). **DONE** | Layouts save, load, import and export; Revert undoes an apply |
 | **5a** | On-use trinket discovery + the Trinkets source pool (§G.9). **DONE** | An equipped on-use trinket appears in `/cdm`, drags into Essential, and shows on the bar |
 | **4c** | Third `/cdm` tab hosting every viewer setting; the DragonUI section shrinks to an enable toggle plus an Open button (§G.10 scope, §G.12 notes). **DONE** | Every setting is editable from `/cdm`, and no stored value is rendered in two windows |
-| **5b** | Consumables, via a generated Spell.dbc effect table (§G.9) | Blocked on the generator pass, not on effort |
+| **6** | Loose ends (§G.13): the edit-mode affordance §G.4 never decided, §F1, and the 4b-1 vestiges. **DONE** | Every viewer is positionable from `/cdm`; no open question left that offline work can close |
+| **5b** | Consumables, via a generated Spell.dbc effect table (§G.9) | **Parked as a stretch goal** (owner, this pass). Blocked on the generator, not on effort |
 
 4b-3 is the milestone that matters; 4b-4 and 4b-5 are polish. Rough size: ~1,400 lines adapted from
 the source plus ~200 of new shim, against 2,139 in the original — the difference being the Group
@@ -1096,7 +1119,7 @@ unregistered atlas is a transparent gap rather than an error.
 
 ### Harness
 
-47 new/changed assertions (382 total). Five guards were confirmed by removal: the slider write gate,
+47 new/changed assertions (382 at that point; 394 after Phase 6). Five guards were confirmed by removal: the slider write gate,
 the step snap, the settings-mode return in `RefreshLayout`, the `allowHideWhenInactive` gate, and the
 chrome hiding. Two stub notes:
 
@@ -1110,3 +1133,92 @@ The control finder in the test scopes by section title as well as label, and tha
 "Icon size" exists four times, once per viewer, so an unscoped search always answers with Essential's
 row — and a test meaning to prove Buff Bars' slider works would have proved nothing. Same failure
 shape as §G.7.2 and the 5a pooled-tile test.
+
+## G.13. Phase 6 notes (loose ends)
+
+With 4c shipped and consumables parked as a stretch goal, both phasing tables were complete and there
+was no next *port* phase — what remained was a short list of things the plan had deferred rather than
+decided. This closes them.
+
+### 1. The edit-mode affordance (§G.4, undecided since the §G scope was written)
+
+`NE.editmode.Toggle` / `SelectFrame` were listed as "drop the affordance or route it at `/dui edit`",
+and neither was ever chosen — so the Settings tab shipped in 4c telling players to type `/dui edit`.
+Routed now, through a new integration seam:
+
+```
+NE.OpenFrameEditor(frame) -> true | false, reason
+```
+
+**It lives in `integration/Register.lua`, not in the module** (CONTRACTS §4: panel modules never reach
+into DragonUI internals directly), and **it takes the CONTENT frame while selecting the ANCHOR.** That
+is the trap the seam exists for. `RegisterHUDFrame` registers the `CreateUIFrame` anchor as the editable
+frame and hangs the viewer off it, so DragonUI's editor knows the anchor and nothing at all about the
+viewer. Handing `SelectEditorFrame` a content frame would put the coordinate readout and the Reset
+button on a frame the editor cannot move — and it would look like it worked. `.editorAnchor`, which
+`RegisterHUDFrame` already set, is the bridge.
+
+**Failure returns a reason instead of printing one**, because the caller knows where its message
+belongs. Two of the three failure paths matter:
+
+- **In combat.** `EditorMode:Show()` returns silently in combat — an empty branch, no message
+  (`DragonUI/modules/editor_mode.lua:334`) — so a button wired straight to it appears to do nothing
+  mid-fight. `OpenFrameEditor` re-checks `IsActive()` rather than trusting the call, and the explicit
+  combat branch exists purely to name combat in the reason. That distinction is now asserted: without
+  the branch the refusal still happens, but the player is told "editor mode declined to open", which is
+  not actionable. A guard whose only product is a better message still needs a test that reads the
+  message.
+- **No `EditorMode` at all**, on a DragonUI build that predates it. Returns a reason; does not error.
+
+**Per viewer, not once globally.** Upstream's version was a single cog-menu entry. Because DragonUI's
+editor takes a frame to select, ours is a "Position this viewer" button inside each viewer's section, so
+the one under Buff Bars' sliders opens the editor with Buff Bars selected. The panel closes only on
+success — hiding first and then failing would take away the only surface the reason could appear on.
+
+The fourth upstream ref, `RepositionHandle` (`CooldownViewer.lua:977`, re-anchor the drag rect as items
+are learned), needs no port at all: `RegisterHUDFrame` syncs the anchor to the content's footprint from
+the content's own `OnSizeChanged`.
+
+### 2. §F1, `Cooldown:SetDrawEdge`
+
+Open since Phase 0. The static evidence is strong enough to call it — ClassicAPI stubs the three
+`SetEdge*` methods as "Incompatible (3.3.5)" but not `SetDrawEdge`, injects unconditionally rather than
+filling gaps, and calls `GetDrawEdge` unguarded on every captured cooldown's OnShow — but that is an
+inference from someone else's code, so `/necdm` now prints the runtime answer for the four cooldown
+methods we care about. Both of our call sites guard regardless, so nothing depends on it; what changes
+is that the question stops being open.
+
+The probe frame is created on demand and cached, not at load: frames cannot be destroyed, so a
+diagnostic-only frame should not exist on a character who never runs the diagnostic.
+
+`/necdm` is also now smoke-tested. It is ~70 lines of formatting that nothing else touches, and a bad
+`select()` or a nil in a format string would otherwise surface only when someone reached for it to debug
+something else — the worst possible moment.
+
+### 3. 4b-1 vestiges
+
+The "Spell list coming in the next step." placeholder outlived 4b-2 by four phases: still built, still
+anchored, hidden on the first `RefreshLayout` and never seen again, with two live references keeping it
+alive. Removed, along with the stub `RefreshLayout` body that painted it. The stub itself stays as a
+genuine no-op, so a load failure in `SettingsCategories.lua` costs the grids rather than every
+`SetDisplayMode` call.
+
+Also corrected: `SettingsAssets.lua` now registers sheet 5684744 itself instead of relying on
+`modules/spellbook/Assets.lua` having shipped it. The side-tab BODY has depended on that all along and
+worked, because both files load from the same TOC — but the dependency was implicit and the harness was
+quietly logging the sheet as unshipped. One path registered twice, not one file shipped twice.
+
+### What is left, and it is not code
+
+Three items, all needing the game rather than the harness:
+
+- **§F4 taint.** The viewers are unsecure display frames with no attributes, so `SetPoint` during a live
+  restack should be a non-issue — but "should be" is what §F4 asks to confirm, and only a combat restack
+  confirms it.
+- **§F5, whether four separate movers is tolerable** versus one grouped handle. An owner call with the
+  frames on screen. The new per-viewer Position buttons make the four-mover shape easier to live with,
+  which is worth re-judging before changing it.
+- **In-game confirmation of 4b-4, 4b-5, 5a and 4c.** 1-3, 4b-1, 4b-2 and 4b-3 have had a pass; the four
+  most recent phases have not. Every in-game pass so far has found something (§G.7.1, §G.7.2), and none
+  of those faults were the kind an offline harness can reach — three of them were art and event-order
+  problems visible only on a real frame.

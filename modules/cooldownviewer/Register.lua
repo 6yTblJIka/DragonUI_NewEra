@@ -173,6 +173,23 @@ SlashCmdList["NECDM"] = function()
     end
   end
   if n == 0 then say("   no alerts or ready sounds assigned (right-click an icon to add one)") end
+
+  -- §F1: which Cooldown widget methods this client actually has. The plan has carried "confirm
+  -- SetDrawEdge" as an open question since Phase 0, and the static evidence says it is native —
+  -- ClassicAPI stubs SetEdgeTexture / SetEdgeColor / SetEdgeScale as "Incompatible (3.3.5)" but does
+  -- NOT stub SetDrawEdge, and its own cooldown-capture path calls Self:GetDrawEdge() unguarded
+  -- (Util/Cooldown.lua:204), which would error on every captured cooldown if it were missing. That is
+  -- an inference from someone else's code, so this prints the answer instead of arguing it. One
+  -- throwaway frame, created on demand: frames cannot be destroyed, so it is not created at load.
+  local probe = M._widgetProbe
+  if not probe then
+    probe = CreateFrame("Cooldown", nil, UIParent)
+    probe:Hide()
+    M._widgetProbe = probe
+  end
+  local function has(name) return probe[name] ~= nil and "yes" or "NO" end
+  say(("cooldown widget: SetDrawEdge=%s GetDrawEdge=%s SetSwipeTexture=%s SetReverse=%s"):format(
+    has("SetDrawEdge"), has("GetDrawEdge"), has("SetSwipeTexture"), has("SetReverse")))
 end
 
 local bootFrame = CreateFrame("Frame")

@@ -136,6 +136,53 @@ function NE.ApplySavedFramePosition(frame, section, key)
     return true
 end
 
+-- ----------------------------------------------------------------------------
+-- NE.OpenFrameEditor(frame) -> true | false, reason
+--
+-- Enter DragonUI's editor mode, with one frame pre-selected. This is the seam a module uses to offer
+-- "go position this thing" from inside its own window, and it exists here rather than in the module
+-- for CONTRACTS §4: panel modules never reach into DragonUI internals directly.
+--
+-- THE ARGUMENT IS THE CONTENT FRAME, and the anchor is what gets selected. RegisterHUDFrame registers
+-- the CreateUIFrame anchor as the editable frame and hangs the content off it (see the note below), so
+-- the editor knows the anchor and nothing about the content. Handing SelectEditorFrame a content frame
+-- would put the coordinate readout and the Reset button on a frame the editor cannot move, and it
+-- would look like it worked. `.editorAnchor` is set by RegisterHUDFrame for exactly this.
+--
+-- Failure is a returned reason, not a print: the caller knows where its message belongs. In particular
+-- EditorMode:Show() returns SILENTLY in combat (DragonUI modules/editor_mode.lua:334 — an empty
+-- branch, no message), so a button wired straight to it would appear to do nothing at all mid-fight.
+-- ----------------------------------------------------------------------------
+
+function NE.OpenFrameEditor(frame)
+    local dragon = NE.dragon
+    local EM = dragon and dragon.EditorMode
+    if not (EM and type(EM.Show) == "function" and type(EM.IsActive) == "function") then
+        return false, "DragonUI's editor mode isn't available."
+    end
+    -- This check exists for the MESSAGE, not the behaviour: EditorMode:Show() already no-ops in
+    -- combat, and the IsActive re-check below would catch it either way — but "editor mode declined to
+    -- open" tells a player nothing, where "not during combat" tells them to try again in ten seconds.
+    if InCombatLockdown and InCombatLockdown() then
+        return false, "Editor mode can't be opened during combat."
+    end
+
+    if not EM:IsActive() then
+        local ok, err = pcall(EM.Show, EM)
+        if not ok then return false, "Editor mode failed to open: " .. tostring(err) end
+    end
+    -- Re-check rather than trusting the call, per the header.
+    if not EM:IsActive() then
+        return false, "Editor mode declined to open."
+    end
+
+    local target = frame and (frame.editorAnchor or frame) or nil
+    if target and type(dragon.SelectEditorFrame) == "function" then
+        pcall(dragon.SelectEditorFrame, target)
+    end
+    return true
+end
+
 -- RegisterEditableFrame on its own is ONLY metadata. The editor's drag affordances —
 -- RegisterForDrag, OnDragStart/OnDragStop (which auto-saves to configPath), the green nineslice
 -- overlay, the text label — are attached by DragonUI's frame FACTORY, addon.CreateUIFrame

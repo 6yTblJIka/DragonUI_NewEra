@@ -44,6 +44,39 @@ local TRACK_DEST   = { { "both", "Icons and bars" }, { "icon", "Icons only" }, {
 local function pct(v) return tostring(v) .. "%" end
 local function px(v)  return tostring(v) .. " px" end
 
+local function say(msg)
+  if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cff1784d1Cooldown Manager|r " .. msg) end
+end
+
+-- ── "Position this viewer" ──────────────────────────────────────────────────────────────────────
+-- The last unported piece of upstream's panel: its cog menu carried an "Edit Mode" entry that hid the
+-- window and toggled retail Edit Mode (Panel.lua:211). §G.4 left it as "drop it or route it at
+-- /dui edit" and never decided. Routed, and improved on: because DragonUI's editor can be told which
+-- frame to select, the affordance belongs per viewer rather than once globally — the button that sits
+-- under Buff Bars' sliders opens the editor with Buff Bars selected, coordinates and Reset included.
+--
+-- The panel closes only on SUCCESS. Hiding first and then failing (no editor, or in combat) would take
+-- the window away and leave the player with nothing to show why.
+local function positionViewer(category)
+  local frame = M.viewers and M.viewers[category]
+  if not frame then
+    say("that viewer doesn't exist yet — it builds at login.")
+    return
+  end
+  if not NE.OpenFrameEditor then
+    say("editor mode isn't available in this DragonUI build. Type /dui edit to position frames.")
+    return
+  end
+  local ok, why = NE.OpenFrameEditor(frame)
+  if not ok then
+    say(why or "editor mode couldn't be opened.")
+    return
+  end
+  -- Editor mode covers the screen and the viewer being positioned may sit under this window.
+  if CDS.HidePanel then CDS.HidePanel() end
+end
+CDS.PositionViewer = positionViewer   -- test seam
+
 -- ── One viewer's block ──────────────────────────────────────────────────────────────────────────
 
 local function buildViewerSection(col, spec)
@@ -127,6 +160,14 @@ local function buildViewerSection(col, spec)
     })
   end
 
+  col:AddButton({
+    label = "Position this viewer",
+    desc  = "Opens DragonUI's editor mode with this viewer selected, so you can drag it and read its "
+            .. "coordinates. Closes this window; not available in combat.",
+    width = 180,
+    onClick = function() positionViewer(spec.category) end,
+  })
+
   -- Bar-only, exactly as retail exposes them (the BuffBar system alone).
   if spec.bar then
     col:AddDropdown({
@@ -150,8 +191,9 @@ local function build(parent)
 
   local c = Kit.New(parent, PAGE_W)
 
-  c:AddText("Everything the Cooldown Manager can be told to do, apart from where the viewers sit — "
-    .. "drag those with DragonUI's editor mode (/dui edit).", { font = "GameFontHighlightSmall" })
+  c:AddText("Everything the Cooldown Manager can be told to do. Position is the one setting that is not "
+    .. "stored here — each viewer's \"Position this viewer\" button hands it to DragonUI's editor mode, "
+    .. "which owns frame placement (/dui edit).", { font = "GameFontHighlightSmall" })
 
   for _, spec in ipairs(M.VIEWER_SPECS or {}) do
     buildViewerSection(c, spec)
