@@ -159,7 +159,13 @@ local function rebuildFromAuras(self)
   if snap then
     for i = 1, snap.n do
       local row = snap.list[i]
-      if M.ShouldTrackBuff(row.spellID, row.duration, include, exclude, category) then
+      -- Record it BEFORE deciding whether to show it. This is the whole of Phase 7a's write path:
+      -- the picker's Tracked Buffs/Bars/Hidden sections are fed from here, and recording after the
+      -- decision would mean hiding an aura also removed the row that could unhide it.
+      if M.NoteSeenAura then
+        M.NoteSeenAura(row.spellID, row.name, row.icon, row.duration)
+      end
+      if M.ShouldTrackBuff(row.spellID, row.duration, include, exclude, category, row.name) then
         local item = acquire()
         item:SetAura(row.name, row.icon, row.count, row.duration, row.expiration, row.spellID)
         item:Show()

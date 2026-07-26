@@ -79,7 +79,15 @@ local function build()
   -- A trinket swap changes the discovery set, so the Trinkets section has to re-source. Registered
   -- unfiltered: RegisterUnitEvent is our own compat shim and this frame has no other unit events.
   f:RegisterEvent("UNIT_INVENTORY_CHANGED")
-  f:SetScript("OnEvent", function(self)
+  -- Phase 7d: the aura catalog is spec-gated, so a respec or a dual-spec swap changes which rows
+  -- exist. The gate's cache expires on a short TTL and would recover on its own, but only at the
+  -- next refresh — which for an open window could be never.
+  f:RegisterEvent("CHARACTER_POINTS_CHANGED")
+  f:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
+  f:SetScript("OnEvent", function(self, event)
+    if event == "CHARACTER_POINTS_CHANGED" or event == "ACTIVE_TALENT_GROUP_CHANGED" then
+      if M.InvalidateTalentCache then M.InvalidateTalentCache() end
+    end
     if self:IsShown() then CDS.RefreshLayout() end
   end)
 

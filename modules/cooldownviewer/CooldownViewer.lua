@@ -552,14 +552,40 @@ function M.GetTrackedAuraList(class)
   return t[class]
 end
 
-function M.SetAuraAssignment(class, spellID, assignment)
+-- `name` is stored alongside the id because matching is by name (see GetBuffOverrides): a catalog
+-- row is rank 1, the aura the player actually gets may be any rank, and GetSpellInfo cannot always
+-- resolve an id this client only knows as an aura.
+-- The best name available for an aura id, in falling order of certainty: the client, what the scan
+-- recorded, the catalog. Resolved HERE rather than threaded through the picker's drag and menu
+-- paths, so every writer stores a name whether or not its caller happened to know one.
+function M.ResolveAuraName(spellID)
+  if not spellID then return nil end
+  local nm = GetSpellInfo(spellID)
+  if nm then return nm end
+  local _, class = UnitClass("player")
+  if not class then return nil end
+  local cd = store(false)
+  local bag = cd and cd.seenAura and cd.seenAura[class]
+  if bag and bag[spellID] and bag[spellID].name then return bag[spellID].name end
+  for _, c in ipairs((M.AURA_CATALOG_BY_CLASS or {})[class] or {}) do
+    if c.id == spellID then return c.name end
+  end
+  return nil
+end
+
+function M.SetAuraAssignment(class, spellID, assignment, name)
   if not VALID_ASSIGNMENT[assignment] then return end
   local list = M.GetTrackedAuraList(class)
   if not (list and spellID) then return end
+  name = name or M.ResolveAuraName(spellID)
   for _, e in ipairs(list) do
-    if e.spellID == spellID then e.assignment = assignment; M.RefreshActiveViewer(); return end
+    if e.spellID == spellID then
+      e.assignment = assignment
+      if name and not e.name then e.name = name end   -- late-arriving name, never overwritten
+      M.RefreshActiveViewer(); return
+    end
   end
-  list[#list + 1] = { spellID = spellID, assignment = assignment }
+  list[#list + 1] = { spellID = spellID, assignment = assignment, name = name }
   M.RefreshActiveViewer()
 end
 
@@ -579,12 +605,187 @@ function M.ResetTrackedAura(class)
   M.RefreshActiveViewer()
 end
 
+-- ── What the picker can OFFER (Phase 7) ─────────────────────────────────────────────────────────
+--
+-- The pool above is an OVERRIDE registry, and its only writer is the picker. On its own that makes
+-- the Tracked Buffs / Tracked Bars tab a store whose sole editor is a view of itself: nothing can
+-- ever enter it, so the tab is empty on every character forever, and ScanTargetTrackedAuras — whose
+-- input is that registry — never has anything to look for either. Two sources fix that:
+--
+--   * the CATALOG (CdmAuraCatalog.lua, generated): what you CAN have. This is retail's shape, where
+--     the Buffs menu lists a Blizzard-curated per-spec aura set. Spec-gating is per TALENT rather
+--     than per spec, which on this client is strictly better — it follows respecs and dual spec.
+--   * the SEEN registry: what you HAVE had. The catalog cannot cover racials, trinket and set
+--     procs, or anything this client grants outside a class skill line, so the live scan records
+--     what it meets. This is the safety net that lets the catalog be imperfect.
+
+local SEEN_CAP    = 60    -- per class
+local SEEN_RENOTE = 5     -- seconds; a re-note inside this window is skipped
+
+local function getSeenAuraTable()
+  local cd = store(true)
+  if not cd then return nil end
+  cd.seenAura = cd.seenAura or {}
+  return cd.seenAura
+end
+
+-- Called from the aura scan for every player buff it walks, BEFORE the include/exclude decision.
+-- The ordering is load-bearing: recorded after, an aura the player hides would drop out of the
+-- registry, its row would vanish from Hidden, and there would be nothing left to unhide it with.
+-- Returns true only when a NEW aura was added.
+function M.NoteSeenAura(spellID, name, icon, duration)
+  if not (spellID and name) then return false end
+  -- Exactly the window the viewers use, so the tab describes what the bars are doing rather than
+  -- some wider idea of it. Also what keeps food buffs, flasks and permanent toggles out.
+  if not (duration and duration > 0 and duration <= BUFF_TRACK_MAX_DURATION) then return false end
+  local _, class = UnitClass("player")
+  local t = class and getSeenAuraTable()
+  if not t then return false end
+  t[class] = t[class] or {}
+  local bag = t[class]
+  local now = (GetTime and GetTime()) or 0
+
+  local e = bag[spellID]
+  if e then
+    if (now - (e.last or 0)) < SEEN_RENOTE then return false end
+    e.name, e.icon, e.dur, e.last = name, icon, duration, now
+    return false
+  end
+
+  -- Capped, evicting the least recently seen. Unbounded this follows the character forever and is
+  -- copied into every layout snapshot (§G.11), so a raid night of procs would bloat both.
+  local n, oldest, oldestAt = 0, nil, nil
+  for k, v in pairs(bag) do
+    n = n + 1
+    local last = v.last or 0
+    if not oldestAt or last < oldestAt then oldest, oldestAt = k, last end
+  end
+  if n >= SEEN_CAP and oldest then bag[oldest] = nil end
+
+  bag[spellID] = { name = name, icon = icon, dur = duration, last = now }
+  return true
+end
+
+function M.GetSeenAuraList(class)
+  if not class then local _; _, class = UnitClass("player") end
+  local t = store(false)
+  local bag = t and t.seenAura and class and t.seenAura[class]
+  local out = {}
+  if not bag then return out end
+  for spellID, e in pairs(bag) do
+    out[#out + 1] = { spellID = spellID, name = e.name, icon = e.icon, dur = e.dur, last = e.last }
+  end
+  -- Duration descending, matching the catalog's order and the bars', so the grid reads the same way
+  -- however a row got there.
+  table.sort(out, function(a, b)
+    if (a.dur or 0) ~= (b.dur or 0) then return (a.dur or 0) > (b.dur or 0) end
+    return (a.name or "") < (b.name or "")
+  end)
+  return out
+end
+
+function M.ResetSeenAura(class)
+  if not class then local _; _, class = UnitClass("player") end
+  local t = getSeenAuraTable()
+  if t and class then t[class] = {} end
+end
+
+-- ── The talent gate ─────────────────────────────────────────────────────────────────────────────
+-- A catalog row carrying `talent` is only offered when the player has that talent. Cached with a
+-- short TTL rather than event-invalidated: the only caller is the picker, so this is never in the
+-- aura hot path, and a TTL self-heals after a respec without needing to be told about one.
+local TALENT_TTL = 2
+local talentRanks, talentStamp
+
+local function talentTable()
+  local now = (GetTime and GetTime()) or 0
+  if talentRanks and (now - (talentStamp or 0)) < TALENT_TTL then return talentRanks end
+  local t, n = {}, 0
+  if GetNumTalentTabs and GetNumTalents and GetTalentInfo then
+    for tab = 1, (GetNumTalentTabs() or 0) do
+      for i = 1, (GetNumTalents(tab) or 0) do
+        -- 3.3.5a flat 10-tuple; rank is the 5th return (see modules/talents/Behavior.lua).
+        local name, _, _, _, rank = GetTalentInfo(tab, i)
+        if name then t[name:lower()] = rank or 0; n = n + 1 end
+      end
+    end
+  end
+  t._count = n
+  talentRanks, talentStamp = t, now
+  return t
+end
+
+-- Fails OPEN. No talent rows at all means the API has not answered yet — early login, or a build
+-- without the talent globals — NOT that the player has spent nothing. Hiding every spec-gated row
+-- on that reading would reproduce the exact bug this phase exists to fix.
+function M.HasTalent(name)
+  if not name then return true end
+  local t = talentTable()
+  if t._count == 0 then return true end
+  return (t[name:lower()] or 0) > 0
+end
+
+function M.InvalidateTalentCache() talentRanks, talentStamp = nil, nil end
+
+-- The catalog for a class, spec-filtered. `includeUntalented` is the picker's Show Unlearned
+-- escape hatch: the gate is derived data and can be wrong, so there is a way to see past it.
+function M.GetAuraCatalog(class, includeUntalented)
+  if not class then local _; _, class = UnitClass("player") end
+  local all = class and (M.AURA_CATALOG_BY_CLASS or {})[class]
+  if not all then return {} end
+  local out = {}
+  for _, e in ipairs(all) do
+    if (not e.talent) or includeUntalented or M.HasTalent(e.talent) then out[#out + 1] = e end
+  end
+  return out
+end
+
+-- Catalog ∪ seen, minus anything the player has already assigned by hand — the rows the picker can
+-- offer as AUTO. Deduped by lowercased name, not by id: the same buff arrives from the catalog at
+-- rank 1 and from the scan at whatever rank was cast, and those are two ids for one buff.
+function M.GetAuraCandidates(class, includeUntalented)
+  if not class then local _; _, class = UnitClass("player") end
+  local out, byName, explicit = {}, {}, {}
+
+  for _, e in ipairs(M.GetTrackedAuraList(class) or {}) do
+    if e.spellID then explicit[e.spellID] = true end
+    local nm = e.name or (e.spellID and GetSpellInfo(e.spellID))
+    if nm then explicit[nm:lower()] = true end
+  end
+
+  local function add(entry)
+    local key = entry.name and entry.name:lower()
+    if not key then return end
+    if byName[key] or explicit[key] or (entry.spellID and explicit[entry.spellID]) then return end
+    byName[key] = true
+    out[#out + 1] = entry
+  end
+
+  for _, c in ipairs(M.GetAuraCatalog(class, includeUntalented)) do
+    local nm, _, icon = GetSpellInfo(c.id)
+    add({ spellID = c.id, name = c.name or nm, icon = icon, dur = c.dur,
+          talent = c.talent, tree = c.tree, catalog = true,
+          -- Only ever true when Show Unlearned opened the gate; the tile tints on it.
+          untalented = (c.talent and not M.HasTalent(c.talent)) or nil })
+  end
+  for _, s in ipairs(M.GetSeenAuraList(class)) do
+    add({ spellID = s.spellID, name = s.name, icon = s.icon, dur = s.dur, seen = true })
+  end
+  return out
+end
+
 -- Auras never to auto-track, by spellID. Starts empty; populate as real noise turns up.
 M.BUFFBAR_EXCLUDE = M.BUFFBAR_EXCLUDE or {}
 
 -- Derive the include/exclude sets for one buff viewer from the single pool. An aura assigned to
 -- THIS viewer is a force-include; assigned to the other viewer, or hidden, is a force-exclude — so
 -- a bar-assigned aura never also shows as an icon.
+--
+-- Each set is keyed BY BOTH id and lowercased name, in the one table — spellIDs are numbers and
+-- names are strings, so they cannot collide. The name key is what makes an assignment survive rank:
+-- the player assigns Renew from a catalog row holding rank 1, then casts rank 14, and an id-only
+-- lookup would quietly not match. ScanTargetTrackedAuras already had to match DoTs by name for the
+-- same reason; this makes that the rule rather than the exception.
 function M.GetBuffOverrides(category)
   local include, exclude = {}, {}
   local _, class = UnitClass("player")
@@ -594,7 +795,10 @@ function M.GetBuffOverrides(category)
       if e.spellID then
         local here = (category == "buffIcon" and e.assignment == "icon")
                   or (category == "buffBar"  and e.assignment == "bar")
-        if here then include[e.spellID] = true else exclude[e.spellID] = true end
+        local set = here and include or exclude
+        set[e.spellID] = true
+        local nm = e.name or GetSpellInfo(e.spellID)
+        if nm then set[nm:lower()] = true end
       end
     end
   end
@@ -632,10 +836,14 @@ end
 M.BUFF_TRACK_MAX_DURATION = BUFF_TRACK_MAX_DURATION
 
 -- The per-aura decision. Explicit assignments win; otherwise the auto window applies, honouring
--- the icon/bar/both destination.
-function M.ShouldTrackBuff(spellID, duration, include, exclude, category)
+-- the icon/bar/both destination. `name` is optional and trailing so existing callers still work,
+-- but passing it is what makes an assignment rank-proof — see GetBuffOverrides.
+function M.ShouldTrackBuff(spellID, duration, include, exclude, category, name)
+  local key = name and name:lower()
   if spellID and include[spellID] then return true end
+  if key and include[key] then return true end
   if spellID and (exclude[spellID] or M.BUFFBAR_EXCLUDE[spellID]) then return false end
+  if key and exclude[key] then return false end
   if not M.IsAutoTrackBuffs() then return false end
   if category then
     local dest = M.AutoTrackDest()
@@ -654,10 +862,17 @@ function M.ScanTargetTrackedAuras(include, shownNames)
   if not include then return out end
   if not (UnitExists and UnitExists("target")) then return out end
 
+  -- `include` is keyed by id AND by lowercased name (GetBuffOverrides), so both key types resolve
+  -- here: a string key IS the name, and is the only thing that works for an aura id this client
+  -- cannot hand back to GetSpellInfo.
   local wantName = {}
-  for spellID in pairs(include) do
-    local nm = GetSpellInfo(spellID)
-    if nm then wantName[nm] = true end
+  for key in pairs(include) do
+    if type(key) == "string" then
+      wantName[key] = true
+    else
+      local nm = GetSpellInfo(key)
+      if nm then wantName[nm:lower()] = true end
+    end
   end
   if not next(wantName) then return out end
 
@@ -669,7 +884,7 @@ function M.ScanTargetTrackedAuras(include, shownNames)
     if not snap then return end
     for i = 1, snap.n do
       local row = snap.list[i]
-      if row.name and wantName[row.name] and not (shownNames and shownNames[row.name]) then
+      if row.name and wantName[row.name:lower()] and not (shownNames and shownNames[row.name]) then
         out[#out + 1] = {
           name = row.name, icon = row.icon, count = row.count,
           duration = row.duration, expiration = row.expiration, spellID = row.spellID,
@@ -701,6 +916,10 @@ function M.ResetTracking()
   if not cd then return end
   cd.customLists = {}
   cd.trackedAura = {}
+  -- Observed history goes too. It is not a choice the player made, but leaving it would mean "reset
+  -- tracking" left rows behind that the player could not account for — and the catalog keeps the
+  -- picker populated either way, so nothing is lost but the record of one character's procs.
+  cd.seenAura = {}
   -- Trinket placement is a tracking choice like any other, so "reset tracking" returns every
   -- discovered item to the unassigned source pool.
   cd.equipAssign = {}

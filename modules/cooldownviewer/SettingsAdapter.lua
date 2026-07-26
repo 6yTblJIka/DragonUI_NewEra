@@ -73,6 +73,18 @@ end
 function Adapter.Meta(catID)  return CATS[catID] end
 function Adapter.Label(catID) return CATS[catID] and CATS[catID].label or catID end
 function Adapter.Kind(catID)  return CATS[catID] and CATS[catID].kind or "icon" end
+
+-- What an empty section should say (Phase 7c). "(empty)" is fine for a list the player emptied
+-- themselves; it reads as a fault in a section that has never been fillable, which is exactly how
+-- the aura tab looked before this phase. Deliberately static: the text has to be true whatever the
+-- auto-track destination happens to be, so it names the action rather than describing the state.
+local EMPTY_TEXT = {
+  trackedBuff = "Nothing here yet — drag a buff in to pin it.",
+  trackedBar  = "Nothing here yet — drag a buff in to pin it.",
+  hiddenAura  = "Nothing hidden.",
+}
+
+function Adapter.EmptyText(catID) return EMPTY_TEXT[catID] or "(empty)" end
 function Adapter.Mode(catID)  return CATS[catID] and CATS[catID].mode or "spells" end
 
 -- ── Spell categories ────────────────────────────────────────────────────────────────────────────
@@ -180,6 +192,75 @@ local function equipItemsAssigned(assignVal, class)
   return out
 end
 
+-- ── Aura rows (Phase 7b) ────────────────────────────────────────────────────────────────────────
+--
+-- An aura category is now the union of two things: what the player has ASSIGNED by hand, and what
+-- the viewers are deciding for themselves. The second half is the point — before it, the only writer
+-- of the assignment pool was this picker, so the pool could never be anything but empty.
+--
+-- Where an unassigned candidate lands depends on what is actually happening to it:
+--
+--   auto-track ON   it is being tracked, so it appears in whichever category the destination sends
+--                   it to (M.AutoTrackDest: both / icon / bar) and is marked `auto`
+--   auto-track OFF  nothing is showing it, so it appears under HIDDEN — which is the truth, and it
+--                   also gives the section a purpose beyond force-excludes
+--
+-- Either way, dragging one out is what makes it explicit: the drag already calls SetAuraAssignment,
+-- and "stop deciding this one for me" is exactly what that write means. No new write path.
+local AUTO_DEST_CATS = {
+  both = { icon = true, bar = true },
+  icon = { icon = true },
+  bar  = { bar = true },
+}
+
+local function auraRow(e, assignment)
+  local name = e.name or (e.spellID and M.ResolveAuraName and M.ResolveAuraName(e.spellID))
+  local icon = e.icon or (e.spellID and select(3, GetSpellInfo(e.spellID)))
+  return {
+    aura       = true,          -- the tile setter dispatches on this
+    spellID    = e.spellID,
+    label      = name,
+    icon       = icon,
+    dur        = e.dur,
+    assignment = assignment,    -- nil for an auto row: it has no stored assignment yet
+    auto       = (assignment == nil) or nil,
+    talent     = e.talent,
+    untalented = e.untalented,
+    seen       = e.seen,
+  }
+end
+
+local function auraItems(assignVal, class)
+  local out = {}
+
+  for _, e in ipairs(M.GetTrackedAuraList(class) or {}) do
+    if (e.assignment or "icon") == assignVal then
+      out[#out + 1] = auraRow(e, e.assignment or "icon")
+    end
+  end
+
+  local autoOn = (not M.IsAutoTrackBuffs) or M.IsAutoTrackBuffs()
+  local wanted
+  if autoOn then
+    wanted = AUTO_DEST_CATS[(M.AutoTrackDest and M.AutoTrackDest()) or "both"] or AUTO_DEST_CATS.both
+    wanted = wanted[assignVal]
+  else
+    wanted = (assignVal == "hidden")
+  end
+
+  if wanted and M.GetAuraCandidates then
+    -- Show Unlearned is reused rather than given an aura-specific twin: it already means "show me
+    -- what I cannot use yet" for spells, and a second setting saying the same thing about auras is
+    -- how a settings page stops making sense.
+    local showAll = M.GetShowUnlearned and M.GetShowUnlearned()
+    for _, e in ipairs(M.GetAuraCandidates(class, showAll and true or false)) do
+      out[#out + 1] = auraRow(e, nil)
+    end
+  end
+
+  return out
+end
+
 -- ── Items for a category ────────────────────────────────────────────────────────────────────────
 
 function Adapter.GetItems(catID, class)
@@ -195,10 +276,7 @@ function Adapter.GetItems(catID, class)
   end
 
   if meta.aura then
-    for _, e in ipairs(M.GetTrackedAuraList(class) or {}) do
-      if (e.assignment or "icon") == meta.aura then out[#out + 1] = e.spellID end
-    end
-    return out
+    return auraItems(meta.aura, class)
   end
 
   if meta.list then

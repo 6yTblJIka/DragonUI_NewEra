@@ -3,15 +3,18 @@
 Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/` (Classic 1.15 /
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
-**Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets) and 6 (loose
-ends) implemented — the whole of both phasing tables except the deliberate cuts. Offline harnesses pass
-(`qa/offline/`, 394 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working
-in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and fixed, §G.7.1/§G.7.2).
+**Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets), 6 (loose
+ends) and 7 (the tracked-aura catalog) implemented — the whole of both phasing tables except the
+deliberate cuts. Offline harnesses pass (`qa/offline/`, 439 boot assertions). Phases 1-3 and the 4b-1
+window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
+fixed, §G.7.1/§G.7.2).
 
-**Open work is now §H** (planned, not built): **Phase 7** — the Tracked Buffs tab is structurally empty
-and always has been, which also disables target-DoT tracking (§H.1); **Phase 8** — retail theming, whose
-core finding is that the viewer icon art is asked for by name and registered nowhere (§H.2); **Phase 9**
-— the audit against Wowhead's current guide, whose only real gap is the glow on a buffed spell (§H.3).
+**Open work is now §H.2 and §H.3** (planned, not built): **Phase 8** — retail theming, whose core
+finding is that the viewer icon art is asked for by name and registered nowhere (§H.2); **Phase 9** —
+the audit against Wowhead's current guide, whose only real gap is the glow on a buffed spell (§H.3).
+Phase 7 is **DONE** (§H.1, notes in §H.1.1): the Tracked Buffs tab now has two real sources — a
+generated per-class catalog gated on the player's actual talents, and a registry of auras the scan has
+met — which also makes target-DoT tracking reachable for the first time.
 
 Also outstanding: consumables (§G.9, parked as a stretch goal by the owner — blocked on a generator
 pass, not on effort), and three items needing the game rather than the harness — §F4 taint under a
@@ -1236,7 +1239,7 @@ Written after an in-game report ("Tracked buffs never shows anything") and a re-
 current Cooldown Manager guide (`wowhead.com/guide/ui/cooldown-manager-setup`, updated 2026-06-16).
 Consumables stay parked (§G.9).
 
-## H.1. Phase 7 — the Tracked Buffs tab is structurally empty
+## H.1. Phase 7 — the Tracked Buffs tab is structurally empty — **DONE**
 
 **The report is not a rendering fault. The tab cannot ever show anything.**
 
@@ -1319,7 +1322,10 @@ Nothing tracked yet." — rather than three empty headers, which is what the rep
 as broken. §G.9 already established the pattern for this (an empty *source* pool is skipped outright
 rather than shown empty); the same judgement applies.
 
-### 7d. Optional: a generated per-class aura catalog (the retail shape)
+### 7d. A generated per-class aura catalog (the retail shape)
+
+**Promoted from optional to primary by the owner, and built first** — which reverses the ordering
+argued below. See §H.1.1 for what the data turned out to be.
 
 7a-7c fix the tab with zero new data, but they are retrospective: the list is what you have had, not
 what you *can* have. Retail's is a catalog. The same generator that produced `CdmArsenal.lua` can
@@ -1338,6 +1344,103 @@ from a debuff by effect target without guessing. Worth a spike before committing
   first; assert `ScanTargetTrackedAuras` now has reachable input.
 - Negative: remove the "record before the decision" ordering and the Hidden test must fail.
 - In-game: log in, take any short buff, open `/cdm` → Tracked Buffs.
+
+### H.1.1 What shipped, and what the data turned out to be — **DONE**
+
+Built as one phase rather than 7a-7c-then-maybe-7d: the owner asked for the catalog up front ("It
+should be curated for spec, I think its worth generating a catalog"), which makes 7d the primary
+source and the seen registry the safety net rather than the other way round.
+
+**The two unknowns the plan flagged were both answered by measurement, and the first answer was
+wrong in the way that matters.** `locate()` — one column per anchor set, ambiguity is a hard error —
+reported *no* match for `DurationIndex` and `Effect[0]` on the first run. The columns were right
+(40 and 71); the ANCHORS were wrong. Bloodrage has no duration of its own, because its aura lives on
+the spell it triggers (`29131`), and its first effect is ENERGIZE rather than APPLY_AURA. Anchoring on
+a spell that looks ordinary and is not would have "disproved" two correct columns — which is the whole
+argument for locating rather than assuming, arriving from the opposite direction to the usual one.
+
+Located, each proved against 3-6 independently-known anchors: `DurationIndex` 40, `Effect[]` 71-73
+(contiguity checked, not assumed), `EffectImplicitTargetA[]` 86, `EffectApplyAuraName[]` 95,
+`EffectTriggerSpell[]` 116, `SkillLine.Name` 3, `TalentTab.ClassMask` 20 / `OrderIndex` 22.
+
+**Self-buff vs debuff was answered by effect target, as hoped:** `EffectImplicitTargetA == 1`
+(UNIT_CASTER). No guessing needed.
+
+**Three filters the plan did not anticipate, all found by reading output:**
+
+- **Channelled spells read as buffs.** A channel's duration sits in the same column as an aura's, so
+  Blizzard, Evocation, Mind Control, Tranquility and Arcane Missiles all arrived as 3-60s "self
+  buffs". `AttributesEx & 0x44` (CHANNELED_1 | CHANNELED_2) separates them, verified clean across 19
+  spells in both directions.
+- **The skill-line class vote drags in `GENERIC (DND)`.** resolve.py's majority vote is fine there
+  because its >1.5s cooldown filter hides the collateral; here it produced Grovel and Honorless
+  Target for every class, from skill line 183, whose rows carry a class mask of 0 and vote ~10% for
+  each of the ten classes. Fixed by preferring the per-ROW class mask and only falling back to the
+  line's vote when the line is >=90% one class. Marksmanship (85 rows, all HUNTER) qualifies; the
+  racial lines, First Aid, Cloth and Engineering do not.
+- **A racial can wear a class mask.** Blood Fury's SkillLineAbility row carries a WARRIOR bit, so it
+  survived the rule above and would have been offered to every warrior alive. Race-gating is not
+  something a per-class catalog can express, so the six racial skill lines are excluded outright and
+  the generator's verify pass now asserts no racial reached the output. Racials are covered by the
+  seen registry instead, which is exactly what a safety net is for.
+- **A floor as well as a ceiling.** Heroic Fury's aura lasts 100ms: real, self-targeted, inside the
+  window, and unreadable as a bar. Anything under a second is a mechanic, not a buff.
+
+**Spec attribution beat the plan's own idea.** §H.1 proposed a per-class catalog; what shipped is
+per-TALENT, which on this client is strictly better — it follows respecs and dual spec, where a
+static per-spec list cannot. `Talent.dbc` → `TalentTab.dbc` gives each talent's class and tree, and
+the runtime asks `GetTalentInfo` whether the player actually has it. 96 of 162 rows are gated.
+
+The tie-break that decides it was settled by measurement rather than by argument. An aura is often
+reachable BOTH as a talent's triggered proc AND as a row in a class skill line — the client indexes
+Lock and Load under Survival, Improved Steady Shot under Marksmanship — so "it is in a skill line" is
+not evidence of being baseline. Preferring the ungated reading left HUNTER with 1 gated row out of 18.
+Preferring the talent reading was checked by printing all 35 both-ways conflicts and reading them:
+every single one is a genuine talent (Fingers of Frost, Bloodsurge→`Slam!`, Arcane
+Concentration→Clearcasting, Martyrdom→Focused Casting, Ice Barrier, Metamorphosis, Flurry). Not one
+false gate, so the rule is empirical, not merely plausible.
+
+**The gate fails OPEN.** An empty talent table means the API has not answered yet — early login, or a
+build without the globals — not that the player has spent nothing. Reading it the other way would hide
+every gated row and reproduce the exact bug this phase exists to fix. Confirmed by mutation.
+
+**Matching became name-based, which is the catalog's price.** A catalog row holds the rank-1 id; the
+aura the player gets is whatever rank they cast. So `GetBuffOverrides` now keys include/exclude by id
+AND by lowercased name in the same table (numbers and strings cannot collide), `ShouldTrackBuff` takes
+an optional trailing `name`, and `ScanTargetTrackedAuras` accepts both key types. This also fixes a
+pre-existing latent fault: before, an aura assigned at one rank and re-cast at another silently stopped
+matching. `ScanTargetTrackedAuras` had already been forced into name matching for DoTs; this makes it
+the rule rather than the exception.
+
+**Where an unassigned candidate lands depends on what is actually happening to it** (7b): with
+auto-track on it appears wherever `AutoTrackDest` sends it, marked `auto` and desaturated; with
+auto-track off it appears under **Hidden**, because that is the truth and it gives that section a
+purpose beyond force-excludes. Dragging one out is what makes it explicit — no new write path, since
+the drag already calls `SetAuraAssignment`.
+
+**Show Unlearned is reused rather than twinned.** It already means "show me what I cannot use yet" for
+spells; a second setting saying the same thing about auras is how a settings page stops making sense.
+A revealed spec-gated row tints red and its tooltip names the talent required, because "Not yet
+learned" on a proc you can only get by respeccing is not actionable.
+
+**A test that proved nothing, twice.** The one-way-door assertion — a hidden aura must stay listed —
+passed with the guard removed, so the guard looked decorative. It was the test: `ResetTracking`
+rebuilds the shown viewers itself, so the aura was scanned and recorded while the pool was still empty,
+before the hidden assignment existed. Fixed by clearing the auras first, resetting through `settle`
+(NE.aura caches its snapshot per frame, so a same-frame rebuild re-reads auras that are already down),
+and only then raising an aura that was hidden before it was ever seen. All five new guards are now
+confirmed by mutation: the record-before-decide ordering, the fail-open gate, name matching, candidate
+dedupe, and the aura/equip tile dispatch.
+
+**Known limitation, deliberate:** a newly seen aura does not appear in an open picker until the next
+refresh. The panel does not listen to `UNIT_AURA` — it is the hottest event in the game and
+`RefreshLayout` rebuilds every grid — and with a catalog carrying the list, a row arriving a tab-switch
+later is a nicety rather than the feature.
+
+**Also worth knowing:** the offline harness keeps its own file list, separate from the .toc. The
+catalog was in the .toc and passing for a whole run before I noticed the harness had never loaded it —
+`GetAuraCatalog` was returning `{}` and every assertion was green. A file added to one and not the
+other is silently untested.
 
 ## H.2. Phase 8 — theming, to match retail
 
@@ -1459,6 +1562,8 @@ Every feature and setting the guide describes, with a verdict. Consumables exclu
   a generated catalog plus the seen registry is arguably a better answer than the thing being copied.
 
 ## H.4. Suggested order
+
+**Phase 7 is done; what follows applies to 8 and 9.**
 
 **Phase 7 first**, and not because it is a bug: 8a is a bigger visible change, but the Tracked Buffs
 tab is currently a feature that appears broken on every character, and it is also blocking target-DoT

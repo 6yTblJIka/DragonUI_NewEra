@@ -229,6 +229,10 @@ modules\cooldownviewer\ClassData.lua
 # id is generated from this client's own Spell.dbc + SkillLineAbility.dbc, never hand-typed.
 # Must load AFTER ClassData (it appends to those tables) and BEFORE the viewer core reads them.
 modules\cooldownviewer\CdmSeedWotLK.lua
+# Phase 7d: the per-class catalog of trackable SELF-BUFFS — what the Tracked Buffs/Bars picker
+# OFFERS, standing in for retail's curated per-spec aura set. Also generated from this client's own
+# data (tools/cdm-spellgen/gen_auracatalog.py), and read by CooldownViewer's catalog accessor.
+modules\cooldownviewer\CdmAuraCatalog.lua
 modules\cooldownviewer\CooldownViewer.lua
 # On-use trinket discovery + the per-token assignment registry. Overrides CooldownViewer.lua's
 # GetEquipItemsForCategory fallback, so it must load after it and before Viewers reads it.

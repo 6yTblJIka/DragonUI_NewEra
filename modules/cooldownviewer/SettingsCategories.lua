@@ -52,6 +52,7 @@ end
 -- reassign a trinket the player is no longer even looking at.
 local function clearEquipBinding(item)
   item.token, item._iconItemID, item._equipHidden = nil, nil, nil
+  item._aura = nil
 end
 
 -- Shared by both tile shapes: an equip row shows the real ITEM icon (async — nil until the server
@@ -60,6 +61,7 @@ end
 --
 -- The label is the use-spell's name, which is what a 38px tile can actually carry.
 local function setEquipEntry(self, entry)
+  self._aura        = nil     -- pooled tiles: see clearEquipBinding
   self.spellID      = entry.spellID
   self.token        = entry.token
   self._iconItemID  = entry.itemID
@@ -73,6 +75,38 @@ local function setEquipEntry(self, entry)
   self.Icon:SetDesaturated(self._equipHidden)
   self.Icon:SetVertexColor(1, 1, 1)
   if self.Label then self.Label:SetText(self.spellName) end
+  if CDS._applyAlertBadge then CDS._applyAlertBadge(self) end
+end
+
+-- An aura row (Phase 7b). Three states worth telling apart on sight, because each answers a
+-- different question the player is asking:
+--
+--   assigned    you put it here                                        plain
+--   auto        the viewer is deciding this one — drag it to take over  desaturated
+--   untalented  a spec-gated catalog row, visible only via Show Unlearned   red, like a spell you
+--                                                                          have not learned
+--
+-- The icon comes from the entry rather than GetSpellInfo, because the seen registry stores one: an
+-- aura this client only ever hands us as an aura may have no spellbook entry to look up.
+local function setAuraEntry(self, entry)
+  clearEquipBinding(self)
+  self._aura      = entry
+  self.spellID    = entry.spellID
+  self.spellName  = entry.label or ""
+  self._unlearned = entry.untalented and true or false
+
+  self.Icon:SetTexture(entry.icon or QUESTION_MARK)
+  if entry.untalented then
+    self.Icon:SetDesaturated(true)
+    self.Icon:SetVertexColor(1.0, 0.4, 0.4)
+  else
+    self.Icon:SetDesaturated(entry.auto and true or false)
+    self.Icon:SetVertexColor(1, 1, 1)
+  end
+  if self.Label then
+    self.Label:SetText(self.spellName ~= "" and self.spellName
+      or ("Aura " .. tostring(entry.spellID or "?")))
+  end
   if CDS._applyAlertBadge then CDS._applyAlertBadge(self) end
 end
 
@@ -90,7 +124,22 @@ local function itemOnEnter(self)
     M.TooltipSetSpell(GameTooltip, self.spellID)
   end
   if self._unlearned then
-    GameTooltip:AddLine("Not yet learned", 1, 0.3, 0.3)
+    -- For an aura the gate is a talent, not a level, so say which one. "Not yet learned" on a proc
+    -- you cannot ever learn without respeccing tells the player nothing they can act on.
+    if self._aura and self._aura.talent then
+      GameTooltip:AddLine("Requires the " .. self._aura.talent .. " talent", 1, 0.3, 0.3)
+    else
+      GameTooltip:AddLine("Not yet learned", 1, 0.3, 0.3)
+    end
+  end
+  if self._aura then
+    if self._aura.dur then
+      GameTooltip:AddLine(("Lasts %s sec"):format(tostring(self._aura.dur)), 0.7, 0.7, 0.7)
+    end
+    if self._aura.auto then
+      GameTooltip:AddLine("Tracked automatically. Drag it into a section to pin it there.",
+        0.6, 0.8, 1)
+    end
   end
   if self.token then
     GameTooltip:AddLine(self._equipHidden and "Hidden from the viewer"
@@ -144,6 +193,7 @@ local function makeIconItem(parent)
   end
 
   b.SetEquipEntry = setEquipEntry
+  b.SetAuraEntry  = setAuraEntry
 
   wireItem(b)
   return b
@@ -184,6 +234,7 @@ local function makeBarItem(parent)
   end
 
   b.SetEquipEntry = setEquipEntry
+  b.SetAuraEntry  = setAuraEntry
 
   wireItem(b)
   return b
@@ -239,6 +290,10 @@ local function makeCategory(parent, kind)
 
   c.empty = c:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
   c.empty:SetPoint("TOPLEFT", c.container, "TOPLEFT", 2, -2)
+  -- Bounded and left-aligned: the empty text is now a sentence rather than "(empty)", and an
+  -- unbounded string would run past the panel's right edge instead of wrapping.
+  c.empty:SetWidth(CAT_W - 30)
+  c.empty:SetJustifyH("LEFT")
   c.empty:SetText("(empty)")
   c.empty:Hide()
 
@@ -294,7 +349,14 @@ local function makeCategory(parent, kind)
         self.items[i] = item
       end
       item._catID = self._catID
-      if type(id) == "table" then item:SetEquipEntry(id) else item:SetSpell(id) end
+      if type(id) == "table" then
+        -- Two table shapes now reach here: an aura row (SettingsAdapter's auraRow) and an equip
+        -- entry. They are dispatched on a marker field rather than by sniffing for `token`, because
+        -- an aura row legitimately has neither a token nor an itemID and would take the equip path.
+        if id.aura then item:SetAuraEntry(id) else item:SetEquipEntry(id) end
+      else
+        item:SetSpell(id)
+      end
     end
     self.header.Count:SetText(tostring(#ids))
     self:Relayout()
@@ -364,6 +426,7 @@ function CDS.RefreshLayout()
         c = makeCategory(panel.content, Adapter.Kind(catID))
         c._catID = catID
         c.header.Text:SetText(Adapter.Label(catID))
+        if Adapter.EmptyText then c.empty:SetText(Adapter.EmptyText(catID)) end
         categories[catID] = c
       end
       c._active = true

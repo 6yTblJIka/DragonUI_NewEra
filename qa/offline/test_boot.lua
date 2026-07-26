@@ -561,6 +561,7 @@ local FILES = {
   "integration/Options.lua",
   "modules/cooldownviewer/ClassData.lua",
   "modules/cooldownviewer/CdmSeedWotLK.lua",
+  "modules/cooldownviewer/CdmAuraCatalog.lua",
   "modules/cooldownviewer/CooldownViewer.lua",
   "modules/cooldownviewer/Equip.lua",
   "modules/cooldownviewer/ItemMixins.lua",
@@ -1298,12 +1299,18 @@ assertf(nowUti, "…and arrived in Utility")
 M.ResetCustomList("essential", "PRIEST")
 M.ResetCustomList("utility", "PRIEST")
 
--- Aura categories read the tracked-aura pool.
+-- Aura categories read the tracked-aura pool. Phase 7b changed the CONTRACT here: an aura category
+-- returns row TABLES, not bare spellIDs, because a row now has to carry the name it was assigned
+-- under (rank-proofing) and whether the viewer or the player put it there.
 CDS.SetDisplayMode("auras")
 M.SetAuraAssignment("PRIEST", 10060, "bar")
 CDS.RefreshLayout()
 local bars = A.GetItems("trackedBar", "PRIEST")
-assertf(#bars == 1 and bars[1] == 10060, "aura assigned to bars shows under Tracked Bars")
+local pinned
+for _, row in ipairs(bars) do if row.spellID == 10060 then pinned = row end end
+assertf(pinned ~= nil, "aura assigned to bars shows under Tracked Bars")
+assertf(pinned and pinned.aura and pinned.assignment == "bar", "…as an explicit aura row")
+assertf(pinned and not pinned.auto, "…not marked auto")
 assertf(grids.trackedBar ~= nil and grids.trackedBar.kind == "bar", "bar category uses bar rows")
 M.ResetTracking()
 CDS.HidePanel()
@@ -2060,6 +2067,232 @@ end
 -- The /necdm diagnostic is ~70 lines of formatting that nothing else touches, including the §F1
 -- widget probe. Run it once: a nil-format or a bad select() in there would otherwise only surface
 -- when someone reached for it to debug something else.
+print("\n=== TRACKED BUFFS: CATALOG + SEEN (Phase 7) ===")
+do
+  local S = NE.cooldownviewersettings
+  local A7 = S.adapter
+  local bIcon7 = M.viewers.buffIcon
+
+  local function namesOf(rows)
+    local t = {}
+    for _, r in ipairs(rows) do t[(r.name or r.label or ""):lower()] = r end
+    return t
+  end
+
+  -- ── 7d: the generated catalog ───────────────────────────────────────────────────────────────
+  assertf(type(M.AURA_CATALOG_BY_CLASS) == "table", "CdmAuraCatalog loaded")
+  local pri = M.AURA_CATALOG_BY_CLASS.PRIEST
+  assertf(pri and #pri > 0, "PRIEST has catalog rows (" .. tostring(pri and #pri) .. ")")
+  do
+    local gated, malformed = 0, 0
+    for _, e in ipairs(pri) do
+      if e.talent then
+        gated = gated + 1
+        if not e.tree then malformed = malformed + 1 end
+      end
+      if not (e.id and e.name and e.dur) then malformed = malformed + 1 end
+    end
+    assertf(malformed == 0, "every row carries id/name/dur, and a gated row carries its tree")
+    assertf(gated > 0, "…and some are spec-gated (" .. gated .. " of " .. #pri .. ")")
+  end
+
+  -- The gate FAILS OPEN when the talent API is silent. This is the guard that stops Phase 7 from
+  -- reintroducing the very bug it fixes: an empty talent table read as "no talents" would hide
+  -- every gated row on a client that simply had not answered yet.
+  assertf(GetTalentInfo == nil, "the harness has no talent API, so the gate is unanswerable")
+  M.InvalidateTalentCache()
+  assertf(M.HasTalent("Serendipity"), "unanswerable gate offers the row rather than hiding it")
+  assertf(#M.GetAuraCatalog("PRIEST") == #pri, "…so the whole catalog is offered")
+
+  -- With a talent API present the gate is real.
+  GetNumTalentTabs = function() return 3 end
+  GetNumTalents    = function(tab) return (tab == 1) and 2 or 0 end
+  GetTalentInfo    = function(tab, i)
+    -- 3.3.5a flat tuple: name, icon, tier, column, rank, maxRank
+    if tab == 1 and i == 1 then return "Borrowed Time", "icon", 1, 1, 3, 5 end
+    if tab == 1 and i == 2 then return "Serendipity",   "icon", 1, 2, 0, 3 end
+    return nil
+  end
+  M.InvalidateTalentCache()
+  assertf(M.HasTalent("Borrowed Time"), "a talent with rank 3 reads as taken")
+  assertf(not M.HasTalent("Serendipity"), "…one at rank 0 does not")
+  local gatedCat = namesOf(M.GetAuraCatalog("PRIEST"))
+  assertf(gatedCat["borrowed time"] ~= nil, "talented row is offered")
+  assertf(gatedCat["serendipity"] == nil, "untalented row is withheld")
+  assertf(gatedCat["fade"] ~= nil, "ungated row is always offered")
+  assertf(gatedCat["shadow weaving"] == nil, "a talent the API never mentions is withheld too")
+
+  -- Show Unlearned is the escape hatch: the gate is derived data, so there is a way past it.
+  local shown = namesOf(M.GetAuraCatalog("PRIEST", true))
+  assertf(shown["serendipity"] ~= nil, "Show Unlearned reveals the withheld row")
+
+  -- ── 7a: the seen registry ───────────────────────────────────────────────────────────────────
+  M.ResetTracking()
+  BUFFS.player = {
+    { name = "Inner Focus", rank = "", icon = "Interface\\Icons\\IF", count = 0,
+      duration = 30, expiration = NOW + 25, spellID = 14751 },
+    { name = "Arcane Intellect", rank = "Rank 3", icon = "Interface\\Icons\\AI", count = 0,
+      duration = 1800, expiration = NOW + 1700, spellID = 10157 },
+  }
+  auraTick("player")
+  local seen = {}
+  for _, e in ipairs(M.GetSeenAuraList("PRIEST")) do seen[e.spellID] = e end
+  assertf(seen[14751] ~= nil, "the scan records a short buff it met")
+  assertf(seen[14751] and seen[14751].name == "Inner Focus" and seen[14751].dur == 30,
+          "…with its name and duration, not just an id")
+  assertf(seen[14751] and seen[14751].icon == "Interface\\Icons\\IF",
+          "…and the icon, which is the only source for an aura with no spellbook entry")
+  assertf(seen[10157] == nil, "a 1800s buff is NOT recorded (the window keeps food buffs out)")
+
+  -- THE ONE-WAY DOOR. An aura hidden before it was ever seen must still be recorded, or hiding
+  -- something removes the only row that could unhide it. This is why NoteSeenAura is called before
+  -- ShouldTrackBuff rather than inside its true branch.
+  --
+  -- The aura has to be hidden BEFORE it first appears, and that is fiddlier than it looks:
+  -- ResetTracking rebuilds the shown viewers itself, so an aura already up at that moment gets
+  -- scanned — and recorded — while the pool is still empty. A first draft of this test did exactly
+  -- that and passed with the guard removed. So: clear the auras, assign hidden, THEN raise it.
+  -- Auras down BEFORE the reset, for the same reason: ResetTracking's rebuild would otherwise
+  -- record whatever is still up as it clears. And through `settle`, not bare — NE.aura caches its
+  -- snapshot per frame, so a rebuild in the same frame re-reads the auras that were up a moment ago
+  -- however empty BUFFS.player now is.
+  BUFFS.player = {}
+  settle(M.ResetTracking)
+  auraTick("player")
+  assertf(#M.GetSeenAuraList("PRIEST") == 0, "nothing up, nothing recorded")
+  M.SetAuraAssignment("PRIEST", 15286, "hidden", "Vampiric Embrace")
+  BUFFS.player = {
+    { name = "Vampiric Embrace", rank = "", icon = "Interface\\Icons\\VE", count = 0,
+      duration = 60, expiration = NOW + 55, spellID = 15286 },
+  }
+  auraTick("player")
+  local seen2 = {}
+  for _, e in ipairs(M.GetSeenAuraList("PRIEST")) do seen2[e.spellID] = e end
+  assertf(seen2[15286] ~= nil, "a HIDDEN aura is still recorded as seen (the one-way-door guard)")
+  assertf(shownItems(bIcon7) == 0, "…while staying out of the viewer, which is what hidden means")
+  assertf(namesOf(A7.GetItems("hiddenAura", "PRIEST"))["vampiric embrace"] ~= nil,
+          "…so the row that could unhide it is still there")
+
+  -- The cap, oldest evicted first.
+  M.ResetTracking()
+  M.NoteSeenAura(900001, "Oldest", "i", 10)
+  nextFrame(10)
+  for i = 2, 60 do M.NoteSeenAura(900000 + i, "Filler " .. i, "i", 10) end
+  nextFrame(10)
+  M.NoteSeenAura(999999, "Newest", "i", 10)
+  local capped = {}
+  local n = 0
+  for _, e in ipairs(M.GetSeenAuraList("PRIEST")) do capped[e.spellID] = true; n = n + 1 end
+  assertf(n == 60, "the registry caps at 60 (" .. n .. ")")
+  assertf(capped[999999], "…keeping the newest")
+  assertf(not capped[900001], "…and evicting the least recently seen")
+
+  -- ── 7d runtime: matching by NAME, so an assignment survives rank ─────────────────────────────
+  -- The payoff for the catalog storing rank-1 ids. The aura below is a DIFFERENT spellID from the
+  -- assigned one and is far outside the auto window, so nothing but a name match can show it.
+  M.ResetTracking()
+  M.SetAuraAssignment("PRIEST", 10060, "icon", "Power Infusion")
+  BUFFS.player = {
+    { name = "Power Infusion", rank = "Rank 9", icon = "Interface\\Icons\\PI", count = 0,
+      duration = 300, expiration = NOW + 280, spellID = 777777 },
+  }
+  auraTick("player")
+  assertf(shownItems(bIcon7) == 1,
+          "an assignment made at one rank matches the aura cast at another (" ..
+          shownItems(bIcon7) .. ")")
+
+  -- ── the DoT fix, which falls out of the registry becoming reachable at all ───────────────────
+  local realExists = UnitExists
+  UnitExists = function(u) return u == "player" or u == "target" end
+  M.ResetTracking()
+  M.SetAuraAssignment("PRIEST", 589, "icon", "Shadow Word: Pain")
+  BUFFS.player = {}
+  DEBUFFS.target = {
+    { name = "Shadow Word: Pain", rank = "Rank 10", icon = "Interface\\Icons\\SWP", count = 0,
+      duration = 18, expiration = NOW + 14, spellID = 25368 },
+  }
+  auraTick("player")
+  assertf(shownItems(bIcon7) == 1,
+          "an explicitly tracked DoT on the target now shows (" .. shownItems(bIcon7) .. ")")
+  DEBUFFS.target = {}
+  UnitExists = realExists
+
+  -- ── 7b: where an unassigned candidate lands ──────────────────────────────────────────────────
+  M.ResetTracking()
+  M.SetAutoTrackBuffs(true)
+  M.SetAutoTrackDest("both")
+  local buffRows = namesOf(A7.GetItems("trackedBuff", "PRIEST"))
+  local barRows  = namesOf(A7.GetItems("trackedBar", "PRIEST"))
+  assertf(buffRows["fade"] ~= nil and barRows["fade"] ~= nil,
+          "dest=both puts a candidate in BOTH aura sections")
+  assertf(buffRows["fade"].auto, "…marked auto, because the viewer is deciding it")
+  assertf(buffRows["fade"].assignment == nil, "…and with no stored assignment")
+
+  M.SetAutoTrackDest("bar")
+  assertf(namesOf(A7.GetItems("trackedBuff", "PRIEST"))["fade"] == nil,
+          "dest=bar keeps candidates out of Tracked Buffs")
+  assertf(namesOf(A7.GetItems("trackedBar", "PRIEST"))["fade"] ~= nil, "…and in Tracked Bars")
+
+  -- Auto-track OFF: nothing is showing these, so Hidden is where they honestly belong.
+  M.SetAutoTrackBuffs(false)
+  assertf(namesOf(A7.GetItems("trackedBar", "PRIEST"))["fade"] == nil,
+          "auto-track off empties the tracked sections of candidates")
+  assertf(namesOf(A7.GetItems("hiddenAura", "PRIEST"))["fade"] ~= nil,
+          "…and lists them under Hidden instead")
+  M.SetAutoTrackBuffs(true)
+  M.SetAutoTrackDest("both")
+
+  -- An explicit assignment removes the candidate row, so a buff is never listed twice — matched by
+  -- name, so a rank-1 catalog row and a differently-ranked assignment do not both appear.
+  M.SetAuraAssignment("PRIEST", 999123, "bar", "Fade")
+  local dupBar = A7.GetItems("trackedBar", "PRIEST")
+  local fades = 0
+  for _, r in ipairs(dupBar) do if (r.label or ""):lower() == "fade" then fades = fades + 1 end end
+  assertf(fades == 1, "an assigned aura is listed once, not once per source (" .. fades .. ")")
+  M.ResetTracking()
+
+  -- The claim that pinning an auto row needs NO new write path: the drag already calls
+  -- SetAuraAssignment, and "stop deciding this one for me" is exactly what that write means.
+  local cand = M.GetAuraCandidates("PRIEST")[1]
+  assertf(cand ~= nil and cand.name, "there is a candidate to drag (" .. tostring(cand and cand.name) .. ")")
+  assertf(A7.Assign(cand.spellID, "trackedBar", "trackedBuff", "PRIEST"),
+          "…and dragging it across is a legal move")
+  local pinnedRow = namesOf(A7.GetItems("trackedBuff", "PRIEST"))[cand.name:lower()]
+  assertf(pinnedRow and pinnedRow.assignment == "icon", "…which makes it an explicit icon row")
+  assertf(pinnedRow and not pinnedRow.auto, "…no longer marked auto")
+  local storedName
+  for _, e in ipairs(M.GetTrackedAuraList("PRIEST") or {}) do
+    if e.spellID == cand.spellID then storedName = e.name end
+  end
+  assertf(storedName == cand.name,
+          "…and the write stored a NAME the drag never supplied, via ResolveAuraName")
+  M.ResetTracking()
+
+  -- ── 7b/7c: the tile and the empty state ──────────────────────────────────────────────────────
+  S.OpenTo("auras")
+  local barGrid = S._categories.trackedBar
+  assertf(barGrid ~= nil and barGrid._count > 0, "the Tracked Bars grid is no longer empty")
+  local tile7
+  for i = 1, barGrid._count do
+    if (barGrid.items[i].spellName or "") == "Fade" then tile7 = barGrid.items[i] end
+  end
+  assertf(tile7 ~= nil, "…and carries a named aura tile")
+  assertf(tile7 and tile7._aura and tile7._aura.auto, "the tile knows it is an auto row")
+  assertf(tile7 and tile7.Icon._desat == true, "…and reads as one (desaturated)")
+  assertf(tile7 and tile7.token == nil,
+          "…with no equip binding, so its right-click cannot route through the trinket path")
+
+  assertf(A7.EmptyText("trackedBuff") ~= "(empty)",
+          "an aura section's empty text is a sentence, not \"(empty)\"")
+  assertf(A7.EmptyText("essential") == "(empty)", "…and other categories keep the terse form")
+
+  S.HidePanel()
+  GetNumTalentTabs, GetNumTalents, GetTalentInfo = nil, nil, nil
+  M.InvalidateTalentCache()
+  M.ResetTracking()
+  BUFFS.player = {}
+end
+
 print("\n=== DIAGNOSTIC (/necdm) ===")
 do
   local okDiag, errDiag = pcall(SlashCmdList["NECDM"])

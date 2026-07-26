@@ -22,6 +22,7 @@ Run from this directory, in order:
 | `gen_wotlk.py` | applies the authored curation and emits the Lua seed | `../../modules/cooldownviewer/CdmSeedWotLK.lua` |
 | `verify.py` | re-checks every emitted ID against the DBC independently | — (exit 1 on any problem) |
 | `gen_alertdata.py` | resolves the Execute / Reactive ability names to **every** rank | `../../modules/cooldownviewer/AlertData.lua` |
+| `gen_auracatalog.py` | the per-class pool of trackable **self-buffs** — standalone, reads the DBCs itself | `../../modules/cooldownviewer/CdmAuraCatalog.lua` |
 
 `listing.txt` is the useful artefact for curation: every class's abilities that carry a real
 cooldown, sorted longest-first.
@@ -75,6 +76,34 @@ Two traps, both found by reading output rather than by reasoning about it:
 
 Incidentally confirmed by the same query: Overpower's higher ranks appear in no skill line on
 3.3.5a — it is single-rank on this client.
+
+## `gen_auracatalog.py` — the buff picker's catalog
+
+Standalone rather than a step in the pipeline above: it needs Spell.dbc columns `spells.json` does not
+carry (effects, targets, durations, attribute flags), plus SkillLine, Talent and TalentTab. It locates
+every column with `locate()` — the one column agreeing with 3-6 independently-known anchors, where
+ambiguity is a hard error — and verifies its own output before writing.
+
+An entry is a spell that puts a timed aura on the **caster** (`EffectImplicitTargetA == 1`) lasting
+1-120s, reached directly or through one `EffectTriggerSpell` hop. The hop is where the value is: it is
+the difference between a list of cooldowns you press and a list of things that happen to you
+(Clearcasting, Missile Barrage, Lock and Load, Sudden Death, Bloodsurge).
+
+Three filters exist only because output was read rather than reasoned about:
+
+- **`AttributesEx & 0x44`** (channelled). A channel's duration lives in the same column as an aura's,
+  so without this Blizzard, Evocation, Mind Control and Tranquility all arrive as "self buffs".
+- **Per-row class mask first, skill-line vote only at >=90% dominance.** `resolve.py`'s majority vote
+  drags in skill line 183 `GENERIC (DND)` — Grovel, Honorless Target — whose rows have a class mask of
+  0 and vote evenly for all ten classes.
+- **Racial skill lines excluded outright.** Blood Fury's row carries a WARRIOR class bit and would
+  otherwise be offered to every warrior regardless of race.
+
+Talent gating is the "per spec" part, and it is per **talent** rather than per spec on purpose: the
+runtime asks `GetTalentInfo`, so it follows respecs and dual spec. Where an aura is reachable both as a
+talent proc and as a class-skill-line row, **the talent reading wins** — the client indexes talent procs
+in class skill lines, so presence there is not evidence of being baseline. All 35 both-ways conflicts
+were printed and checked by hand; every one is a real talent.
 
 ## Known gap
 
