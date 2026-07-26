@@ -4,7 +4,7 @@ Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/`
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
 **Status:** Phases 0-4a plus 4b-1, 4b-2 and 4b-3 implemented. Offline harnesses pass (`qa/offline/`,
-230 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working in-game; 4b-2 and
+237 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working in-game; 4b-2 and
 4b-3 are harness-verified and awaiting an in-game pass. Remaining: 4b-4 drag reorder, 4b-5 presets,
 plus the trinket/equip port — all scoped in §G.
 
@@ -679,3 +679,49 @@ rebuild.
 **Both cog resets confirm first.** "Reset Spell Lists" and "Clear All Alerts" are irreversible until
 4b-5 brings a snapshot store, so both route through a `StaticPopup`. The harness asserts the click
 raises the popup rather than acting, then drives `OnAccept` separately.
+
+### G.7.1 In-game faults found on the 4b-3 pass
+
+Three reports, three unrelated causes. All three were invisible to the harness as it stood, and all
+three are now covered — including negative checks confirming each new assertion fails against the
+unfixed code.
+
+**"Icons in the cooldown manager window are all greyed out."** Not the learn tint, and not the icon
+textures: **alpha 0.25 on every tile, from the search filter.** ClassicAPI's `SearchBoxTemplate` has
+**no `Instructions` FontString** — its placeholder *is* the edit box's text (`SearchBoxTemplate_OnLoad`
+does `SetText(SEARCH)`, and `OnEditFocusLost` puts it back). So an untouched box reads back
+`"Search"`, `RefreshLayout` handed that straight to `ApplyItemFilter`, and every tile whose spell is
+not named "Search" dimmed. The 4b-1 line `if f.search.Instructions then … end` was a no-op guarding
+a field that never exists, which is exactly why it looked fine. Every read now goes through
+`CDS.GetSearchText`, which maps the placeholder to `""`. The harness sets `SEARCH` and seeds the box
+with it before asserting the tiles stay at full alpha.
+
+**"The selected alert or sound doesn't get reflected in the menu on reopening."** A **Lua idiom bug
+in ClassicAPI's `C_UIDropDownMenu_AddButton`**:
+
+```lua
+local checked = type(info.checked) == "function" and info.checked() or info.checked
+```
+
+When the predicate returns **false**, `(true and false)` is false, so the `or` falls through to
+`info.checked` — the function object, which is truthy. Every function-valued radio therefore
+rendered as selected, and a menu where *everything* is ticked communicates nothing. DragonUI and
+ClassicAPI are read-only (§0), so the fix is on our side: `core/Menu.lua` snapshots the predicate to
+a **boolean** at build time. Nothing is lost — the tree is rebuilt from the generator on every open,
+and `refreshChecks` re-reads the predicate on every click. Pinned by two assertions: exactly one
+radio in a group reads selected, and `info.checked` is never a function *at any rendered level*
+(the first version of that check scanned level 1 only, which holds no radios, and passed
+vacuously).
+
+**Panel size.** Owner asked for +30%. Applied as `PinPixelPerfect(f, 1.3)` — a **scale**, not larger
+`PANEL_W`/`PANEL_H`. The grid geometry (38px tiles, 46px pitch, 7 per row, 344-wide category) is
+upstream's probe-confirmed layout; growing the frame around unchanged tiles would only add margin.
+`PinPixelPerfect` folds the multiplier into its pixel-snap target and re-applies it whenever the UI
+scale changes.
+
+**What this cost, and the lesson.** The harness could assert menu *content* but nothing about
+*rendering*, so it could not have caught either of the first two. It now carries a small
+`C_UIDropDownMenu` stand-in — deliberately **not** a reimplementation. Copying ClassicAPI's `and`/`or`
+bug into a stub in order to "catch" it would be circular. What the stub records is the shape of the
+`info` tables *we* produce, and the invariant that keeps us clear of the bug ("never hand the client
+a predicate") is checkable without reproducing it.

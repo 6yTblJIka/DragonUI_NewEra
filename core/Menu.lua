@@ -29,6 +29,17 @@
 -- RADIOS REFRESH THEMSELVES. C_UIDropDownMenu_Refresh keys off frame.selectedName/ID/Value, which
 -- says nothing about function-valued `checked`, so it cannot be used here. Instead a radio's click
 -- re-evaluates every sibling's predicate and repaints the check textures directly.
+--
+-- AND `info.checked` IS ALWAYS A BOOLEAN, NEVER A FUNCTION. UIDropDownMenu accepts a predicate
+-- there, but it reads the result through the classic `and`/`or` idiom:
+--
+--     local checked = type(info.checked) == "function" and info.checked() or info.checked
+--
+-- which collapses when the predicate returns FALSE: `(true and false)` is false, so the `or` falls
+-- through to `info.checked` — the function itself, which is truthy. Every function-valued radio
+-- therefore renders as selected, and a menu where everything is ticked shows nothing at all. We
+-- snapshot the predicate to a boolean at build time instead. Nothing is lost: the menu is rebuilt
+-- from the generator on every open, and refreshChecks re-reads the predicate on every click.
 
 local NE = DragonUI_NewEra
 NE.menu = NE.menu or {}
@@ -162,6 +173,7 @@ local function refreshChecks(level)
         end
       end
       if on then btn:LockHighlight() else btn:UnlockHighlight() end
+      btn.checked = on   -- keeps the built-in OnClick's next toggle pointing the right way
     end
   end
 end
@@ -196,7 +208,7 @@ local function initLevel(frame, level, menuList)
       info.text = child.text
       info.isRadio = (kind == "radio") or nil
       info.isNotRadio = (kind ~= "radio") or nil
-      info.checked = function() return child.isSelected(child.data) and true or false end
+      info.checked = child.isSelected(child.data) and true or false   -- boolean, see header
       info.keepShownOnClick = true
       info.func = function()
         if child.onClick then child.onClick(child.data) end

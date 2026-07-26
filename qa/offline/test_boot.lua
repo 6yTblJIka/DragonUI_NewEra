@@ -118,6 +118,9 @@ function frameMeta:SetMinResize() end
 function frameMeta:SetMaxResize() end
 function frameMeta:GetRegions() return unpack(self._regions) end
 function frameMeta:GetObjectType() return self._kind end
+function frameMeta:GetName() return self._name end
+function frameMeta:LockHighlight() self._locked = true end
+function frameMeta:UnlockHighlight() self._locked = false end
 function frameMeta:SetBackdrop() end
 function frameMeta:SetBackdropColor() end
 function frameMeta:SetBackdropBorderColor() end
@@ -179,6 +182,10 @@ format, gsub, strmatch, strsplit = string.format, string.gsub, string.match, nil
 abs, floor, ceil, max, min, sqrt = math.abs, math.floor, math.ceil, math.max, math.min, math.sqrt
 
 UIParent = CreateFrame("Frame", "UIParent")
+-- ClassicAPI's SearchBoxTemplate seeds the edit box with this string as its placeholder, so any
+-- code reading the box back sees "Search" until the player types. That is a real behaviour, not
+-- decoration — it dimmed the whole settings grid once.
+SEARCH, YES, NO = "Search", "Yes", "No"
 BOOKTYPE_SPELL = "spell"
 MAX_TOTEMS = 4
 
@@ -363,6 +370,57 @@ function LibStub(name, silent)
   if name == "LibCustomGlow-1.0" then return LCG_STUB end
   return nil
 end
+
+-- ── C_UIDropDownMenu stand-in ───────────────────────────────────────────────
+-- NOT a reimplementation. It records the `info` tables core/Menu.lua hands to AddButton, which is
+-- the part of menu rendering that is OURS and therefore checkable here. The bug this exists to
+-- prevent lived in ClassicAPI's own AddButton — it reads a predicate through
+-- `type(x)=="function" and x() or x`, which returns the FUNCTION (truthy) whenever the predicate is
+-- false, so every function-valued radio drew as selected. Copying that bug into the stub to "catch"
+-- it would be circular; asserting we only ever pass a BOOLEAN is not, and is what keeps us clear of
+-- it. Levels are recorded separately so a test can walk into a submenu.
+DD_ROWS = {}
+local function ddReset(fromLevel)
+  for l = fromLevel, 8 do
+    DD_ROWS[l] = nil
+    local list = _G["C_DropDownList" .. l]
+    if list then list.numButtons = 0 end
+  end
+end
+
+function C_UIDropDownMenu_CreateInfo() return {} end
+
+function C_UIDropDownMenu_AddButton(info, level)
+  level = level or 1
+  local rows = DD_ROWS[level] or {}
+  DD_ROWS[level] = rows
+  local copy = {}
+  for k, v in pairs(info) do copy[k] = v end
+  rows[#rows + 1] = copy
+
+  local listName = "C_DropDownList" .. level
+  local list = _G[listName] or CreateFrame("Frame", listName)
+  list.numButtons = #rows
+
+  local bn = listName .. "Button" .. #rows
+  local b = _G[bn] or CreateFrame("Button", bn)
+  b.checked = info.checked
+  b.menuList = info.menuList
+  _G[bn .. "Check"] = _G[bn .. "Check"] or b:CreateTexture()
+end
+
+function C_UIDropDownMenu_Initialize(frame, init, displayMode, level, menuList)
+  frame.initialize = init
+  ddReset(level or 1)
+  if init then init(frame, level, menuList) end
+end
+
+function C_ToggleDropDownMenu(level, value, frame, anchor, x, y, menuList)
+  frame = frame or DragonUI_NewEra.menu._frame   -- global on purpose: the NE local is declared below
+  C_UIDropDownMenu_Initialize(frame, frame.initialize, nil, level or 1, menuList)
+end
+
+function C_CloseDropDownMenus(level) ddReset(level or 1) end
 
 -- The destructive cog entries route through a confirm popup rather than firing on click. Record
 -- which one was raised; a test then calls its OnAccept, which is the path the player takes.
@@ -1135,7 +1193,13 @@ do
   local tile = S._categories.essential.items[1]
   local sid  = tile and tile.spellID
   assertf(tile ~= nil and tile._catID == "essential", "tile carries its own category")
-  assertf(not NE.menu.IsAvailable(), "no dropdown backend here — menus build but do not render")
+
+  -- The placeholder trap: ClassicAPI's search box READS BACK "Search" until the player types, and
+  -- feeding that to the filter dimmed every tile in the panel to 25%.
+  sp.search:SetText(SEARCH)
+  S.RefreshLayout()
+  assertf(S.GetSearchText() == "", "the idle search box reads as empty, not as \"Search\"")
+  assertf(S._categories.essential.items[1]:GetAlpha() == 1, "…so tiles are not dimmed on open")
 
   local root = NE.menu.BuildRoot(S.ItemMenuGenerator(tile, "PRIEST"))
   assertf(root ~= nil, "item menu builds")
@@ -1199,7 +1263,52 @@ do
   for _, id in ipairs(A2.GetItems("utility", "PRIEST")) do if id == sid then arrived = true end end
   assertf(arrived, "invoking the entry actually moved the spell")
 
-  S.OnItemClick(tile, "RightButton")   -- must be a no-op, not an error, with no backend
+  -- ── the render path ──────────────────────────────────────────────────────────────────────────
+  -- Everything above drives the node tree. This drives core/Menu.lua's UIDropDownMenu translation,
+  -- which is where both of the shipped menu faults lived.
+  -- Re-read from the tile: the move above rebuilt the grid, so items[1] now holds a different
+  -- spell than `sid`. The menu keys off whatever the tile currently carries.
+  local shown = tile.spellID
+  M.SetReadySoundKit(shown, 316406)   -- Chicken
+  S.OnItemClick(tile, "RightButton")
+  assertf(DD_ROWS[1] ~= nil and #DD_ROWS[1] > 0, "right-click renders a level-1 menu (" .. #(DD_ROWS[1] or {}) .. " rows)")
+
+  local soundRow
+  for _, row in ipairs(DD_ROWS[1]) do
+    if row.text == "Ready Sound" then soundRow = row end
+  end
+  assertf(soundRow ~= nil and soundRow.hasArrow and soundRow.notClickable,
+          "a submenu parent is hasArrow + notClickable, so OnClick cannot tick it")
+
+  -- Walk two levels in, the way hovering the arrows does.
+  local mf = NE.menu._frame
+  C_UIDropDownMenu_Initialize(mf, mf.initialize, nil, 2, soundRow.menuList)
+  local animalRow
+  for _, row in ipairs(DD_ROWS[2] or {}) do if row.text == "Animals" then animalRow = row end end
+  assertf(animalRow ~= nil, "level 2 lists the sound categories")
+
+  C_UIDropDownMenu_Initialize(mf, mf.initialize, nil, 3, animalRow.menuList)
+  local onCount, chickenOn = 0, false
+  for _, row in ipairs(DD_ROWS[3] or {}) do
+    if row.checked == true then
+      onCount = onCount + 1
+      if row.text == "Chicken" then chickenOn = true end
+    end
+  end
+  assertf(#(DD_ROWS[3] or {}) > 3, "level 3 lists the sounds — past the native 2-level cap")
+  assertf(onCount == 1 and chickenOn, "exactly the stored sound reads as selected (" .. onCount .. " ticked)")
+
+  -- The invariant behind that: never hand UIDropDownMenu a predicate. Checked at every rendered
+  -- level, because level 1 holds no radios at all and would pass this vacuously.
+  local fnChecked = 0
+  for lvl = 1, 3 do
+    for _, row in ipairs(DD_ROWS[lvl] or {}) do
+      if type(row.checked) == "function" then fnChecked = fnChecked + 1 end
+    end
+  end
+  assertf(fnChecked == 0, "info.checked is never a function — the client mis-reads those (" .. fnChecked .. ")")
+  M.SetReadySoundKit(shown, nil)
+  NE.menu.Close()
 
   -- Cog menu.
   local cog = NE.menu.BuildRoot(S.SettingsMenuGenerator)

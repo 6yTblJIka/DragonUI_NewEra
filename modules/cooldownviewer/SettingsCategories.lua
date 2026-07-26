@@ -301,7 +301,8 @@ function CDS.RefreshLayout()
   end
 
   CDS.RestackCategories()
-  if CDS.ApplyItemFilter and panel.search then CDS.ApplyItemFilter(panel.search:GetText()) end
+  -- Through GetSearchText, never the raw edit box — its idle text is the "Search" placeholder.
+  if CDS.ApplyItemFilter and CDS.GetSearchText then CDS.ApplyItemFilter(CDS.GetSearchText()) end
 end
 
 -- Search DIMS non-matching tiles rather than reflowing the grid — retail's behaviour, and it keeps

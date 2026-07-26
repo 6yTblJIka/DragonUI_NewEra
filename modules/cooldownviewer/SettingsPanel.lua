@@ -34,6 +34,7 @@ local CDS = NE.cooldownviewersettings
 
 local PANEL_NAME = "NE_CooldownViewerSettings"
 local PANEL_W, PANEL_H = 399, 609
+local PANEL_SCALE = 1.3
 
 -- Which side tab a viewer category belongs to. Essential/Utility are spellbook-driven; the buff
 -- viewers are aura-driven.
@@ -108,7 +109,11 @@ local function build()
   end
 
   if NE.FrameUtil then
-    if NE.FrameUtil.PinPixelPerfect then NE.FrameUtil.PinPixelPerfect(f) end
+    -- 1.3 = the owner's +30%. Applied as a SCALE, not by growing PANEL_W/H: the grid geometry
+    -- (38px tiles on a 46px pitch, 7 to a row, a 344-wide category) is upstream's probe-confirmed
+    -- layout, and a bigger frame around unchanged tiles would just add margin. PinPixelPerfect
+    -- folds this into its pixel-snap target and re-applies it on any UI-scale change.
+    if NE.FrameUtil.PinPixelPerfect then NE.FrameUtil.PinPixelPerfect(f, PANEL_SCALE) end
     if NE.FrameUtil.EscClose then NE.FrameUtil.EscClose(PANEL_NAME) end
     if NE.FrameUtil.WirePanelSounds then
       -- Retail plays the class-talent open/close kits; those are retail sound IDs, so the helper's
@@ -144,9 +149,8 @@ local function build()
   f.search:SetSize(290, 30)
   f.search:SetPoint("TOPLEFT", 72, -30)
   f.search:SetAutoFocus(false)
-  if f.search.Instructions then f.search.Instructions:SetText(SEARCH or "Search") end
-  f.search:HookScript("OnTextChanged", function(self)
-    if CDS.ApplyItemFilter then CDS.ApplyItemFilter(self:GetText()) end
+  f.search:HookScript("OnTextChanged", function()
+    if CDS.ApplyItemFilter then CDS.ApplyItemFilter(CDS.GetSearchText()) end
   end)
 
   -- Settings cog, immediately right of the search box (retail anchors its SettingsDropdown
@@ -221,6 +225,19 @@ function CDS.SetDisplayMode(mode)
 end
 
 function CDS.GetDisplayMode() return currentMode end
+
+-- ── Search text ─────────────────────────────────────────────────────────────────────────────────
+-- ClassicAPI's SearchBoxTemplate has NO Instructions FontString: its placeholder IS the edit box's
+-- text (SearchBoxTemplate_OnLoad calls SetText(SEARCH), and OnEditFocusLost puts it back). So an
+-- untouched search box reads back "Search", and handing that to the filter dimmed every tile in the
+-- panel to 25% — which is what "all the icons are greyed out" turned out to be. Every read of the
+-- box goes through here.
+function CDS.GetSearchText()
+  if not (panel and panel.search) then return "" end
+  local t = panel.search:GetText() or ""
+  if t == (SEARCH or "Search") then return "" end
+  return t
+end
 
 -- Replaced in 4b-2 by the real category-grid builder.
 function CDS.RefreshLayout()
