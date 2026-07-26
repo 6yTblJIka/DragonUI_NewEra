@@ -4,7 +4,7 @@ Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/`
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
 **Status:** Phases 0-4a implemented (engine only — no assignment UI, see §E6). Offline harnesses
-pass (`qa/offline/`, 154 boot assertions).
+pass (`qa/offline/`, 156 boot assertions).
 Phases 1-3 are confirmed working in-game. Remaining: Phase 4b, the standalone settings panel —
 re-scoped in §E6 and deferred as its own phase.
 
@@ -439,9 +439,11 @@ absent — `Reorder.lua` is built entirely on it), `LargeSideTabButtonTemplate` 
 export (no `CopyToClipboard` on 3.3.5a), and the CDM side-tab art. It is a phase in its own right,
 not a tail on this one. The per-spell menu covers the assignment need in the meantime.
 
-## E7. Three faults found on the first in-game test of Phase 4a
+## E7. Faults found on the first in-game tests of Phase 4a
 
-All three predate this phase and had been invisible because the offline stubs were too generous.
+All of these predate this phase. Each had been invisible because a harness stub was more generous
+than the real client — a pattern worth noting in its own right: every one of these was found by a
+player looking at the screen, not by the 156 assertions.
 
 1. **Every icon rendered grey.** `RefreshIconColor` called `IsUsableSpell(self.spellID)`. On 3.3.5a
    that function takes a spell NAME, or a spellbook INDEX with a bookType — never a spellID. Given
@@ -462,7 +464,27 @@ All three predate this phase and had been invisible because the offline stubs we
    `Interface\Buttons\ButtonHilight-Square` (a base texture DragonUI itself uses) provides the cue.
    The sprite path takes over automatically if the atlas is ever registered.
 
-3. **`AceLocale: Missing entry for 'CooldownViewerBuffBar'` on every login.** DragonUI's
+3. **Icons went grey on cast and STAYED grey.** Distinct from fault 1, and only visible once that
+   was fixed. Every event the viewer listens for — `SPELL_UPDATE_COOLDOWN`, `UNIT_SPELLCAST_*`,
+   `BAG_UPDATE_COOLDOWN` — marks a cooldown STARTING or changing. **3.3.5a fires nothing when one
+   expires** (`Alerts.lua`'s header already said so, in the course of explaining why the ready
+   transition has to be polled). The swipe still completed, because the Cooldown widget animates
+   itself in C, but no Lua re-ran, so the `SetDesaturated(true)` from the start of the cooldown
+   persisted until some unrelated event refreshed the tile — usually the player's next cast. Each
+   item now schedules its own refresh for the moment its cooldown ends, keyed on the end time so
+   repeated refreshes during one cooldown don't stack timers.
+
+   The harness could not have caught this: its `C_Timer.After` stub ran every callback immediately
+   at the next drain, regardless of delay, so a scheduled refresh would have "worked" no matter
+   what. The stub now honours the delay, and the regression test asserts the tile un-desaturates
+   **with no event fired at all**.
+
+4. **The ready flash was too faint to notice.** Fixing the plumbing (fault 2) was not enough: an
+   alpha blink on an icon-sized quad barely registers against the icon art beneath it. The fallback
+   burst now snaps to full brightness and expands to ~1.7x the icon while fading, in warm gold on an
+   ADD blend, and sits two frame levels above the Cooldown swipe it plays over.
+
+5. **`AceLocale: Missing entry for 'CooldownViewerBuffBar'` on every login.** DragonUI's
    `CreateUIFrame` labels the editor handle with `addon.L[frameName]`, and AceLocale's read metatable
    fires a non-breaking error for any undefined key. Harmless but noisy, once per registered frame.
    The table `GetLocale` returns has an `__index` hook but **no `__newindex`**, so `NE.RegisterHUDFrame`

@@ -65,6 +65,9 @@ local function createItem(parent, category)
   item.CooldownFlash = CreateFrame("Frame", nil, item)
   item.CooldownFlash:SetPoint("TOPLEFT", item, "TOPLEFT", 0, 1)
   item.CooldownFlash:SetPoint("BOTTOMRIGHT", item, "BOTTOMRIGHT", 0, 1)
+  -- Above the Cooldown swipe: the ready burst plays as the swipe finishes, and would otherwise be
+  -- competing with it for the same draw layer.
+  item.CooldownFlash:SetFrameLevel((item.Cooldown:GetFrameLevel() or 1) + 2)
   item.CooldownFlash:Hide()
   item.CooldownFlash.Flipbook = item.CooldownFlash:CreateTexture(nil, "ARTWORK")
   item.CooldownFlash.Flipbook:SetAllPoints(item.CooldownFlash)

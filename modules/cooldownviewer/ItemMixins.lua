@@ -47,6 +47,8 @@ local function applyItemAtlases(item)
     else
       flash.Flipbook:SetTexture(M.FLASH_FALLBACK_TEXTURE)
       flash.Flipbook:SetBlendMode("ADD")
+      -- Warm gold reads as "ready" and stands clear of the icon art underneath.
+      flash.Flipbook:SetVertexColor(1, 0.92, 0.55)
     end
     flash.Flipbook:SetAlpha(0)
   end
@@ -428,10 +430,25 @@ local function flashOnUpdate(flash)
 
   local atlas = getFlashAtlas()
   if not atlas then
-    -- Fallback: fade a plain highlight in over the first third, then out. No sprite sheet needed.
-    local alpha = (progress < 0.33) and (progress / 0.33) or (1 - (progress - 0.33) / 0.67)
+    -- Fallback burst: snap to full brightness, then expand outward past the icon while fading.
+    -- A pure alpha blink on an icon-sized quad is nearly invisible against the art underneath —
+    -- the outward growth is what makes it read at a glance, which was the reported problem.
+    local tex = flash.Flipbook
+    local alpha
+    if progress < 0.15 then
+      alpha = progress / 0.15                  -- fast ramp in
+    else
+      alpha = 1 - (progress - 0.15) / 0.85     -- long fade out
+    end
     if alpha < 0 then alpha = 0 elseif alpha > 1 then alpha = 1 end
-    flash.Flipbook:SetAlpha(alpha)
+    tex:SetAlpha(alpha)
+
+    -- Grow from the icon's own bounds to ~1.7x across the burst.
+    local w = flash:GetWidth() or 30
+    local pad = w * 0.35 * progress
+    tex:ClearAllPoints()
+    tex:SetPoint("TOPLEFT",     flash, "TOPLEFT",     -pad,  pad)
+    tex:SetPoint("BOTTOMRIGHT", flash, "BOTTOMRIGHT",  pad, -pad)
     return
   end
 
@@ -475,7 +492,12 @@ function ItemMixin:ClearFlash()
     flash:SetScript("OnUpdate", nil)
     flash:Hide()
     flash._flashStartTime = nil
-    if flash.Flipbook then flash.Flipbook:SetAlpha(0) end
+    if flash.Flipbook then
+      flash.Flipbook:SetAlpha(0)
+      -- The burst grows the texture past the frame; put it back or the next play starts oversized.
+      flash.Flipbook:ClearAllPoints()
+      flash.Flipbook:SetAllPoints(flash)
+    end
   end
 end
 
@@ -589,6 +611,35 @@ function ItemMixin:RefreshCooldown()
     -- Arm the ready-transition flag. ARM-ONLY here — never clear on this path — so a frequent
     -- refresh can't wipe a pending transition before the detector observes it.
     if isOnActualCooldown then self._wasOnRealCD = true end
+
+    -- Re-run ourselves the moment the cooldown ends.
+    --
+    -- 3.3.5a fires NO event when a cooldown expires — every event the viewer listens for
+    -- (SPELL_UPDATE_COOLDOWN, UNIT_SPELLCAST_*, BAG_UPDATE_COOLDOWN) marks a cooldown STARTING or
+    -- changing. The swipe still finishes, because the Cooldown widget animates itself in C, but no
+    -- Lua re-runs, so the desaturation set below stayed on until some unrelated event happened to
+    -- refresh the tile — usually the player's next cast. That is the reported "icons stay grey
+    -- after coming off cooldown".
+    --
+    -- One timer per cooldown, keyed on its end time so repeated refreshes during the same cooldown
+    -- don't stack. The small margin keeps us just past the boundary, where GetSpellCooldown has
+    -- certainly cleared.
+    if isOnActualCooldown then
+      local endsAt = start + duration
+      if self._cdRefreshFor ~= endsAt then
+        self._cdRefreshFor = endsAt
+        local remaining = endsAt - GetTime()
+        if remaining > 0 and C_Timer and C_Timer.After then
+          C_Timer.After(remaining + 0.05, function()
+            -- Only act if this is still the cooldown we scheduled for; a recast supersedes us.
+            if self._cdRefreshFor == endsAt then
+              self._cdRefreshFor = nil
+              self:RefreshCooldown()
+            end
+          end)
+        end
+      end
+    end
 
     if self.Cooldown.SetDrawSwipe then self.Cooldown:SetDrawSwipe(true) end
     setSwipeColor(self.Cooldown, M.COLOR_COOLDOWN)

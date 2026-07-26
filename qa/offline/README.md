@@ -35,7 +35,7 @@ luajit qa/offline/test_gridlayout.lua
 ```
 
 Boot the whole Cooldown Manager stack against a stubbed 3.3.5a client and drive it through a
-realistic event sequence (154 assertions) — load order, mover registration, spellbook rank
+realistic event sequence (156 assertions) — load order, mover registration, spellbook rank
 resolution, populate, cooldown start, rank-safe cooldown read, GCD suppression, live settings,
 visibility, the buff viewers, the learn gate, custom-list shadowing, the alert engine and ready
 sounds, spell hiding, and the `RegisterUnitEvent` filter:

@@ -242,15 +242,26 @@ function GameTooltip:SetHyperlink() end
 function GameTooltip:SetInventoryItem() end
 function GameTooltip:SetItemByID() end
 
--- Deferred callbacks: run them synchronously at a drain point.
+-- Deferred callbacks, run at a drain point — but only once their delay has actually elapsed on the
+-- stub clock. Honouring the delay matters: the cooldown-expiry refresh schedules itself for the end
+-- of the cooldown, and a stub that fired every timer immediately would make that path look like it
+-- worked no matter what it did.
 local pending = {}
-C_Timer = { After = function(_, fn) pending[#pending + 1] = fn end }
+C_Timer = {
+  After = function(delay, fn)
+    pending[#pending + 1] = { at = NOW + (tonumber(delay) or 0), fn = fn }
+  end,
+}
 local function drain()
   local n = 0
-  while #pending > 0 and n < 50 do
-    local queue = pending
-    pending = {}
-    for _, fn in ipairs(queue) do fn() end
+  while n < 50 do
+    local due, rest = {}, {}
+    for _, e in ipairs(pending) do
+      if e.at <= NOW then due[#due + 1] = e else rest[#rest + 1] = e end
+    end
+    if #due == 0 then break end
+    pending = rest
+    for _, e in ipairs(due) do e.fn() end
     n = n + 1
   end
 end
@@ -436,6 +447,19 @@ if mb then
   assertf(mb.Icon._desat == true, "icon desaturated on real cooldown")
   assertf(mb.Cooldown._neText:GetText() ~= "" and mb.Cooldown._neText:GetText() ~= nil,
           "countdown text painted: '" .. tostring(mb.Cooldown._neText:GetText()) .. "'")
+end
+
+print("\n=== COOLDOWN EXPIRY ===")
+-- Reported in-game: icons went grey on cast and STAYED grey after the cooldown finished.
+-- 3.3.5a fires no event when a cooldown expires, so nothing re-ran RefreshCooldown and the
+-- desaturation persisted until some unrelated event refreshed the tile. The item now schedules its
+-- own refresh for the moment the cooldown ends. Note this asserts with NO event fired at all.
+if mb then
+  assertf(mb.Icon._desat == true, "still desaturated mid-cooldown")
+  nextFrame(8.2)          -- past the 8s cooldown
+  COOLDOWNS[10947] = nil  -- the client would now report no cooldown
+  drain()                 -- only the expiry timer is due; no event is sent
+  assertf(mb.Icon._desat == false, "icon un-desaturates at expiry with NO event fired")
 end
 
 print("\n=== EVENTS: rank-safe read (cooldown on a rank the tile isn't keyed to) ===")
