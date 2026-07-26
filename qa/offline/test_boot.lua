@@ -22,8 +22,20 @@ local function newRegion(kind)
   local r = { _kind = kind, _shown = true, _alpha = 1 }
   function r:SetTexture(t) self._tex = t end
   function r:GetTexture() return self._tex end
-  function r:SetTexCoord() end
+  -- Recorded, not discarded: the GCD flipbook stepper's only observable output is its texcoords, and
+  -- that code path first executes in Phase 8a.
+  function r:SetTexCoord(...) self._coords = { ... } end
+  function r:GetTexCoord()
+    local c = self._coords
+    if not c then return nil end
+    return c[1], c[2], c[3], c[4]
+  end
   function r:SetVertexColor(...) self._color = { ... } end
+  function r:GetVertexColor()
+    local c = self._color
+    if not c then return 1, 1, 1, 1 end
+    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+  end
   function r:SetDesaturated(v) self._desat = v end
   function r:SetAllPoints() end
   function r:SetPoint() end
@@ -177,6 +189,7 @@ function frameMeta:SetDrawEdge() end
 function frameMeta:SetReverse(v) self._reverse = v end
 -- StatusBar surface (BuffBar rows) — and Slider, which shares it.
 function frameMeta:SetMinMaxValues(lo, hi) self._min, self._max = lo, hi end
+function frameMeta:GetMinMaxValues() return self._min or 0, self._max or 1 end
 -- The client fires OnValueChanged whenever SetValue actually MOVES the value, including when the
 -- caller is code rather than a drag. The settings sliders depend on that being true: each one
 -- re-seats its thumb from inside its own OnValueChanged handler, and re-reads its getter on every
@@ -202,8 +215,26 @@ end
 -- SetObeyStepOnDrag is deliberately ABSENT: it is retail-only, which is why the slider kit snaps the
 -- value itself. Adding it here would hide that.
 function frameMeta:SetStatusBarColor(...) self._barColor = { ... } end
-function frameMeta:SetStatusBarTexture(t) self._barTex = t end
-function frameMeta:GetStatusBarTexture() return self._barTex end
+function frameMeta:GetStatusBarColor()
+  local c = self._barColor
+  if not c then return 1, 1, 1, 1 end
+  return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+end
+-- SetStatusBarTexture takes a path OR a texture, and GetStatusBarTexture always hands back a
+-- TEXTURE OBJECT — never the path you passed in. Returning the raw argument (as this stub used to)
+-- meant NE.tex.SetAtlasOnStatusBar called SetAlpha on a string, which only surfaced once Phase 8a
+-- registered the bar atlas and that function stopped bailing out early. The Pip also anchors to this
+-- object (AuraItemMixins:193), so a string would silently misplace it in the real client too.
+function frameMeta:SetStatusBarTexture(t)
+  if type(t) == "table" then
+    self._barTexObj = t
+  else
+    if not self._barTexObj then self._barTexObj = newRegion("Texture") end
+    self._barTexObj:SetTexture(t)
+  end
+  self._barTex = t
+end
+function frameMeta:GetStatusBarTexture() return self._barTexObj end
 
 -- Fire an event at every frame registered for it (respecting the unit filter shim).
 local function fireEvent(event, ...)
@@ -254,6 +285,19 @@ function UnitCastingInfo() return nil end
 function UnitChannelInfo() return nil end
 function InCombatLockdown() return false end
 function GetTotemInfo() return false end
+-- Post-hook: run the original, then the hook, and hand back the original's returns. Both real forms
+-- are supported — hooksecurefunc(tbl, "name", fn) and hooksecurefunc("globalName", fn).
+function hooksecurefunc(a, b, c)
+  local tbl, key, hook
+  if type(a) == "table" then tbl, key, hook = a, b, c else tbl, key, hook = _G, a, b end
+  local orig = tbl[key]
+  if type(orig) ~= "function" or type(hook) ~= "function" then return end
+  tbl[key] = function(...)
+    local r1, r2, r3, r4 = orig(...)
+    pcall(hook, ...)
+    return r1, r2, r3, r4
+  end
+end
 -- Mirrors 3.3.5a: IsUsableSpell takes a spell NAME (or a spellbook index + bookType). Given a
 -- spellID it reads it as an index past the end of the book and returns nil — no error, just a
 -- silent nil that is neither usable nor out-of-mana. Returning a blanket `true` here is what let
@@ -572,6 +616,11 @@ local FILES = {
   "modules/cooldownviewer/SoundAlertData.lua",
   "modules/cooldownviewer/Alerts.lua",
   "core/Texture.lua",
+  -- After core/Texture.lua, not next to the viewer files it serves: both asset files bail out at
+  -- their first line if NE.tex is absent, so loading them earlier would register nothing at all —
+  -- silently, and with every HasAtlas assertion below then failing for the wrong reason. The real
+  -- .toc has core/ long before modules/, which is why this only bites here.
+  "modules/cooldownviewer/Assets.lua",
   "core/Tabs.lua",
   "core/Menu.lua",
   "core/PanelChrome.lua",
@@ -658,13 +707,53 @@ assertf(tint and tint[1] == M.ICON_USABLE[1] and tint[2] == M.ICON_USABLE[2],
         "a usable spell tints white, not grey (got "
         .. table.concat({ tostring(tint and tint[1]), tostring(tint and tint[2]) }, ",") .. ")")
 
--- The ready flash must be armed without the retail flipbook atlas, which this client lacks. The old
--- guard read GetAtlasRect's first return (0 for an unknown atlas) as truthy and never fired.
+-- The ready flash must be armed at all. The old guard read GetAtlasRect's first return (0 for an
+-- unknown atlas) as truthy and never fired.
 mb:ClearFlash()
 mb:ScheduleFlash(GetTime() + 5, 10)
-assertf(mb.CooldownFlash._flashStartTime ~= nil, "ready flash schedules without the flipbook atlas")
-assertf(mb.CooldownFlash.Flipbook:GetTexture() == M.FLASH_FALLBACK_TEXTURE,
-        "…using the fallback highlight texture")
+assertf(mb.CooldownFlash._flashStartTime ~= nil, "ready flash schedules")
+-- Phase 8a ships and registers the GCD flipbook, which retires the fallback burst: this assertion
+-- used to require the fallback texture, and inverting it is the intended consequence of that.
+assertf(mb.CooldownFlash.Flipbook:GetTexture() == NE.tex.Local(5199404),
+        "…using the flipbook sprite sheet, not the fallback highlight")
+
+-- The sprite stepper had never executed before 8a, because the atlas it gates on was never
+-- registered. Drive it and check the frame it lands on is a real cell of the strip.
+do
+  local l0, r0, t0, b0 = NE.tex.GetAtlasRect("UI-HUD-ActionBar-GCD-Flipbook")
+  local frameW, frameH = (r0 - l0) / 2, (b0 - t0) / 11
+  mb:ClearFlash()
+  local start = GetTime()
+  mb:ScheduleFlash(start, 5)
+  local flash = mb.CooldownFlash
+  local play = flash._flashStartTime
+  assertf(play ~= nil, "flash armed for the sprite path")
+
+  local seen = {}
+  for _, at in ipairs({ 0.01, 0.2, 0.5, 0.74 }) do
+    NOW = play + at
+    flash._scripts.OnUpdate(flash)
+    local l, r, t, b = flash.Flipbook:GetTexCoord()
+    assertf(l and r and t and b, "stepper set texcoords at t+" .. at)
+    if l then
+      -- Inside the strip, and exactly one cell wide/tall. A frame straddling a boundary would show
+      -- two half-sprites, which is the failure this catches.
+      local inside = l >= l0 - 1e-6 and r <= r0 + 1e-6 and t >= t0 - 1e-6 and b <= b0 + 1e-6
+      local oneCell = math.abs((r - l) - frameW) < 1e-6 and math.abs((b - t) - frameH) < 1e-6
+      assertf(inside, ("…inside the strip (%.4f-%.4f, %.4f-%.4f)"):format(l, r, t, b))
+      assertf(oneCell, "…and exactly one 47x47 cell")
+      local onGrid = math.abs((l - l0) / frameW - math.floor((l - l0) / frameW + 0.5)) < 1e-4
+      assertf(onGrid, "…aligned to the cell grid, not straddling two frames")
+      seen[l .. ":" .. t] = true
+    end
+  end
+  local distinct = 0
+  for _ in pairs(seen) do distinct = distinct + 1 end
+  assertf(distinct > 1, "the sprite advances through frames (" .. distinct .. " distinct cells)")
+  -- Left ARMED, not cleared: the pulse test immediately below drives this frame's OnUpdate by hand,
+  -- and ClearFlash removes the script out from under it.
+  mb:ScheduleFlash(GetTime() + 5, 10)
+end
 -- Step into the flash window and confirm the pulse drives alpha rather than erroring on a number.
 mb.CooldownFlash._flashStartTime = GetTime() - 0.2
 mb.CooldownFlash:GetScript("OnUpdate")(mb.CooldownFlash)
@@ -1233,6 +1322,111 @@ assertf(NE.tex.HasAtlas("icon_trackedbuffs"), "Auras tab glyph registered")
 -- Registered by this module, not borrowed from the spellbook's asset file: the tab would otherwise be
 -- a transparent gap on any load order where that file had not run.
 assertf(NE.tex.HasAtlas("questlog-icon-setting"), "Settings tab glyph registered")
+
+print("\n=== VIEWER ART (Phase 8a) ===")
+do
+  -- Six atlases were being set by name and registered nowhere, so every region rendered as nothing.
+  -- HasAtlas on each is the assertion that would have caught it — the same one that caught the
+  -- side-tab art above.
+  local VIEWER_ATLASES = {
+    "UI-HUD-CoolDownManager-IconOverlay",
+    "UI-CooldownManager-OORshadow",
+    "UI-HUD-ActionBar-GCD-Flipbook",
+    "UI-HUD-CoolDownManager-Bar",
+    "UI-HUD-CoolDownManager-Bar-BG",
+    "UI-HUD-CoolDownManager-Bar-Pip",
+  }
+  for _, name in ipairs(VIEWER_ATLASES) do
+    assertf(NE.tex.HasAtlas(name), "atlas registered: " .. name)
+  end
+
+  -- Every atlas name the viewer files MENTION must be registered. Hard-coding the list above would
+  -- not have caught the original fault, because the fault was a name nobody had listed anywhere —
+  -- so read them back out of the source instead. A seventh SetAtlas added later fails here.
+  local mentioned, missing = {}, {}
+  for _, rel in ipairs({ "modules/cooldownviewer/ItemMixins.lua",
+                         "modules/cooldownviewer/AuraItemMixins.lua",
+                         "modules/cooldownviewer/BuffViewers.lua",
+                         "modules/cooldownviewer/Viewers.lua" }) do
+    local fh = io.open(ADDON .. rel, "r")
+    if fh then
+      local body = fh:read("*a"); fh:close()
+      -- Line by line, skipping comments. Matching on the function name does not work: the call sites
+      -- go through a local alias (`local set = NE.tex.SetAtlas; set(tex, "UI-...")`), which is how a
+      -- first attempt at this found 3 of 6. Skipping comment lines is the other half — these files
+      -- also NAME atlases in prose, and a comment explaining why one is deliberately absent must not
+      -- be read as a requirement to ship it.
+      for line in body:gmatch("[^\r\n]+") do
+        if not line:match("^%s*%-%-") then
+          for nm in line:gmatch('"(UI%-[%w%-]+)"') do mentioned[nm] = rel end
+        end
+      end
+    end
+  end
+  local n = 0
+  for nm, rel in pairs(mentioned) do
+    n = n + 1
+    if not NE.tex.HasAtlas(nm) then missing[#missing + 1] = nm .. " (" .. rel .. ")" end
+  end
+  assertf(n >= 6, "found the viewer files' atlas call sites (" .. n .. " names)")
+  assertf(#missing == 0, "every atlas the viewers ask for is registered"
+    .. (#missing > 0 and (": MISSING " .. table.concat(missing, ", ")) or ""))
+
+  -- The rects are transcribed from upstream's generated data, so the thing worth asserting is that
+  -- they belong to the sheets WE ship: rect fraction x sheet size must give back the declared atlas
+  -- size. This is what catches a repacked sheet — the exact failure SettingsAssets.lua records for
+  -- 7289697, where Era-generated rects were wrong for the 12.1.0 BLP.
+  local SHEET = { [6704514] = { 256, 128 }, [6685874] = { 512, 1024 }, [5199404] = { 2048, 1024 } }
+  local bad = {}
+  for _, name in ipairs(VIEWER_ATLASES) do
+    local e = NE.tex._atlasEntry(name)
+    local sheet = e and SHEET[e.file]
+    if sheet then
+      local w = (e.right - e.left) * sheet[1]
+      local h = (e.bottom - e.top) * sheet[2]
+      if math.abs(w - e.width) > 0.5 or math.abs(h - e.height) > 0.5 then
+        bad[#bad + 1] = ("%s: rect gives %.1fx%.1f, declares %dx%d")
+          :format(name, w, h, e.width, e.height)
+      end
+    else
+      bad[#bad + 1] = name .. ": no known sheet size for fdid " .. tostring(e and e.file)
+    end
+  end
+  assertf(#bad == 0, "every rect matches the shipped sheet's real dimensions"
+    .. (#bad > 0 and (": " .. table.concat(bad, "; ")) or ""))
+
+  -- Each sheet must actually be on disk under the path Assets.lua registers. A rect pointing at an
+  -- unshipped FDID resolves to the bare number, which the client renders as nothing — the same
+  -- invisible failure by a different route (and the one SettingsAssets.lua hit with 5684744).
+  for fdid in pairs(SHEET) do
+    local path = NE.tex.Local(fdid)
+    assertf(path ~= nil, "sheet " .. fdid .. " has a local BLP path")
+    if path then
+      local rel = path:gsub("^Interface\\AddOns\\DragonUI_NewEra\\", ""):gsub("\\", "/")
+      local fh = io.open(ADDON .. rel, "rb")
+      assertf(fh ~= nil, "…and the file exists: " .. rel)
+      if fh then
+        -- Confirm the BLP header carries the dimensions the rect arithmetic above assumed, rather
+        -- than trusting a table that says so.
+        local head = fh:read(20); fh:close()
+        local magic = head:sub(1, 4)
+        local w = 0
+        for i = 0, 3 do w = w + head:byte(13 + i) * (256 ^ i) end
+        local h = 0
+        for i = 0, 3 do h = h + head:byte(17 + i) * (256 ^ i) end
+        assertf(magic == "BLP2" and w == SHEET[fdid][1] and h == SHEET[fdid][2],
+          ("…and is a BLP2 of the assumed size (%s %dx%d)"):format(magic, w, h))
+      end
+    end
+  end
+
+  -- The flipbook's frame grid has to divide its strip evenly, or the ready-flash sprite samples
+  -- across frame boundaries. 94/2 and 517/11 are both 47.
+  local e = NE.tex._atlasEntry("UI-HUD-ActionBar-GCD-Flipbook")
+  assertf(e.width % 2 == 0 and e.height % 11 == 0,
+    "the flipbook strip divides into 2x11 whole frames")
+  assertf(e.width / 2 == e.height / 11, "…and those frames are square (47x47)")
+end
 
 print("\n=== CATEGORY GRIDS (Phase 4b-2) ===")
 local A = CDS.adapter

@@ -5,13 +5,15 @@ TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global conventio
 
 **Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets), 6 (loose
 ends) and 7 (the tracked-aura catalog) implemented — the whole of both phasing tables except the
-deliberate cuts. Offline harnesses pass (`qa/offline/`, 439 boot assertions). Phases 1-3 and the 4b-1
+deliberate cuts. Offline harnesses pass (`qa/offline/`, 483 boot assertions). Phases 1-3 and the 4b-1
 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
 fixed, §G.7.1/§G.7.2).
 
-**Open work is now §H.2 and §H.3** (planned, not built): **Phase 8** — retail theming, whose core
-finding is that the viewer icon art is asked for by name and registered nowhere (§H.2); **Phase 9** —
-the audit against Wowhead's current guide, whose only real gap is the glow on a buffed spell (§H.3).
+**Open work is §8b-8e and §H.3** (planned, not built): the cooldown swipe (8b), the buffed-spell glow
+(8c), bar theming (8d) and the pandemic ring (8e); then **Phase 9**, the audit against Wowhead's current
+guide, whose only real gap is that same glow (§H.3). **8a is DONE** (§H.2.1): six atlases the viewers
+had been setting by name were registered nowhere, so every one rendered as an invisible texture — which
+is why the icons looked like bare spellbook icons.
 Phase 7 is **DONE** (§H.1, notes in §H.1.1): the Tracked Buffs tab now has two real sources — a
 generated per-class catalog gated on the player's actual talents, and a registry of auras the scan has
 met — which also makes target-DoT tracking reachable for the first time.
@@ -1457,13 +1459,20 @@ nothing at all:
 Every BLP is already on disk in `ReferenceAddons/NewEra/Art/Common/`, alongside two more the port never
 wired: `6731092-ui-hud-cooldownmanager-icon-swipe` and `5423465-ui-hud-actionbar-secondarycooldown`.
 
-**Why they were missed:** upstream never registers rects for them. Classic Era ships the atlas *names*
-in client data even when the art differs, so upstream only needs `RegisterLocal` on the sheet FDID and
-lets `C_Texture.GetAtlasInfo` supply the rect. 3.3.5a has no atlas database at all, so our port must
-supply both — and for these three, only the `SetAtlas` calls were ported, not the data behind them.
-Nothing errored, because a missed atlas is an invisible texture.
+**Why they were missed:** upstream only needs `RegisterLocal` on the sheet FDID at the CALL SITE.
+Classic Era ships the atlas *names* in client data even when the art differs, so `C_Texture.GetAtlasInfo`
+supplies the rect there. 3.3.5a has no atlas database at all, so our port must supply both — and for
+these three, only the `SetAtlas` calls were ported, not the data behind them. Nothing errored, because a
+missed atlas is an invisible texture.
 
-### 8a. Ship and register the art
+**CORRECTION (found while building 8a):** the sentence above originally read "upstream never registers
+rects for them". That is false, and it mattered — `Generated/AtlasData.lua` carries rects for all six,
+and they are NOT full-file rects. 6704514 is a shared 256x128 sheet with the icon overlay in its left
+third and the three bar pieces down its right, so the 0→1 rect this section guessed at would have
+stretched the overlay across the bar art. The rects were transcribed from that file and then verified
+arithmetically against each BLP's real dimensions; see §H.2.1.
+
+### 8a. Ship and register the art — **DONE**
 
 Copy the BLPs to `Textures/CooldownViewer/`, `RegisterLocal` each FDID, and add the rects. The rects
 must be **derived, not assumed**: each of these is a single-purpose sheet, so a full-file 0→1 rect is
@@ -1473,6 +1482,54 @@ as the atlas `width`/`height`.
 
 Harness: `HasAtlas` assertions for all five, mirroring the side-tab-art assertions that caught
 `core/Tabs.lua`'s stale "sheet not shipped" note. That check is exactly what would have caught this.
+
+### H.2.1 What 8a actually took
+
+Shipped as `modules/cooldownviewer/Assets.lua` (the viewers' art; `SettingsAssets.lua` remains the
+/cdm window's own) plus three BLPs under `Textures/CooldownViewer/`. **Six** atlases, not three — the
+three bar pieces `AuraItemMixins` sets on the BuffBar were unregistered for the same reason and live on
+a sheet 8a ships anyway, so registering them was three lines. What remains of 8d is the visual
+judgement (nine-slice insets, colour), not the data.
+
+**The rects came from upstream's generated data, and the check that matters is that they belong to the
+sheets WE ship.** Each BLP's header was read for its real dimensions and the rect fractions multiplied
+back out: every product lands on the declared atlas size to the pixel (6704514 = 256x128 → 86x86,
+124x10, 132x19, 10x46; 6685874 = 512x1024 → 43x43; 5199404 = 2048x1024 → 94x517). The harness now
+asserts that arithmetic, and mutating the overlay rect to 0→1 fails it with "rect gives 256.0x128.0,
+declares 86x86" — the precise mistake this section had been braced for.
+
+That check is also the guard against the failure `SettingsAssets.lua` records: retail repacked sheet
+7289697, so Era-generated rects were wrong for the 12.1.0 BLP. Transcription alone would not have
+caught it; transcription plus arithmetic does.
+
+**Size:** 10.5MB for three sheets, of which 8.4MB is the GCD flipbook (2048x1024 uncompressed ARGB for
+a 94x517 strip). Kept whole rather than cropped and re-encoded: the repo already ships 861 BLPs / 237MB
+including a 16MB roleicons sheet and 4MB Professions flipbooks of exactly this kind, so cropping would
+be a bespoke BLP *encoder* and a divergence from upstream's rects, in service of a size this repo does
+not treat as a problem.
+
+**One behaviour change, and it turns on code that had never run.** Registering the flipbook flips
+`hasFlipbook()` true, retiring the fallback ready-flash burst in favour of the 22-frame sprite stepper
+— a path dormant since Phase 1 because the atlas it gates on was never registered. Its frame maths is
+consistent with the art (94/2 = 517/11 = 47), and the harness now drives the stepper at four points
+across the flash and asserts each texcoord is inside the strip, exactly one cell, and grid-aligned. If
+it still looks wrong in game, deleting the one flipbook registration reverts to the fallback with no
+other change — the fallback was written as a permanent alternative, not a stopgap.
+
+**Three harness stub gaps, found because 8a made real code paths reachable.**
+`NE.tex.SetAtlasOnStatusBar` had never executed — it bails when its atlas is unknown — and the moment
+the bar atlas was registered it hit `SetAlpha` on a string. The stub's `GetStatusBarTexture` returned
+the *path* it had been handed; the real API always returns a texture OBJECT. That one is worth noting
+beyond the harness, because `AuraItemMixins:193` anchors the Pip to that return value. Also added:
+`GetMinMaxValues`, `GetVertexColor`, `GetStatusBarColor`, `hooksecurefunc`, and texcoord recording.
+
+**A generalised assertion, because the specific one would not have caught the original fault.** Listing
+six names and checking each is registered only tests the names someone thought to list — and the fault
+was six names nobody had listed anywhere. So the harness reads the atlas names back out of the viewer
+sources (skipping comment lines, since these files also name atlases in prose to explain why they are
+absent) and requires every one to resolve. A seventh `SetAtlas` added later fails without anyone
+remembering to update a list. First attempt at this matched on the function name and found 3 of 6: the
+call sites go through a local alias, `local set = NE.tex.SetAtlas`.
 
 ### 8b. The cooldown swipe
 
