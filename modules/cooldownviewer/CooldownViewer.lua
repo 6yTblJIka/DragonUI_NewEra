@@ -328,6 +328,49 @@ function M.GetEditableList(category, class)
   return t[class]
 end
 
+-- Show or hide one spell in a category, as a DELIBERATE user action.
+--
+-- This is the only caller of GetEditableList, and that is the whole point: seeding a custom list is
+-- a side effect with teeth (PORT_PLAN §E5 — a read-only query doing it froze the curated defaults
+-- into SavedVariables and hid every later addition). Seeding is correct HERE, because the user has
+-- just expressed an explicit preference about this list, so a list is what should exist afterwards.
+--
+-- Returns true if anything changed.
+function M.SetSpellEnabled(category, spellID, enabled)
+  if not (category and spellID) then return false end
+  local _, class = UnitClass("player")
+  local list = M.GetEditableList(category, class)
+  if not list then return false end
+
+  enabled = enabled and true or false
+  for _, entry in ipairs(list) do
+    if entry.spellID == spellID then
+      if entry.enabled == enabled then return false end
+      entry.enabled = enabled
+      M.RefreshActiveViewer(category)
+      return true
+    end
+  end
+
+  -- Not in the seeded list: a racial, or a spell added after the list was authored. Append it so
+  -- the preference sticks rather than being silently dropped.
+  list[#list + 1] = { spellID = spellID, enabled = enabled }
+  M.RefreshActiveViewer(category)
+  return true
+end
+
+-- Is this spell currently enabled in the category? Reads the custom list WITHOUT seeding one.
+function M.IsSpellEnabled(category, spellID)
+  if not (category and spellID) then return true end
+  local _, class = UnitClass("player")
+  local list = M.GetCustomList(category, class)
+  if not list then return true end   -- no custom list: the curated default is shown
+  for _, entry in ipairs(list) do
+    if entry.spellID == spellID then return entry.enabled and true or false end
+  end
+  return true
+end
+
 -- Merge per-race racials into a category's list. UnitRace's 2nd return is the canonical key
 -- ("Human", "Scourge", ...). Deduped, and never overrides a deliberate user disable.
 local function appendRacials(out, category, exclude)

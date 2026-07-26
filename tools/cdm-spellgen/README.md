@@ -21,6 +21,7 @@ Run from this directory, in order:
 | `resolve.py` | joins it with `SkillLineAbility.dbc` to attribute spells to classes, then resolves each ability name to its rank-1 castable ID | `resolved.json`, `listing.txt` |
 | `gen_wotlk.py` | applies the authored curation and emits the Lua seed | `../../modules/cooldownviewer/CdmSeedWotLK.lua` |
 | `verify.py` | re-checks every emitted ID against the DBC independently | — (exit 1 on any problem) |
+| `gen_alertdata.py` | resolves the Execute / Reactive ability names to **every** rank | `../../modules/cooldownviewer/AlertData.lua` |
 
 `listing.txt` is the useful artefact for curation: every class's abilities that carry a real
 cooldown, sorted longest-first.
@@ -54,6 +55,26 @@ a silent omission.
 name matches the trailing comment, it carries a real cooldown, it is rank 1, and no ID is
 duplicated. That gate is what caught three Metamorphosis-form/passive entries (rank `Demon` and
 `Passive`) that had no business in a pressable-cooldown list.
+
+## Why `gen_alertdata.py` resolves differently
+
+It answers a different question, so it cannot reuse `resolve.py`'s answer. The cooldown viewer wants
+*one* id per ability; the alert engine has to recognise the ability at **whichever rank the player
+casts**, so it keeps them all. It also can't use the `>1.5s cooldown` castability filter — Execute,
+Victory Rush and Riposte have no cooldown at all.
+
+Two traps, both found by reading output rather than by reasoning about it:
+
+- **Rank text cannot tell a real ability from an impostor.** Overpower rank 1 (`7384`) has an
+  **empty** rank string while its ranks 2-4 are labelled, so a "keep the ranked rows" filter throws
+  away the real ability. All four NPC copies of Riposte are likewise unranked, so the same filter
+  keeps them.
+- **`SkillLineAbility` attribution fixes both**, because NPC spells appear in no player skill line.
+  Applied *first*, the "drop unranked siblings" rule is then safe and removes triggered sub-spells
+  such as Execute's damage component (`20647`).
+
+Incidentally confirmed by the same query: Overpower's higher ranks appear in no skill line on
+3.3.5a — it is single-rank on this client.
 
 ## Known gap
 

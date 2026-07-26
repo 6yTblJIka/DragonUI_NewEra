@@ -99,6 +99,10 @@ local function boot()
       M.RefreshActiveViewer()
     end)
   end
+
+  -- Alert/ready-sound poll. Started unconditionally: it early-outs on its own gate every tick when
+  -- nothing is assigned, which is cheaper than watching the store for the first assignment.
+  if M.alerts and M.alerts.Start then M.alerts.Start() end
 end
 
 -- ── Diagnostic ──────────────────────────────────────────────────────────────────────────────────
@@ -142,6 +146,28 @@ SlashCmdList["NECDM"] = function()
       end
     end
   end
+
+  -- Alerts and sounds, keyed by the LISTED spell id (never the learned-rank one — see
+  -- ItemMixin:GetSettingsKey). Printing the key is the point: a mismatch here is what an orphaned
+  -- assignment looks like.
+  local cd = M._store and M._store(false)
+  local alerts, sounds = (cd and cd.alerts) or {}, (cd and cd.sounds) or {}
+  local n = 0
+  for id, cfg in pairs(alerts) do
+    if cfg and cfg.type then
+      n = n + 1
+      say(("   |cff55ff55alert|r  %-24s key=%-6d type=%-9s fx=%s window=%d%%"):format(
+        tostring(GetSpellInfo(id) or "?"), id, cfg.type, tostring(cfg.fx), (cfg.window or 0.3) * 100))
+    end
+  end
+  for id, kit in pairs(sounds) do
+    if kit then
+      n = n + 1
+      say(("   |cff55ff55sound|r  %-24s key=%-6d kit=%-7d %s"):format(
+        tostring(GetSpellInfo(id) or "?"), id, kit, tostring(M.GetSoundKitName(kit))))
+    end
+  end
+  if n == 0 then say("   no alerts or ready sounds assigned (right-click an icon to add one)") end
 end
 
 local bootFrame = CreateFrame("Frame")
@@ -327,6 +353,23 @@ NE.RegisterOptionSection({
                 .. "curated defaults and the auto-track window. Does not move or resize the viewers.",
       getFunc = function() return false end,
       setFunc = function() M.ResetTracking() end,
+    })
+
+    -- Alerts and sounds are assigned PER SPELL, from the icon's own right-click menu. There is
+    -- nothing global to toggle, so this section exists to make the feature discoverable — an
+    -- opt-in that nothing advertises is an opt-in nobody finds — plus the one global escape hatch.
+    if C.AddSpacer then C:AddSpacer(scroll) end
+    C:AddHeading(scroll, "Alerts and sounds")
+    C:AddDescription(scroll,
+      "Right-click any cooldown icon to give that spell a visual alert (when it comes off cooldown, "
+      .. "when its aura is running out, or when it becomes usable), a sound for when it is ready, or "
+      .. "to hide it from its viewer.")
+
+    C:AddToggle(scroll, {
+      label   = "Clear all alerts and sounds",
+      desc    = "Remove every per-spell alert and ready sound. Spell lists and positions are untouched.",
+      getFunc = function() return false end,
+      setFunc = function() M.ResetAlerts() end,
     })
   end,
 })

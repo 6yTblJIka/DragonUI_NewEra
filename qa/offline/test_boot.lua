@@ -249,9 +249,54 @@ end
 
 C_Container = {}
 C_Item = {}
-LibStub = nil
 SlashCmdList = {}
 DEFAULT_CHAT_FRAME = { AddMessage = function() end }
+
+-- ── Phase 4 stubs: alerts, sounds, menu ─────────────────────────────────────
+-- Target health drives the execute branch of the "usable" alert.
+TARGET_HP, TARGET_HP_MAX = 100, 100
+function UnitHealth(u) return u == "target" and TARGET_HP or 100 end
+function UnitHealthMax(u) return u == "target" and TARGET_HP_MAX or 100 end
+function UnitIsDeadOrGhost() return false end
+
+-- Records what was actually asked to play, so a test can tell "played the right file" from
+-- "silently played nothing" — the exact distinction that matters given retail kit IDs are inert
+-- on this client.
+SOUNDS_PLAYED = {}
+function PlaySoundFile(path, channel)
+  SOUNDS_PLAYED[#SOUNDS_PLAYED + 1] = { path = path, channel = channel }
+  return true
+end
+
+-- LibCustomGlow stands in for the FX renderers. It records the live glow per frame so the tests can
+-- assert on what is showing rather than on internal bookkeeping.
+GLOWS = setmetatable({}, { __mode = "k" })
+local LCG_STUB = {
+  PixelGlow_Start    = function(r, color) GLOWS[r] = { kind = "pixel",  color = color } end,
+  PixelGlow_Stop     = function(r) if GLOWS[r] and GLOWS[r].kind == "pixel"  then GLOWS[r] = nil end end,
+  ButtonGlow_Start   = function(r, color) GLOWS[r] = { kind = "button", color = color } end,
+  ButtonGlow_Stop    = function(r) if GLOWS[r] and GLOWS[r].kind == "button" then GLOWS[r] = nil end end,
+  AutoCastGlow_Start = function(r, color) GLOWS[r] = { kind = "auto",   color = color } end,
+  AutoCastGlow_Stop  = function(r) if GLOWS[r] and GLOWS[r].kind == "auto"   then GLOWS[r] = nil end end,
+}
+function LibStub(name, silent)
+  if name == "LibCustomGlow-1.0" then return LCG_STUB end
+  return nil
+end
+
+-- Dropdown surface. ItemMenu builds against ClassicAPI's C_UIDropDownMenu; the stub captures the
+-- buttons each level would render so the menu can be walked without a UI.
+MENU_BUTTONS = {}
+function C_UIDropDownMenu_CreateInfo() return {} end
+function C_UIDropDownMenu_AddButton(info, level)
+  MENU_BUTTONS[level or 1] = MENU_BUTTONS[level or 1] or {}
+  local t = MENU_BUTTONS[level or 1]
+  t[#t + 1] = info
+end
+function C_UIDropDownMenu_Initialize(frame, fn) frame._init = fn end
+function ToggleDropDownMenu() end
+function CloseDropDownMenus() end
+CLOSE = "Close"
 
 -- ── DragonUI host stub ──────────────────────────────────────────────────────
 local profile = { newera = { enabled = true, modules = {} }, movers = {}, widgets = {} }
@@ -299,6 +344,10 @@ local FILES = {
   "modules/cooldownviewer/Viewers.lua",
   "modules/cooldownviewer/AuraItemMixins.lua",
   "modules/cooldownviewer/BuffViewers.lua",
+  "modules/cooldownviewer/AlertData.lua",
+  "modules/cooldownviewer/SoundAlertData.lua",
+  "modules/cooldownviewer/Alerts.lua",
+  "modules/cooldownviewer/ItemMenu.lua",
   "modules/cooldownviewer/Register.lua",
 }
 
@@ -680,6 +729,186 @@ M.SetCustomList("essential", "PRIEST", { { spellID = 8092, enabled = true } })
 assertf(M.MigrateStaleCustomLists() == false, "migration does not run twice")
 assertf(M.GetCustomList("essential", "PRIEST") ~= nil, "a deliberately authored list is preserved")
 M.ResetCustomList("essential", "PRIEST")
+
+print("\n=== ALERT DATA (Phase 4) ===")
+local A  = M.alertdata
+local AL = M.alerts
+
+assertf(A.EXECUTE[24275] == 0.20, "Hammer of Wrath rank 1 carries a 20% execute threshold")
+assertf(A.EXECUTE[48806] == 0.20, "…and so does its highest WotLK rank")
+assertf(A.EXECUTE[53351] == 0.20, "Kill Shot present (the WotLK-only execute, absent upstream)")
+assertf(A.REACTIVE[7384] == true, "Overpower present despite an EMPTY rank string in the DBC")
+-- The two impostor classes the generator has to reject. Both were live faults during generation.
+assertf(A.REACTIVE[34097] == nil, "NPC copies of Riposte excluded (class attribution)")
+assertf(A.EXECUTE[20647] == nil, "Execute's triggered damage sub-spell excluded (unranked sibling)")
+assertf(A.REACTIVE[1495] == nil, "Mongoose Bite excluded — not dodge-gated on 3.3.5a")
+
+assertf(A.ExecuteThreshold(999999, { 24274 }) == 0.20, "execute resolves through a known rank id")
+assertf(A.ExecuteThreshold(999999, nil) == nil, "a non-execute spell yields no threshold")
+assertf(A.IsReactive(6572) == true, "Revenge is reactive")
+assertf(A.IsReactive(8092) == false, "Mind Blast is not")
+
+print("\n=== SOUND CATALOGUE (Phase 4) ===")
+local nSounds, missingFile = 0, 0
+for _, cat in ipairs(M.SOUND_CATEGORY_ORDER) do
+  for _, e in ipairs(M.SOUND_DATA[cat] or {}) do
+    nSounds = nSounds + 1
+    if not e.file then missingFile = missingFile + 1 end
+  end
+end
+assertf(nSounds == 67, "67 sounds catalogued (" .. nSounds .. ")")
+assertf(missingFile == 0, "every catalogued sound has a shipped file")
+assertf(M.SOUND_DATA.Short == nil, "the unplayable 'Short' category is not offered")
+assertf(M.GetSoundKitName(316401) == "Cat", "kit id resolves to its label")
+
+SOUNDS_PLAYED = {}
+assertf(M.PlayReadySound(316401) == true, "PlayReadySound reports it played")
+assertf(#SOUNDS_PLAYED == 1 and SOUNDS_PLAYED[1].path:find("7466002%.ogg"),
+        "…by FILE PATH, not by kit id (" .. tostring(SOUNDS_PLAYED[1] and SOUNDS_PLAYED[1].path) .. ")")
+assertf(M.PlayReadySound(999999) == false, "an unmapped kit plays nothing and says so")
+
+print("\n=== ALERT STORE (Phase 4) ===")
+assertf(AL.HasAny() == false, "no alerts assigned by default")
+assertf(M.HasAnyReadySound() == false, "no sounds assigned by default")
+
+AL.SetType(8092, "usable")
+assertf(AL.GetType(8092) == "usable", "alert type stored")
+assertf(AL.GetFX(8092) == 1, "fx defaulted on first assignment")
+assertf(AL.GetWindow(8092) == 0.30, "window defaulted on first assignment")
+assertf(AL.HasAny() == true, "HasAny sees the assignment")
+
+AL.SetFX(8092, 2)
+AL.SetType(8092, nil)
+assertf(AL.GetType(8092) == nil, "alert can be disabled")
+assertf(AL.GetFX(8092) == 2, "…and disabling KEEPS the fx choice for re-enabling")
+assertf(AL.HasAny() == false, "HasAny false again once disabled")
+
+AL.SetWindow(8092, 0.95); assertf(AL.GetWindow(8092) == 0.50, "window clamps to the 50% maximum")
+AL.SetWindow(8092, 0.01); assertf(AL.GetWindow(8092) == 0.10, "window clamps to the 10% minimum")
+
+M.SetReadySoundKit(8092, 316401)
+assertf(M.GetReadySoundKit(8092) == 316401, "ready sound stored")
+assertf(M.HasAnyReadySound() == true, "HasAnyReadySound sees it")
+
+-- Preferences must key off the LISTED id, not the learned-rank id the tile displays. The Mind Blast
+-- tile shows rank 3 (10947) but is listed as rank 1 (8092); keying on the former would silently
+-- orphan every alert and sound the moment the player trained the next rank.
+assertf(mb.spellID == 10947, "the tile displays the learned rank")
+assertf(mb:GetSettingsKey() == 8092, "…but its settings key is the listed rank-1 id")
+
+print("\n=== ALERT ENGINE (Phase 4) ===")
+local tickFn = AL._ticker:GetScript("OnUpdate")
+local function tick() tickFn(AL._ticker, 1) end
+
+local function itemFor(name)
+  for _, it in ipairs(ess.items) do if it.spellName == name then return it end end
+  for _, it in ipairs(util.items) do if it.spellName == name then return it end end
+  return nil
+end
+
+-- The ready transition: a real cooldown finishing must fire the assigned sound EXACTLY once.
+COOLDOWNS[10947] = { GetTime(), 30 }
+mb:RefreshCooldown()
+tick()
+SOUNDS_PLAYED = {}
+COOLDOWNS[10947] = nil
+mb:RefreshCooldown()
+tick()
+assertf(#SOUNDS_PLAYED == 1, "cooldown -> ready fires the assigned sound once (" .. #SOUNDS_PLAYED .. ")")
+tick(); tick()
+assertf(#SOUNDS_PLAYED == 1, "…and not again on later ticks")
+
+-- "available" is an edge-triggered flash, not a state the ticker maintains.
+AL.SetType(8092, "available")
+AL.ClearFX(mb)
+COOLDOWNS[10947] = { GetTime(), 30 }; mb:RefreshCooldown(); tick()
+COOLDOWNS[10947] = nil;         mb:RefreshCooldown(); tick()
+assertf(GLOWS[mb] ~= nil, "available alert flashes the icon on the ready transition")
+tick()
+assertf(GLOWS[mb] ~= nil, "…and the ticker does not clear the one-shot flash out from under it")
+AL.SetType(8092, nil); AL.ClearFX(mb)
+
+-- "refresh": glow only inside the last `window` fraction of the tracked aura's duration.
+AL.SetType(2944, "refresh")
+AL.SetWindow(2944, 0.30)
+local dp = itemFor("Devouring Plague")
+assertf(dp ~= nil, "Devouring Plague tile present for the refresh test")
+if dp then
+  BUFFS.player[1] = { name = "Devouring Plague", rank = "Rank 1", icon = "i", duration = 24, expiration = GetTime() + 20 }
+  nextFrame(); tick()
+  assertf(GLOWS[dp] == nil, "no refresh glow at 20s of 24s remaining")
+  BUFFS.player[1].expiration = GetTime() + 5
+  nextFrame(); tick()
+  assertf(GLOWS[dp] ~= nil, "refresh glow inside the last 30% (5s of 24s)")
+  local colour = GLOWS[dp] and GLOWS[dp].color
+  assertf(colour and colour[1] == 1.00 and colour[2] == 0.50, "…tinted pandemic-orange, not the usable yellow")
+  BUFFS.player[1] = nil
+  nextFrame(); tick()
+  assertf(GLOWS[dp] == nil, "refresh glow clears when the aura falls off")
+end
+AL.SetType(2944, nil)
+
+-- "usable": data-driven. Only an execute/reactive spell ever glows, and only when its condition holds.
+AL.SetType(8092, "usable")
+TARGET_HP = 10
+nextFrame(); tick()
+assertf(GLOWS[mb] == nil, "a spell with no execute/reactive entry never glows on 'usable'")
+AL.SetType(8092, nil); AL.ClearFX(mb)
+TARGET_HP = 100
+
+-- A one-shot flash must survive the very next tick, or the settings PREVIEW is invisible.
+AL.ClearFX(mb)
+AL.Preview(mb, 1)
+assertf(GLOWS[mb] ~= nil, "preview shows an effect immediately")
+tick()
+assertf(GLOWS[mb] ~= nil, "…and the ticker leaves it up for its hold")
+nextFrame(2)   -- past AVAILABLE_HOLD
+tick()
+assertf(GLOWS[mb] == nil, "…then it clears once the hold expires")
+
+-- The global escape hatch in the options tab.
+AL.SetType(8092, "available")
+M.ResetAlerts()
+assertf(AL.HasAny() == false and M.HasAnyReadySound() == false, "ResetAlerts clears both stores")
+assertf(GLOWS[mb] == nil, "…and takes down anything currently glowing")
+
+print("\n=== SPELL VISIBILITY (Phase 4) ===")
+-- Hiding a spell is the one place seeding a custom list is correct: the user just chose.
+M.ResetCustomList("essential", "PRIEST")
+assertf(M.IsSpellEnabled("essential", 8092) == true, "spell enabled by default")
+assertf(M.GetCustomList("essential", "PRIEST") == nil, "…and asking did NOT seed a list")
+
+assertf(M.SetSpellEnabled("essential", 8092, false) == true, "hiding a spell reports a change")
+assertf(M.IsSpellEnabled("essential", 8092) == false, "spell now hidden")
+local afterHide = M.GetActiveSpellList("essential", true)
+local stillThere = false
+for _, id in ipairs(afterHide) do if id == 8092 then stillThere = true end end
+assertf(not stillThere, "hidden spell drops out of the active list")
+assertf(M.SetSpellEnabled("essential", 8092, false) == false, "hiding twice is a no-op")
+M.SetSpellEnabled("essential", 8092, true)
+assertf(M.IsSpellEnabled("essential", 8092) == true, "and it can be shown again")
+M.ResetCustomList("essential", "PRIEST")
+
+print("\n=== ITEM MENU (Phase 4) ===")
+M.ShowItemMenu(mb)
+MENU_BUTTONS = {}
+menuFrameInit = _G.NE_CooldownViewerItemMenu and _G.NE_CooldownViewerItemMenu._init
+assertf(menuFrameInit ~= nil, "right-click menu initialises")
+if menuFrameInit then
+  menuFrameInit(nil, 1)
+  local labels = {}
+  for _, b in ipairs(MENU_BUTTONS[1] or {}) do labels[#labels + 1] = b.text end
+  assertf(labels[1] == "Mind Blast", "menu titled with the spell name")
+  local joined = table.concat(labels, "|")
+  assertf(joined:find("Alert") and joined:find("Ready Sound"), "menu offers Alert and Ready Sound")
+  assertf(joined:find("Hide from"), "menu offers hiding the spell")
+
+  -- The sound list lives at level 3, which is what the ClassicAPI dropdown is needed for.
+  MENU_BUTTONS = {}
+  menuFrameInit(nil, 3, "sound:Animals")
+  assertf(#(MENU_BUTTONS[3] or {}) == 10, "sound category renders its entries at level 3 ("
+          .. #(MENU_BUTTONS[3] or {}) .. ")")
+end
 
 print("\n=== UNIT-EVENT FILTER ===")
 local probe = CreateFrame("Frame")

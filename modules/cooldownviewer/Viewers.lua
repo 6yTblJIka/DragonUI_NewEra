@@ -81,6 +81,11 @@ local function createItem(parent, category)
   for k, v in pairs(NE_CooldownViewerItemMixin) do item[k] = v end
   item:SetScript("OnEnter", item.OnEnter)
   item:SetScript("OnLeave", item.OnLeave)
+  -- Right-click opens the per-spell alert/sound menu (ItemMenu.lua). The item is a plain Frame, not
+  -- a Button, so this is OnMouseUp rather than OnClick — EnableMouse above is what makes it fire.
+  item:SetScript("OnMouseUp", function(self, button)
+    if M.ItemOnMouseUp then M.ItemOnMouseUp(self, button) end
+  end)
   item:OnLoad()
 
   return item

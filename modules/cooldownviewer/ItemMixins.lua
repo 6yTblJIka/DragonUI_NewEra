@@ -136,6 +136,12 @@ function ItemMixin:SetSpell(spellID)
   local displayID = (not itemID) and highestKnownRankID(spellID, name) or spellID
   self.spellID = displayID
 
+  -- The id the spell was LISTED under, kept alongside the displayed one. `spellID` is whatever rank
+  -- the player currently knows, so it changes under the tile the moment they train the next rank —
+  -- fine for reading a cooldown, wrong as a settings key. Per-spell preferences (alerts, ready
+  -- sounds) hang off this stable id instead, or training a rank would silently orphan them.
+  self._baseSpellID = spellID
+
   local icon
   name, _, icon = GetSpellInfo(displayID)
   self.spellName = name
@@ -159,6 +165,7 @@ function ItemMixin:SetEquipSlot(slot, itemID, useSpellID)
   self._itemCDID    = nil
   self._rankCDIDs   = nil
   self.spellID      = useSpellID
+  self._baseSpellID = useSpellID   -- item use-spells have no ranks, so this is already stable
   self.spellName    = useSpellID and GetSpellInfo(useSpellID) or nil
   self._iconItemID  = itemID or nil
   local icon = (GetInventoryItemTexture and GetInventoryItemTexture("player", slot))
@@ -176,6 +183,7 @@ function ItemMixin:SetBagItem(itemID, useSpellID)
   self._itemCDID    = itemID
   self._rankCDIDs   = nil
   self.spellID      = useSpellID
+  self._baseSpellID = useSpellID
   self.spellName    = useSpellID and GetSpellInfo(useSpellID) or nil
   self._iconItemID  = itemID or nil
   local icon = M.ResolveItemIcon(itemID)
@@ -562,8 +570,7 @@ function ItemMixin:IsOnRealCooldown()
   return true
 end
 
--- True EXACTLY ONCE per real-cooldown -> ready transition. Phase 4 (Alerts) consumes this; kept
--- now so the arming in RefreshCooldown isn't dead code.
+-- True EXACTLY ONCE per real-cooldown -> ready transition. Alerts.lua's ticker consumes this.
 function ItemMixin:ConsumeReadyTransition()
   if self:IsOnRealCooldown() then
     self._wasOnRealCD = true
@@ -574,6 +581,29 @@ function ItemMixin:ConsumeReadyTransition()
     return true
   end
   return false
+end
+
+-- Fire everything assigned to this spell's "ability is ready" event: the visual alert flash and the
+-- ready sound. Called once per transition by the alert ticker, which owns the edge detection.
+--
+-- Self-gating: both halves no-op unless the player assigned something, so an unconfigured spell
+-- costs two table lookups and makes no sound.
+function ItemMixin:FireReadyAlerts()
+  local key = self:GetSettingsKey()
+  if not key then return end
+  if M.alerts and M.alerts.OnAvailable then
+    M.alerts.OnAvailable(self)
+  end
+  if M.GetReadySoundKit and M.PlayReadySound then
+    local kit = M.GetReadySoundKit(key)
+    if kit then M.PlayReadySound(kit) end
+  end
+end
+
+-- The id every per-spell PREFERENCE is stored under. See the note in SetSpell: never use
+-- `spellID` for this, it tracks the learned rank and moves.
+function ItemMixin:GetSettingsKey()
+  return self._baseSpellID or self.spellID
 end
 
 -- ── Tooltip ─────────────────────────────────────────────────────────────────────────────────────

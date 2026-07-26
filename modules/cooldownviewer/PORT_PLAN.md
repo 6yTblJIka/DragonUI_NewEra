@@ -3,9 +3,9 @@
 Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/` (Classic 1.15 /
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
-**Status:** Phases 0-3 implemented. Offline harnesses pass (`qa/offline/`). Phase 1 has been
-smoke-tested in-game; Phases 2 and 3 have not. Remaining: Phase 4 (alerts, sounds, and the
-standalone settings panel with its spell picker).
+**Status:** Phases 0-4a implemented. Offline harnesses pass (`qa/offline/`, 153 boot assertions).
+Phases 1-3 are confirmed working in-game. Remaining: Phase 4b, the standalone settings panel —
+re-scoped in §E6 and deferred as its own phase.
 
 ---
 
@@ -32,13 +32,13 @@ Size: **5,444 lines** across 12 files in `CooldownViewer/`, plus **2,139 lines**
 |---|---|---|
 | `CooldownViewer.lua` | 1,715 | mostly — `getOpt` retarget + `RegisterUnitEvent` |
 | `ItemMixins.lua` | 1,289 | mostly — mask + swipe strip |
-| `Alerts.lua` | 520 | Phase 4, not re-scoped |
+| `Alerts.lua` | 520 | partial — pandemic FX unportable (§E6) |
 | `ClassData.lua` | 392 | yes (vanilla base) |
-| `SoundAlertData.lua` | 349 | Phase 4 |
+| `SoundAlertData.lua` | 349 | partial — kit IDs inert, ships extracted OGGs (§E6) |
 | `EditModeRegister.lua` | 213 | **no — replace wholesale** |
 | `CooldownViewerEquip.lua` | 182 | yes |
 | `CdmSeedTBC.lua` | 131 | template for a new WotLK seed |
-| `AlertData.lua` | 100 | Phase 4 |
+| `AlertData.lua` | 100 | regenerated for WotLK, not copied (§E6) |
 | `RacialsTBC.lua` | 55 | template |
 | `Assets.lua` | 50 | partial (swipe art unused in v1) |
 | `CooldownViewer.xml` | 448 | needs `MaskTexture` + `GridLayoutFrame` surgery |
@@ -225,7 +225,8 @@ rank resolver (`highestKnownRankID`) picks the learned rank live.
 | **1** | Essential + Utility viewers. Mask and swipe stripped. One mover each. Settings in options tab. | Icons appear, swipe on cast, timer counts down, `/dnetest` PASS. The "does it feel right" checkpoint. |
 | **2** | `CdmSeedWotLK.lua` + `RacialsWotLK.lua` + Death Knight. | Every class shows a sensible default set at 80. |
 | **3** | ~~BuffIcon + BuffBar (aura-driven; more moving parts).~~ **DONE** — see §E2. | Buff bars track, auto-window catches procs, no empty-row churn. |
-| **4** | `Alerts.lua` + `SoundAlertData.lua`, then the `CooldownViewerSettings/` panel port if the options-tab version proves too cramped. | — |
+| **4a** | `Alerts.lua` + `SoundAlertData.lua` + `AlertData.lua`, plus a right-click assignment menu. **DONE** — see §E6. | An alert and a sound can be assigned to a spell and both fire. |
+| **4b** | The `CooldownViewerSettings/` panel (spell picker, drag reorder, presets). Re-scoped in §E6; deferred. | — |
 
 Phases 1 and 2 are the shippable unit. Phase 3 onward is optional polish.
 
@@ -370,14 +371,78 @@ Upstream carries the same guarded one-time reset, for the same reason — its bo
 stale snapshot was "hiding the new defaults". That block was dropped along with
 `EditModeRegister.lua`; this restores its intent.
 
+## E6. Phase 4a notes (alerts, sounds, and the assignment menu)
+
+§F2 asked for a re-scope before committing. Doing it changed the shape of the phase.
+
+**What did not port: the pandemic border FX** (~130 of `Alerts.lua`'s 520 lines). Upstream renders
+the `refresh` alert with a 1:1 port of retail's `CooldownPandemicFXTemplate` — a ring plus three
+cascading glows, every one clipped to the ring by a `MaskTexture`. Two independent blockers:
+
+- MaskTexture is not merely missing here. ClassicAPI defines `CreateMaskTexture` / `AddMaskTexture`
+  as `Private.Void` ("potentially impossible to implement", `WidgetAPI.lua:279/302/476`) and Cell's
+  polyfill returns an inert dummy. The calls would *succeed and clip nothing*, leaving three
+  full-quad glows scaling to 1.5x as square smears across the icon and its neighbours — worse than
+  no FX, and silently so.
+- `Animation:SetTarget` does not exist on 3.3.5a either (zero occurrences in the whole AddOns tree).
+  Animations act on the region owning the AnimationGroup, so one-group-drives-three-textures has no
+  equivalent.
+
+The atlases are absent too. So `refresh` renders through LibCustomGlow — already embedded, already
+in the TOC, and what §C7 nominated for the proc-glow substitution — tinted pandemic-orange to keep
+the one legible part of the retail look.
+
+**What the sound port actually required.** Upstream's fallback path, `PlaySound(kit)`, is *dead* on
+3.3.5a: this client's `PlaySound` takes a name string, and `PlaySoundKitID` takes a 3.3.5a kit index,
+not a six-digit TWW id. Nothing retail-numbered can make a sound. The only working route is playing
+audio by file path, so the 67 OGGs upstream extracted are shipped in `Sounds/cdm/` and played with
+`PlaySoundFile` (`.ogg` is fine here — DBM has shipped them on this client for years). The retail kit
+id survives purely as the stable assignment key. The whole `Short` category (26 entries) is dropped:
+upstream never had extractable audio for it, so here it could only ever be 26 menu entries that play
+nothing.
+
+**`AlertData.lua` is regenerated, not copied.** Upstream's tables are vanilla-only. WotLK adds Kill
+Shot (a genuine third execute ability) and Victory Rush, and *removes* Mongoose Bite's dodge gate in
+3.1.0 — listing it would flash the icon every time it came up, the exact behaviour the data gate
+exists to prevent. `tools/cdm-spellgen/gen_alertdata.py` resolves every rank from the client DBCs.
+Two impostor classes had to be filtered, both found by inspecting output rather than by assumption:
+
+- Rank text cannot discriminate. 3.3.5a gives Overpower rank 1 (7384) an **empty** rank string while
+  its ranks 2-4 are labelled — and those higher ranks appear in no skill line at all, so Overpower is
+  single-rank on this client. A "keep the ranked rows" filter drops the real ability and keeps four
+  NPC copies of Riposte.
+- `SkillLineAbility` class attribution fixes both. Applied *first*, the "drop unranked siblings" rule
+  then safely removes triggered sub-spells like Execute's damage component (20647).
+
+**The bug the harness caught: preferences were keyed on a moving id.** `ItemMixin.spellID` holds the
+*learned rank*, not the listed one — Mind Blast's tile reports 10947, not the curated 8092. Keying
+alerts and sounds on it would have silently orphaned every assignment the moment the player trained
+the next rank. `_baseSpellID` / `GetSettingsKey()` now carries the stable id, and the harness asserts
+the two differ. This is the same rank gotcha the cooldown path already documents, resurfacing in a
+new place.
+
+**An assignment surface was not optional.** Alerts and sounds are strictly opt-in per spell, so
+without one this phase would have shipped as dormant code. `ItemMenu.lua` is a right-click menu on
+the icon itself — where a player looks first, and it writes exactly the stored shape the Phase 4b
+panel will later read. It needs three menu levels (Ready Sound → category → entry); 3.3.5a's own
+`UIDropDownMenu` caps at two, so it drives ClassicAPI's `C_UIDropDownMenu`, which grows
+`C_UIDROPDOWNMENU_MAXLEVELS` on demand. The menu also carries "Hide from this viewer" — the first
+user-facing way to author a custom list, and now the *only* caller of `GetEditableList`, which is
+precisely the point of the §E5 fix: seeding is correct there because the user just chose something.
+
+**Phase 4b, re-scoped.** `CooldownViewerSettings/` is 2,139 lines across six files, and its retail
+dependencies are heavier than §F3 assumed: `MenuUtil` (absent), `GLOBAL_MOUSE_UP` (retail 9.x,
+absent — `Reorder.lua` is built entirely on it), `LargeSideTabButtonTemplate` (absent), clipboard
+export (no `CopyToClipboard` on 3.3.5a), and the CDM side-tab art. It is a phase in its own right,
+not a tail on this one. The per-spell menu covers the assignment need in the meantime.
+
 ## F. Open questions / unverified
 
 1. **`Cooldown:SetDrawEdge` on 3.3.5a** — ClassicAPI assumes it exists (C3). Confirm.
-2. **`Alerts.lua` (520 lines) and `SoundAlertData.lua` (349)** — skimmed only, not dependency-mapped.
-   Re-scope before committing to Phase 4.
-3. **`CooldownViewerSettings/Panel.lua`** — reimplements `LargeSideTabButtonTemplate`, which is absent
-   on Era too and was already synthesized there; likely portable, but its scroll-body and dropdown
-   dependencies are unmapped.
+2. ~~`Alerts.lua` and `SoundAlertData.lua` not dependency-mapped.~~ **Done — see §E6.**
+3. **`CooldownViewerSettings/`** — dependency-mapped in §E6; the blockers are named but no
+   substitution is designed yet. Drag-reorder in particular needs a replacement for
+   `GLOBAL_MOUSE_UP`.
 4. **Taint.** The viewers are pure display frames with no secure attributes, and `EnsureGroup`
    reparents them freely, so taint should be a non-issue — but Phase 1 must verify no combat-lockdown
    errors on `SetPoint` during a live restack.

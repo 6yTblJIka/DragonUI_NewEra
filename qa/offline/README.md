@@ -35,9 +35,10 @@ luajit qa/offline/test_gridlayout.lua
 ```
 
 Boot the whole Cooldown Manager stack against a stubbed 3.3.5a client and drive it through a
-realistic event sequence — load order, mover registration, spellbook rank resolution, populate,
-cooldown start, rank-safe cooldown read, GCD suppression, live settings, visibility, and the
-`RegisterUnitEvent` filter:
+realistic event sequence (153 assertions) — load order, mover registration, spellbook rank
+resolution, populate, cooldown start, rank-safe cooldown read, GCD suppression, live settings,
+visibility, the buff viewers, the learn gate, custom-list shadowing, the alert engine and ready
+sounds, spell hiding, the right-click menu, and the `RegisterUnitEvent` filter:
 
 ```bash
 luajit qa/offline/test_boot.lua
@@ -55,5 +56,14 @@ functions the module touches. Two stub details matter and are deliberate:
 - **`Show()` fires `OnShow` only on a hidden→shown transition**, matching the client. Getting this
   wrong is what first surfaced the `Rebuild → RefreshLayout → Show → OnShow → Rebuild` re-entrancy
   (now guarded in `Viewers.lua`).
+- **`GetTime()` is constant within a frame**, which is what `NE.aura`'s snapshot cache keys on. A
+  test that changes auras must call `nextFrame()` or it reads the previous scan.
+- **`PlaySoundFile` and LibCustomGlow record what they were asked to do** rather than no-opping, so
+  a test can distinguish "played the right file" from "silently played nothing" — the distinction
+  that matters here, since retail sound-kit IDs are inert on this client.
+
+The alert tests drive the ticker directly (`M.alerts._ticker`'s `OnUpdate`) rather than waiting on
+time, and assert on the recorded glow, so they cover the ready-transition edge, the refresh window
+boundary and the data gate on `usable`.
 
 Both harnesses exit non-zero on failure, so they can gate a commit hook.
