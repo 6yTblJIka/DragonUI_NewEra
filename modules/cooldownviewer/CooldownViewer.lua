@@ -247,8 +247,11 @@ function M.GetItemMeta(spellID, class)
   return nil
 end
 
--- Equipped-trinket / bag-consumable auto-discovery is CooldownViewerEquip.lua upstream (182 lines).
--- PHASE 1: not ported — returns empty so the Rebuild branch that consumes it is a clean no-op.
+-- Equipped-trinket auto-discovery and the per-token assignment registry live in Equip.lua, which
+-- loads after this file and defines M.GetEquipActiveItems / M.GetEquipAssignment /
+-- M.GetEquipItemsForCategory. This stub is the fallback for the case Equip.lua is absent (a partial
+-- install, or the offline harness loading a subset): an empty list makes the Rebuild branch that
+-- consumes it a clean no-op rather than an error.
 function M.GetEquipItemsForCategory(_)
   return {}
 end
@@ -698,6 +701,9 @@ function M.ResetTracking()
   if not cd then return end
   cd.customLists = {}
   cd.trackedAura = {}
+  -- Trinket placement is a tracking choice like any other, so "reset tracking" returns every
+  -- discovered item to the unassigned source pool.
+  cd.equipAssign = {}
   M.InvalidateCuratedCache()
   M.ForEachViewer(function(v) if v.Rebuild and v:IsShown() then v:Rebuild() end end)
 end

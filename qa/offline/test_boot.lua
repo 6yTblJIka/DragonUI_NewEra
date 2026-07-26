@@ -244,6 +244,21 @@ function GetInventoryItemCooldown() return 0, 0, 0 end
 function GetItemCooldown() return 0, 0, 0 end
 function GetItemIcon() return "Interface\\Icons\\Test" end
 
+-- Equipped inventory, keyed by slot. Trinkets are 13/14. Tests mutate this to simulate a swap, so
+-- discovery has to be re-read rather than cached at load.
+EQUIPPED = {}
+function GetInventoryItemID(unit, slot) return unit == "player" and EQUIPPED[slot] or nil end
+function GetInventoryItemTexture() return "Interface\\Icons\\TestItem" end
+-- itemID -> { useSpellName, useSpellID }. An item absent here has NO on-use effect, which is how a
+-- proc trinket behaves and is exactly the case discovery must skip.
+ITEM_SPELLS = {}
+function GetItemSpell(itemID)
+  local e = ITEM_SPELLS[itemID]
+  if not e then return nil end
+  return e[1], e[2]
+end
+INVSLOT_TRINKET1, INVSLOT_TRINKET2 = 13, 14
+
 -- A tiny fake spellbook: Mind Blast with three ranks, plus a few singles.
 SPELLS = {
   [8092]  = { "Mind Blast", "Rank 1" },
@@ -502,6 +517,7 @@ local FILES = {
   "modules/cooldownviewer/ClassData.lua",
   "modules/cooldownviewer/CdmSeedWotLK.lua",
   "modules/cooldownviewer/CooldownViewer.lua",
+  "modules/cooldownviewer/Equip.lua",
   "modules/cooldownviewer/ItemMixins.lua",
   "modules/cooldownviewer/Viewers.lua",
   "modules/cooldownviewer/AuraItemMixins.lua",
@@ -1166,7 +1182,11 @@ assertf(NE.tex.HasAtlas("icon_trackedbuffs"), "Auras tab glyph registered")
 print("\n=== CATEGORY GRIDS (Phase 4b-2) ===")
 local A = CDS.adapter
 assertf(A ~= nil, "adapter present")
-assertf(#A.MODE_ORDER.spells == 3 and #A.MODE_ORDER.auras == 3, "three categories per mode")
+-- Four on the Spells side since the equip port: Essential / Utility / Trinkets / Hidden. The
+-- Trinkets pool is spells-only — see Equip.lua on why the passive pool is cut.
+assertf(#A.MODE_ORDER.spells == 4 and #A.MODE_ORDER.auras == 3, "four spell categories, three aura")
+assertf(A.IsSourcePool("equipActive") and not A.IsSourcePool("essential"),
+        "only the equip pool is a source category")
 
 -- The arsenal is what turns Hidden from an undo list into a picker.
 assertf(M.ARSENAL_BY_CLASS ~= nil, "generated arsenal loaded")
@@ -1500,6 +1520,126 @@ do
   assertf(not S._dragState.active and g:GetAlpha() == 1, "closing the panel mid-drag clears the drag")
   MOUSE_DOWN.LeftButton = false
 
+  M.ResetTracking()
+end
+
+print("\n=== EQUIP: ON-USE TRINKETS (Phase 5a) ===")
+do
+  local S  = NE.cooldownviewersettings
+  local A2 = S.adapter
+
+  M.ResetTracking()
+  EQUIPPED[13], EQUIPPED[14] = nil, nil
+  ITEM_SPELLS = {}
+
+  -- Nothing equipped: no rows, and — the part that matters for the panel — no section either.
+  assertf(#M.GetEquipActiveItems() == 0, "no trinkets equipped -> empty discovery")
+  S.OpenTo("essential")
+  assertf(not (S._categories.equipActive and S._categories.equipActive._active),
+          "…and the Trinkets section is not shown at all")
+
+  -- One on-use trinket (45148 has a use spell), one proc trinket (37220 has none).
+  EQUIPPED[13], EQUIPPED[14] = 45148, 37220
+  ITEM_SPELLS[45148] = { "Speed", 60313 }
+
+  local pool = M.GetEquipActiveItems()
+  assertf(#pool == 1, "only the trinket WITH a use spell is discovered (" .. #pool .. " of 2)")
+  assertf(pool[1].token == "item:45148", "…keyed by a stable item token")
+  assertf(pool[1].spellID == 60313 and pool[1].label == "Speed", "…carrying the use spell and its name")
+
+  -- Unassigned is the default, and the source pool is where it lands.
+  assertf(M.GetEquipAssignment("item:45148") == nil, "a newly discovered trinket is unassigned")
+  local src = A2.GetItems("equipActive", "PRIEST")
+  assertf(#src == 1 and type(src[1]) == "table", "the source pool returns it as an ENTRY table")
+  assertf(#M.GetEquipItemsForCategory("essential") == 0, "…and no viewer claims it yet")
+
+  -- The panel renders it as a real tile with the item icon, not a spell tile.
+  S.RefreshLayout()
+  local eq = S._categories.equipActive
+  assertf(eq and eq._active and eq._count == 1, "the Trinkets section appears once something is in it")
+  local tile = eq.items[1]
+  assertf(tile.token == "item:45148", "the tile carries the token")
+  assertf(tile._iconItemID == 45148, "…and the item id, which is what drives the icon and tooltip")
+
+  -- Placing it. This is a token move, NOT a spellID move: routing it through Assign would write the
+  -- use-spell into the editable list, which survives unequipping the trinket and points at nothing.
+  assertf(A2.CanTarget("equipActive", "essential"), "trinkets may move into Essential")
+  assertf(not A2.CanTarget("essential", "equipActive"), "…but nothing moves back INTO the pool")
+  assertf(A2.Assign(60313, "equipActive", "essential", "PRIEST") == false,
+          "the spellID path refuses a source-pool row outright")
+
+  assertf(A2.AssignEquip("item:45148", "equipActive", "essential"), "AssignEquip places it")
+  assertf(M.GetEquipAssignment("item:45148") == "essential", "…persisting the assignment")
+  assertf(#M.GetEquipItemsForCategory("essential") == 1, "…and the live viewer now sources it")
+  assertf(#M.GetEquipItemsForCategory("utility") == 0, "…only that viewer")
+
+  -- The editable spell list must NOT have grown: the whole point of the token path.
+  local listed = false
+  for _, e in ipairs(M.GetEditableList("essential", "PRIEST") or {}) do
+    if e.spellID == 60313 then listed = true end
+  end
+  assertf(not listed, "placing a trinket adds nothing to the editable spell list")
+
+  -- It now renders under Essential instead, and the source pool is empty and gone again.
+  S.RefreshLayout()
+  assertf(not (S._categories.equipActive and S._categories.equipActive._active),
+          "an emptied source pool disappears again")
+  local essTiles = S._categories.essential
+  local found
+  for i = 1, essTiles._count do
+    if essTiles.items[i].token == "item:45148" then found = essTiles.items[i] end
+  end
+  assertf(found ~= nil, "the trinket now renders under Essential")
+
+  -- Hidden is STORED, and storable-ness is the whole reason it is distinct from unassigned.
+  assertf(A2.AssignEquip("item:45148", "essential", "hiddenSpell"), "it can be moved to Hidden")
+  assertf(M.GetEquipAssignment("item:45148") == "hidden", "…which stores 'hidden', not nil")
+  assertf(#A2.GetItems("equipActive", "PRIEST") == 0, "…so it does NOT fall back into the source pool")
+
+  -- Unequipping drops it from discovery entirely; the stored assignment survives for the re-equip.
+  EQUIPPED[13] = nil
+  assertf(#M.GetEquipActiveItems() == 0, "unequipping removes it from discovery")
+  EQUIPPED[13] = 45148
+  assertf(M.GetEquipAssignment("item:45148") == "hidden", "…and re-equipping restores the choice")
+
+  -- Dragging a trinket out of the pool goes through the token path too.
+  A2.AssignEquip("item:45148", nil, nil)     -- back to unassigned
+  S.RefreshLayout()
+  local poolTile = S._categories.equipActive.items[1]
+  local dest = S._categories.utility
+  MOUSE_DOWN.LeftButton, MOUSE_DOWN.RightButton = true, false
+  S.BeginDrag(poolTile)
+  assertf(S._dragState.active and S._dragState.token == "item:45148",
+          "a drag from the source pool carries the token, not a spellID")
+  MOUSE_FOCUS = dest.items[1]
+  dest.items[1]._center, dest.items[1]._w, dest.items[1]._h = { 100, 100 }, 38, 38
+  CURSOR.x, CURSOR.y = 140, 100
+  S._dragOnUpdate(S._dragFrame)
+  MOUSE_DOWN.LeftButton = false
+  S._dragOnUpdate(S._dragFrame)
+  MOUSE_FOCUS = nil
+  assertf(M.GetEquipAssignment("item:45148") == "utility", "dropping it on Utility assigns it there")
+
+  -- Tile pooling: a tile that held a trinket must not keep the token when it is handed a spell.
+  -- Find the tile that ACTUALLY holds it — the trinket is appended after the spells, so items[1] is
+  -- a spell tile and asserting on that would pass no matter what SetSpell does.
+  local reused
+  local utiCat = S._categories.utility
+  for i = 1, utiCat._count do
+    if utiCat.items[i].token == "item:45148" then reused = utiCat.items[i] end
+  end
+  assertf(reused ~= nil, "the trinket has a tile under Utility to reuse")
+  reused:SetSpell(8092)
+  assertf(reused.token == nil and reused._iconItemID == nil,
+          "reusing an equip tile for a spell drops the stale equip binding")
+
+  -- ResetTracking clears placement, so a reset really does return to the starter state.
+  M.ResetTracking()
+  assertf(M.GetEquipAssignment("item:45148") == nil, "ResetTracking returns trinkets to the pool")
+
+  EQUIPPED[13], EQUIPPED[14] = nil, nil
+  ITEM_SPELLS = {}
+  S.HidePanel()
   M.ResetTracking()
 end
 

@@ -46,12 +46,55 @@ local function applyLearnedTint(item)
   end
 end
 
+-- Tiles are POOLED and never destroyed, so a tile that held a trinket last rebuild can be handed a
+-- plain spell this one. Every equip field has to be dropped on that transition or the stale token
+-- keeps routing the row's right-click and drag through the equip path — which would silently
+-- reassign a trinket the player is no longer even looking at.
+local function clearEquipBinding(item)
+  item.token, item._iconItemID, item._equipHidden = nil, nil, nil
+end
+
+-- Shared by both tile shapes: an equip row shows the real ITEM icon (async — nil until the server
+-- caches it, re-pulled on GET_ITEM_INFO_RECEIVED), never a learn tint (you either have the trinket
+-- equipped or it is not in the list at all), and greys when the player has hidden it.
+--
+-- The label is the use-spell's name, which is what a 38px tile can actually carry.
+local function setEquipEntry(self, entry)
+  self.spellID      = entry.spellID
+  self.token        = entry.token
+  self._iconItemID  = entry.itemID
+  self._equipHidden = entry.hidden and true or false
+  self._unlearned   = false
+
+  self.spellName = entry.label or (entry.spellID and GetSpellInfo(entry.spellID)) or ""
+  local icon = (M.ResolveItemIcon and M.ResolveItemIcon(entry.itemID))
+    or (entry.spellID and select(3, GetSpellInfo(entry.spellID)))
+  self.Icon:SetTexture(icon or QUESTION_MARK)
+  self.Icon:SetDesaturated(self._equipHidden)
+  self.Icon:SetVertexColor(1, 1, 1)
+  if self.Label then self.Label:SetText(self.spellName) end
+  if CDS._applyAlertBadge then CDS._applyAlertBadge(self) end
+end
+
 local function itemOnEnter(self)
-  if not self.spellID then return end
+  if not (self.spellID or self.token) then return end
   GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-  if M.TooltipSetSpell then M.TooltipSetSpell(GameTooltip, self.spellID) end
+  -- An equip row shows the ITEM tooltip: for a trinket that is the on-use text plus the equip
+  -- bonuses, which is what the player is choosing between. The use-spell tooltip alone would drop
+  -- the half of the trinket that is not the cooldown.
+  if self._iconItemID and GameTooltip.SetItemByID then
+    GameTooltip:SetItemByID(self._iconItemID)
+  elseif self._iconItemID and GameTooltip.SetHyperlink then
+    GameTooltip:SetHyperlink("item:" .. self._iconItemID)
+  elseif M.TooltipSetSpell then
+    M.TooltipSetSpell(GameTooltip, self.spellID)
+  end
   if self._unlearned then
     GameTooltip:AddLine("Not yet learned", 1, 0.3, 0.3)
+  end
+  if self.token then
+    GameTooltip:AddLine(self._equipHidden and "Hidden from the viewer"
+      or "Drag onto Essential or Utility to track it.", 0.6, 0.8, 1)
   end
   -- What the corner badge means for this tile. Provided by SettingsMenu (4b-3).
   if CDS._itemTooltipExtra then CDS._itemTooltipExtra(self, GameTooltip) end
@@ -91,6 +134,7 @@ local function makeIconItem(parent)
   hl:SetBlendMode("ADD")
 
   function b:SetSpell(spellID)
+    clearEquipBinding(self)
     self.spellID = spellID
     local name, _, icon = GetSpellInfo(spellID)
     self.spellName = name
@@ -98,6 +142,8 @@ local function makeIconItem(parent)
     applyLearnedTint(self)
     if CDS._applyAlertBadge then CDS._applyAlertBadge(self) end
   end
+
+  b.SetEquipEntry = setEquipEntry
 
   wireItem(b)
   return b
@@ -127,6 +173,7 @@ local function makeBarItem(parent)
   hl:SetBlendMode("ADD")
 
   function b:SetSpell(spellID)
+    clearEquipBinding(self)
     self.spellID = spellID
     local name, _, icon = GetSpellInfo(spellID)
     self.spellName = name
@@ -135,6 +182,8 @@ local function makeBarItem(parent)
     applyLearnedTint(self)
     if CDS._applyAlertBadge then CDS._applyAlertBadge(self) end
   end
+
+  b.SetEquipEntry = setEquipEntry
 
   wireItem(b)
   return b
@@ -233,8 +282,9 @@ local function makeCategory(parent, kind)
     if CDS.RestackCategories then CDS.RestackCategories() end
   end
 
-  -- Fill from a list of spellIDs. Tiles are pooled: the pool only ever grows, and surplus tiles are
-  -- hidden by Relayout rather than destroyed.
+  -- Fill from a MIXED list: a number is a spellID, a table is an equip entry (see SettingsAdapter's
+  -- equipEntry). Tiles are pooled — the pool only ever grows, and surplus tiles are hidden by
+  -- Relayout rather than destroyed.
   function c:SetItems(ids)
     self._count = #ids
     for i, id in ipairs(ids) do
@@ -244,7 +294,7 @@ local function makeCategory(parent, kind)
         self.items[i] = item
       end
       item._catID = self._catID
-      item:SetSpell(id)
+      if type(id) == "table" then item:SetEquipEntry(id) else item:SetSpell(id) end
     end
     self.header.Count:SetText(tostring(#ids))
     self:Relayout()
@@ -295,15 +345,22 @@ function CDS.RefreshLayout()
   for _, c in pairs(categories) do c._active = false; c:Hide() end
 
   for _, catID in ipairs(Adapter.MODE_ORDER[mode] or {}) do
-    local c = categories[catID]
-    if not c then
-      c = makeCategory(panel.content, Adapter.Kind(catID))
-      c._catID = catID
-      c.header.Text:SetText(Adapter.Label(catID))
-      categories[catID] = c
+    local items = Adapter.GetItems(catID, class)
+    -- An EMPTY source pool is skipped outright rather than shown as "(empty)". A player with no
+    -- on-use trinket equipped should not be told about a Trinkets section at all — it would read as
+    -- a broken feature rather than an absent input. Stored categories still show when empty,
+    -- because there an empty list is a state the player put them in.
+    if not (Adapter.IsSourcePool and Adapter.IsSourcePool(catID) and #items == 0) then
+      local c = categories[catID]
+      if not c then
+        c = makeCategory(panel.content, Adapter.Kind(catID))
+        c._catID = catID
+        c.header.Text:SetText(Adapter.Label(catID))
+        categories[catID] = c
+      end
+      c._active = true
+      c:SetItems(items)
     end
-    c._active = true
-    c:SetItems(Adapter.GetItems(catID, class))
   end
 
   CDS.RestackCategories()

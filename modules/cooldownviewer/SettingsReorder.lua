@@ -13,10 +13,15 @@
 -- release is detected there instead, by watching IsMouseButtonDown transitions. Same two outcomes,
 -- no event needed. `GetMouseFoci` → `GetMouseFocus` was already fallback-handled upstream.
 --
--- WHAT IS NOT PORTED: the equip-token branches (CooldownViewerEquip is not in yet — every path
--- here is spellID-keyed) and CDS.SetDragActive, which illuminates the "+" drop slots that this
--- panel does not have. Dropping on empty space therefore does nothing; drop onto a TILE, or onto a
--- category's HEADER, which resolves to that category on the walk up.
+-- EQUIP ROWS. A tile backed by a discovered trinket carries a `token`, and its move goes through
+-- Adapter.AssignEquip rather than the spellID-keyed list rewrite. Reorder does not apply to one:
+-- an equip row has no stored position — the viewer appends discovered items after the spells — so
+-- dropping it inside its own category is a no-op rather than a silent nothing-happened-but-we-said-
+-- it-did. Dragging a spell ONTO an equip row still reorders relative to the spells around it.
+--
+-- WHAT IS NOT PORTED: CDS.SetDragActive, which illuminates the "+" drop slots that this panel does
+-- not have. Dropping on empty space therefore does nothing; drop onto a TILE, or onto a category's
+-- HEADER, which resolves to that category on the walk up.
 
 local NE = DragonUI_NewEra
 local M  = NE.cooldownviewer
@@ -54,7 +59,7 @@ local function resolveUnderCursor()
   local f = mouseFocus()
   local item, cat
   while f do
-    if f.spellID and f._catID then item = f; cat = f._catID; break end
+    if (f.spellID or f.token) and f._catID then item = f; cat = f._catID; break end
     if f._catID then cat = f._catID; break end
     f = f.GetParent and f:GetParent()
   end
@@ -143,7 +148,7 @@ local function clear()
       state.source.Icon:SetDesaturated(state.source._unlearned and true or false)
     end
   end
-  state.source, state.spellID, state.fromCat = nil, nil, nil
+  state.source, state.spellID, state.token, state.fromCat = nil, nil, nil, nil
   state.targetCat, state.targetItem = nil, nil
   if dragFrame then
     dragFrame:SetScript("OnUpdate", nil)
@@ -169,17 +174,24 @@ local function endChange()
 
   cue(CUE_DROP)
 
-  local spellID, fromCat, offset = state.spellID, state.fromCat, state.offset
-  local sameRow = targetItem and targetItem.spellID == spellID
+  local spellID, token, fromCat, offset = state.spellID, state.token, state.fromCat, state.offset
+  local sameRow = targetItem and targetItem == state.source
   if targetCat and not sameRow then
-    if targetCat == fromCat then
-      if targetItem and targetItem.spellID then
+    if token then
+      -- An equip row: one assignment write, and only across a category boundary. It has no stored
+      -- position, so a same-category drop has nothing to reorder.
+      if targetCat ~= fromCat then Adapter.AssignEquip(token, fromCat, targetCat) end
+    elseif targetCat == fromCat then
+      -- Reorder relative to the target — but only against a row that HAS a stored position. An
+      -- equip row is not in the list, so dropping a spell on one would find no index and no-op.
+      if targetItem and targetItem.spellID and not targetItem.token then
         Adapter.ReorderTo(fromCat, spellID, targetItem.spellID, offset, class)
       end
     else
       -- Carry the drop POSITION across the category boundary: dropping onto a tile inserts at that
       -- caret, dropping onto a header appends.
-      Adapter.AssignAt(spellID, fromCat, targetCat, targetItem and targetItem.spellID or nil, offset, class)
+      local dropID = targetItem and not targetItem.token and targetItem.spellID or nil
+      Adapter.AssignAt(spellID, fromCat, targetCat, dropID, offset, class)
     end
   end
 
@@ -213,11 +225,13 @@ CDS._dragState    = state
 
 function CDS.BeginDrag(item)
   if state.active then return end
-  if not (item and item.spellID and item._catID) then return end
+  -- A trinket row has a token and may have no resolvable use-spell yet, so the token alone is
+  -- enough to drag. A spell row needs its id.
+  if not (item and (item.spellID or item.token) and item._catID) then return end
   ensureFrames()
 
-  state.active, state.spellID, state.fromCat, state.source, state.offset =
-    true, item.spellID, item._catID, item, 0
+  state.active, state.spellID, state.token, state.fromCat, state.source, state.offset =
+    true, item.spellID, item.token, item._catID, item, 0
   state.targetCat, state.targetItem = item._catID, item
   -- OnDragStart only fires while the button is held, so the drag begins mid-press by definition.
   state.leftWasDown = true

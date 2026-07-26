@@ -124,6 +124,8 @@ function BaseViewerMixin:OnLoad()
   -- Item cooldown ticks + async icon resolve.
   self:RegisterEvent("BAG_UPDATE_COOLDOWN")
   self:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+  -- Trinket swaps change the discovered equip set, so they need a full Rebuild, not a refresh.
+  self:RegisterUnitEvent("UNIT_INVENTORY_CHANGED", "player")
 end
 
 function BaseViewerMixin:OnShow()
@@ -153,7 +155,8 @@ function BaseViewerMixin:HandleEvent(event, ...)
   if event == "PLAYER_ENTERING_WORLD"
      or event == "SPELLS_CHANGED"
      or event == NE.EV_LEARNED_SPELL
-     or event == "PLAYER_LEVEL_UP" then
+     or event == "PLAYER_LEVEL_UP"
+     or event == "UNIT_INVENTORY_CHANGED" then
     self:Rebuild()
   elseif event == "SPELL_UPDATE_COOLDOWN"
      or event == "BAG_UPDATE_COOLDOWN"

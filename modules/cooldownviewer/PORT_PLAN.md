@@ -3,10 +3,12 @@
 Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/` (Classic 1.15 /
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
-**Status:** Phases 0-4a plus 4b-1 through 4b-4 implemented. Offline harnesses pass (`qa/offline/`,
-260 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working in-game; 4b-2 and
-4b-3 are confirmed in-game (three faults found and fixed, §G.7.1/§G.7.2). Remaining: 4b-5 presets,
-plus the trinket/equip port — all scoped in §G.
+**Status:** Phases 0-4a, 4b-1 through 4b-4, and 5a (on-use trinkets) implemented. Offline harnesses
+pass (`qa/offline/`, 293 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working
+in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and fixed, §G.7.1/§G.7.2).
+Remaining: 4b-5 presets (optional), the consumable half of the equip port (§G.9 — blocked on a
+generator, not on effort), and the third settings tab (§G.10 — scoped, awaiting an owner call on
+whether the DragonUI options section shrinks).
 
 ---
 
@@ -587,9 +589,12 @@ which `NE.scrollbar.Reskin` already knows how to restyle.
   (StaticPopup + base64 + a hand-rolled parser, no `loadstring`), but it is a convenience on top of
   a picker that does not exist yet. Defer to last.
 
-**Resolved — the Equip categories.** Owner's call: port `CooldownViewerEquip.lua` (182 lines) so
-on-use trinkets and potions are trackable, and add the two source-pool categories back. Not yet done;
-it is separable from the picker and does not gate 4b-3.
+**Resolved — the Equip categories. DONE for trinkets (§G.9).** Owner's call was to port
+`CooldownViewerEquip.lua` so on-use trinkets and potions are trackable. Trinkets shipped as Phase 5a
+with one source pool ("Trinkets"), not two: the passive pool is cut because on this client it can
+only ever contain on-use trinkets already listed in the active pool. Consumables are deferred on a
+**data** blocker, not effort — `Item.dbc` carries neither item names nor item→spell links, so a
+bucketed potion list cannot be generated from client data. §G.9 scopes the route through.
 
 ## G.5. Phasing
 
@@ -600,6 +605,9 @@ it is separable from the picker and does not gate 4b-3.
 | **4b-3** | `core/Menu.lua` + the item context menu. **DONE** | **The payoff.** Spell visibility, alerts and sounds are all settable, and Phase 4a stops being dormant |
 | **4b-4** | Drag reorder. **DONE** | Items can be dragged between categories and reordered |
 | **4b-5** | Presets / import / export | Optional |
+| **5a** | On-use trinket discovery + the Trinkets source pool (§G.9). **DONE** | An equipped on-use trinket appears in `/cdm`, drags into Essential, and shows on the bar |
+| **5b** | Consumables, via a generated Spell.dbc effect table (§G.9) | Blocked on the generator pass, not on effort |
+| **5c** | Third `/cdm` tab hosting the viewer settings (§G.10) | Scoped; needs an owner call on the options section |
 
 4b-3 is the milestone that matters; 4b-4 and 4b-5 are polish. Rough size: ~1,400 lines adapted from
 the source plus ~200 of new shim, against 2,139 in the original — the difference being the Group
@@ -780,8 +788,8 @@ removing the dragged entry: pulling it out shifts everything below it up by one,
 beforehand overshoots by one whenever the item moved DOWN the list. Both drop-direction assertions
 fail against the pre-removal version, which is the point of having two.
 
-**Cuts.** The equip-token branches (no `CooldownViewerEquip` yet — every path here is spellID-keyed)
-and `CDS.SetDragActive`, which illuminates the "+" drop slots this panel does not have. The
+**Cuts.** `CDS.SetDragActive`, which illuminates the "+" drop slots this panel does not have. (The
+equip-token branches were also cut here and have since been restored by §G.9.) The
 consequence is that dropping on empty space does nothing; drop onto a TILE, or onto a category's
 HEADER, which resolves to that category on the walk up. Enabling mouse on the category container
 would make empty-area drops work too, but it risks the scroll frame's wheel handling for an
@@ -797,3 +805,142 @@ and ESC both call `Hide()` directly. Without it a closed window would strand the
 (parented to UIParent) and leave the source tile dimmed and locked. The offline harness now fires
 `OnHide` on a shown→hidden transition, matching the client — it previously fired only `OnShow`, so
 this whole class of teardown bug was invisible to it.
+
+## G.9. Phase 5a notes (on-use trinkets)
+
+Port of `CooldownViewerEquip.lua` (182 lines) â†’ `modules/cooldownviewer/Equip.lua`. This is the
+owner-approved item of Â§G.4, and it lands the *trinket* half in full.
+
+**The model is opt-in, and that is the point.** An item cooldown has no viewer by default. It is
+discovered, keyed by a stable token (`item:<itemID>`), and parked in a source pool â€” the "Trinkets"
+section in `/cdm` â€” showing nowhere on screen until the player drags it into Essential or Utility.
+Assignment is persisted per token in `cooldownviewer.equipAssign`, so re-equipping the same trinket
+restores the choice. `"hidden"` has to be a *stored* value rather than a synonym for unassigned:
+`GetEquipAssignment` falls back to the class default only when a token is genuinely absent, so an
+explicit hide must occupy the key.
+
+**Trinkets cost nothing in curation.** `GetInventoryItemID` gives the item in each trinket slot and
+`GetItemSpell` gives its on-use spell; both come from the client at runtime. Nothing is typed.
+
+### The token is the move key, not the spellID
+
+`Adapter.GetItems` now returns a **mixed** list â€” numbers are spellIDs, tables are equip entries.
+That is upstream's shape and it keeps the change small: a tile handed a table calls `SetEquipEntry`,
+a tile handed a number calls `SetSpell`, and the menu and drag paths branch on `item.token`. The
+alternative (promoting every spell to an entry table) would have touched the menu, the drag path,
+the filter and the tests for no gain.
+
+Routing an equip row through the spellID path is not a near-miss, it is a data corruption: it would
+write the trinket's use-spell into the editable spell list, where it *survives unequipping the
+trinket* and points at nothing. `Adapter.Assign` therefore refuses outright when either side of the
+move is a source pool, and there is an assertion on that refusal.
+
+**Pooled tiles must drop the binding.** A tile that held a trinket can be handed a plain spell on
+the next rebuild. `clearEquipBinding` runs at the top of both `SetSpell` bodies; without it the
+stale token keeps routing that row's right-click and drag through the equip path.
+
+**An empty source pool is not rendered at all** â€” not as "(empty)". A player with no on-use trinket
+should not be told about a Trinkets section; that would read as a broken feature rather than an
+absent input. Stored categories still show when empty, because there an empty list is a state the
+player chose.
+
+**Reorder does not apply to an equip row.** It has no stored position â€” the viewer appends
+discovered items after the spells â€” so dropping one inside its own category is a deliberate no-op.
+Dragging a *spell* onto an equip row is also a no-op for the same reason: there is no index to
+reorder against. Cross-category drops work normally.
+
+**Events.** `UNIT_INVENTORY_CHANGED` triggers a full `Rebuild` on the viewers (a swap changes the
+discovered set, not just a cooldown) and a `RefreshLayout` on the panel.
+
+### Cut: the passive pool, for a data reason
+
+Upstream's `GetEquipPassiveItems` walks the same two trinket slots and surfaces each one's **use**
+spell as a trackable aura. So a proc trinket â€” the only kind for which a passive aura row would mean
+anything â€” returns nil from `GetItemSpell` and never appears, and the pool can only ever contain
+on-use trinkets that are already rows in the active pool. Upstream flags this itself ("Era has no
+on-equip-aura data layer", `TODO(hydrate)`). Shipping it would add a second source section whose
+contents duplicate the first. `equipPassive` and its half of the legal-target matrix go with it.
+
+### Deferred: consumables (potions, healthstones, runes)
+
+Upstream's `M.POTION_CATEGORIES` is a hand-curated table of ~45 **vanilla** item ids bucketed into
+Healing / Mana / Healthstone / Soulstone / Combat, best-rank-first, so the runtime can show one slot
+per bucket for the best item held. WotLK adds a tier to every one of those buckets. Typing those ids
+in violates the prime directive, and **the 3.3.5a client cannot supply them**: `Item.dbc` carries no
+item names and no itemâ†’spell link â€” both live server-side in `item_template` â€” so there is nothing
+to generate a bucketed list *from*.
+
+The way through is to classify at runtime by the use-spell's **effect**, which *is* client data:
+
+1. Extend `tools/cdm-spellgen/dbc.py` to keep `Effect[0..2]` and `EffectBasePoints[0..2]` alongside
+   the name/rank columns it already parses. It reads every field as `uint32` today, so this is a
+   wider tuple, not a new parser. Locate the columns the way `name_col` is located â€” empirically,
+   against anchors (spell 2050 Lesser Heal has `SPELL_EFFECT_HEAL`).
+2. Emit `M.CONSUMABLE_SPELLS = { [spellID] = { bucket = "health"|"mana", magnitude = <basepoints> } }`
+   for every spell whose effect is Heal (10) or Energize (30, mana).
+3. At runtime, scan the bags once per `BAG_UPDATE` (dirty-flagged), map each item through
+   `GetItemSpell` â†’ spellID â†’ that table, and keep the highest-magnitude item per bucket.
+
+That covers health/mana potions, healthstones and runes across every tier automatically, with no id
+typed anywhere. Combat potions (Free Action, Mighty Rage) apply auras rather than heals and are not
+reachable this way; they would need either a third bucket keyed on aura-applying effects or a
+deliberate cut. `M.DEFAULT_EQUIP_BY_CLASS` is already in place and empty so that the Warlock
+Healthstone/Soulstone defaults become a data change rather than a code change.
+
+## G.10. Scope: a third `/cdm` tab for the viewer settings
+
+**Where the settings live today.** Every non-per-spell setting is in the DragonUI options panel,
+registered by `modules/cooldownviewer/Register.lua` as section `cooldownviewer`. That is a different
+window, reached by a different path, and it is the one thing about the current `/cdm` that does not
+match retail â€” retail's Cooldown Manager settings sit *in* the Cooldown Manager.
+
+**What the tab would host.** Everything currently in the options section: per-viewer enable, scale,
+opacity, orientation/stride, visibility mode (always / in combat), show-timer and show-tooltip
+toggles, plus the "Show Unlearned" checkbox that is presently in the cog menu. Frame *position*
+stays with the movers (`/dui edit`) â€” Â§B1's decision, unchanged.
+
+**The pieces already exist, which is why this is small.**
+
+- `NE.tabs.MakeSideTab` builds the tab; `f.tabButtons` is already a list and `SetDisplayMode`
+  already iterates it. Adding a third entry is three lines plus an anchor.
+- The panel body is a `ScrollFrame` over `f.content`. `CDS.RefreshLayout` fills it from
+  `Adapter.MODE_ORDER[mode]`, which has no entry for a settings mode.
+- The side-tab glyph is the one asset gap: `SettingsAssets.lua` registers two
+  (`icon_cooldownmanager`, `icon_trackedbuffs`) from the reference sheet, which carries a third.
+
+**The one real decision â€” and the reason this is scoped rather than done.** The current body is
+owned end-to-end by the category grids: `RefreshLayout` rebuilds `f.content` from the adapter on
+every call, and there is nowhere for a page of controls that is *not* a category list to live. Two
+ways out:
+
+- **(a) A second content frame.** Build a `f.settingsContent` sibling, and have `SetDisplayMode`
+  show one and hide the other via `f.scroll:SetScrollChild`. `RefreshLayout` early-returns for the
+  settings mode and never touches it. Cheap, and no risk to the grids.
+- **(b) A "category" whose renderer is a control list.** More uniform, but it puts widget layout
+  behind an adapter whose whole contract is "return a list of spellIDs", and every consumer
+  (`ApplyItemFilter`, the drag path, `RestackCategories`) would need a "not a grid" branch.
+
+**(a) is the recommendation** â€” the settings page has nothing in common with a grid of tiles, and
+pretending otherwise buys uniformity at the cost of a branch in four files.
+
+Two smaller consequences fall out of (a) and should be handled with it: the **search box and cog**
+are meaningless on a settings page and should hide with the grids, and the panel is 399x609 at 1.3
+scale, so a long control list needs the scroll frame it already has rather than a taller window.
+
+**Duplication is the thing to decide, not the layout.** The options section cannot simply be moved:
+DragonUI's options panel is where a user goes to turn the module *off*, and it is read-only to us
+(CONTRACTS Â§0 â€” we register a section, we do not own the window). So either
+
+- the tab and the options section both read and write the same `NE.Config().cooldownviewer` store
+  and stay in sync by construction (each rebuilds on show; no shared widget state), or
+- the options section shrinks to an enable toggle plus an "Open Cooldown Manager" button, and the
+  tab becomes the single home for the rest.
+
+The second is retail's shape and the better end state. It is also the one that changes behaviour a
+user may already rely on, so it is an owner's call rather than an implementation detail.
+
+**Estimated size:** ~40 lines of panel wiring, ~180 lines for the control page (reusing the same
+slider/checkbox helpers `Register.lua` already builds for the options section), plus harness
+coverage that the tab switches modes and that a write from the tab is visible to the options
+section. No new platform gap â€” nothing here needs an API 3.3.5a lacks.
+

@@ -73,6 +73,9 @@ local function build()
   -- an equip row's icon is nil until the server delivers it.
   f:RegisterEvent("SPELL_UPDATE_ICON")
   f:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+  -- A trinket swap changes the discovery set, so the Trinkets section has to re-source. Registered
+  -- unfiltered: RegisterUnitEvent is our own compat shim and this frame has no other unit events.
+  f:RegisterEvent("UNIT_INVENTORY_CHANGED")
   f:SetScript("OnEvent", function(self)
     if self:IsShown() then CDS.RefreshLayout() end
   end)

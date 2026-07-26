@@ -14,8 +14,9 @@
 --   auras : Tracked Buffs / Tracked Bars / Hidden — the unified tracked-aura pool, keyed by each
 --                                 entry's assignment ("icon" / "bar" / "hidden").
 --
--- The two Equip source pools (on-use trinkets, trinket procs) are NOT here yet — CooldownViewerEquip
--- is still stubbed. They slot in as two more `source` categories when it lands; PORT_PLAN §G.4.
+-- ONE Equip source pool, not upstream's two. `equipActive` holds the discovered on-use trinkets
+-- that the player has not placed in a viewer yet. The passive pool is cut for a data reason, not a
+-- scheduling one — see Equip.lua's header.
 --
 -- "Hidden" is a CATALOG, not a bucket. For spells it is computed — arsenal minus what is placed —
 -- rather than stored, so a newly-generated ability appears in it automatically. For auras it IS a
@@ -38,19 +39,36 @@ end
 
 -- kind: "icon" (grid of tiles) | "bar" (stacked rows).
 -- list: the editable-list key for spell categories. aura: the assignment value for aura categories.
+-- source: a discovery POOL rather than a stored list — it holds whatever is unassigned right now,
+-- and is skipped at render when empty so a player with no on-use trinket never sees the section.
 local CATS = {
   essential   = { mode = "spells", kind = "icon", label = GS("COOLDOWN_VIEWER_SETTINGS_CATEGORY_ESSENTIAL", "Essential"), list = "essential" },
   utility     = { mode = "spells", kind = "icon", label = GS("COOLDOWN_VIEWER_SETTINGS_CATEGORY_UTILITY",   "Utility"),   list = "utility"   },
+  equipActive = { mode = "spells", kind = "icon", label = GS("COOLDOWN_VIEWER_SETTINGS_CATEGORY_EQUIP_ACTIVE", "Trinkets"), source = true },
   hiddenSpell = { mode = "spells", kind = "icon", label = GS("COOLDOWN_VIEWER_SETTINGS_CATEGORY_NOT_IN_BAR", "Hidden")                       },
   trackedBuff = { mode = "auras",  kind = "icon", label = GS("COOLDOWN_VIEWER_SETTINGS_CATEGORY_TRACKED_BUFF", "Tracked Buffs"), aura = "icon"   },
   trackedBar  = { mode = "auras",  kind = "bar",  label = GS("COOLDOWN_VIEWER_SETTINGS_CATEGORY_TRACKED_BARS", "Tracked Bars"),  aura = "bar"    },
   hiddenAura  = { mode = "auras",  kind = "icon", label = GS("COOLDOWN_VIEWER_SETTINGS_CATEGORY_NOT_IN_BAR",   "Hidden"),        aura = "hidden" },
 }
 
+-- The source pool sits between the display categories and Hidden, which is upstream's order and
+-- retail's: "here is what you own but haven't placed", above "here is everything else".
 Adapter.MODE_ORDER = {
-  spells = { "essential", "utility", "hiddenSpell" },
+  spells = { "essential", "utility", "equipActive", "hiddenSpell" },
   auras  = { "trackedBuff", "trackedBar", "hiddenAura" },
 }
+
+-- Settings category id → the assignment value M.SetEquipAssignment stores. The values are VIEWER
+-- category names, so M.GetEquipItemsForCategory can compare them directly against a live viewer's
+-- `category` field with no second mapping at runtime. Source cats map to nil, "back to the pool".
+local ASSIGN_FOR_CAT = {
+  essential = "essential", utility = "utility", hiddenSpell = "hidden",
+  equipActive = nil,
+}
+
+function Adapter.IsSourcePool(catID)
+  return (CATS[catID] and CATS[catID].source) and true or false
+end
 
 function Adapter.Meta(catID)  return CATS[catID] end
 function Adapter.Label(catID) return CATS[catID] and CATS[catID].label or catID end
@@ -119,6 +137,49 @@ local function hiddenSpells(class)
   return out
 end
 
+-- ── Equip rows ──────────────────────────────────────────────────────────────────────────────────
+-- An equip row is an ENTRY TABLE, not a bare spellID, and GetItems returns a mixed list. That is
+-- upstream's shape and it is the reason the whole thing stays cheap: a tile that gets a table calls
+-- SetEquipEntry, a tile that gets a number calls SetSpell, and every other consumer keys off
+-- `item.token or item.spellID`. The alternative — promoting every spell to an entry table — would
+-- have touched the menu, the drag path, the filter and the tests for no gain.
+--
+-- The token, not the spellID, is the move key. It is stable across an unequip/re-equip, and it
+-- survives the case a use-spell cannot be resolved yet.
+local function equipEntry(e)
+  return { itemID = e.itemID, spellID = e.spellID, token = e.token,
+           label = e.label, source = e.source, kind = e.kind,
+           hidden = (M.GetEquipAssignment(e.token) == "hidden") }
+end
+
+-- Is this spell already a STORED entry in an editable list — i.e. the player added the on-use item
+-- through the picker as a spell? If so the discovery layer skips it, or a trinket whose use-spell is
+-- also a curated entry would render twice: once as the stored spell, once as the discovered item.
+local function editableHasSpell(spellID, class)
+  if not spellID then return false end
+  for _, key in ipairs({ "essential", "utility" }) do
+    local list = M.GetCustomList(key, class)
+    if list then
+      for _, e in ipairs(list) do
+        if e.spellID == spellID and e.enabled then return true end
+      end
+    end
+  end
+  return false
+end
+
+-- Discovered equip items whose assignment is exactly `assignVal` (nil = the unassigned source pool).
+local function equipItemsAssigned(assignVal, class)
+  local out = {}
+  if not M.GetEquipActiveItems then return out end
+  for _, e in ipairs(M.GetEquipActiveItems()) do
+    if M.GetEquipAssignment(e.token) == assignVal and not editableHasSpell(e.spellID, class) then
+      out[#out + 1] = equipEntry(e)
+    end
+  end
+  return out
+end
+
 -- ── Items for a category ────────────────────────────────────────────────────────────────────────
 
 function Adapter.GetItems(catID, class)
@@ -127,6 +188,11 @@ function Adapter.GetItems(catID, class)
   if not (meta and class) then return {} end
 
   local out = {}
+
+  -- The source pool IS the unassigned discovery set — nothing stored, nothing curated.
+  if meta.source then
+    return equipItemsAssigned(nil, class)
+  end
 
   if meta.aura then
     for _, e in ipairs(M.GetTrackedAuraList(class) or {}) do
@@ -142,21 +208,28 @@ function Adapter.GetItems(catID, class)
     for _, id in ipairs(M.GetActiveSpellList(meta.list, showAll and true or false)) do
       out[#out + 1] = id
     end
+    -- Trinkets placed in this viewer, listed after the spells — the same order the live viewer
+    -- builds them in, so the panel reads as a preview of the bar rather than a separate list.
+    for _, e in ipairs(equipItemsAssigned(ASSIGN_FOR_CAT[catID], class)) do out[#out + 1] = e end
     return out
   end
 
   -- Hidden: always the full catalog, learn state ignored. A fresh character seeing an empty picker
   -- reads as broken, and the tile tints unlearned entries instead.
   for _, id in ipairs(hiddenSpells(class)) do out[#out + 1] = id end
+  for _, e in ipairs(equipItemsAssigned("hidden", class)) do out[#out + 1] = e end
   return out
 end
 
 -- ── Moves ───────────────────────────────────────────────────────────────────────────────────────
 -- Mirrors retail's legalOriginalSourceCategoryToTargetCategory. Same category is always legal
 -- (that is a reorder, not a move).
+-- Nothing lists equipActive as a target: a trinket leaves the pool by being placed, and comes back
+-- only by being unequipped. That asymmetry is retail's, and it is why the pool has no inbound edges.
 local LEGAL = {
   essential   = { utility = true, hiddenSpell = true },
   utility     = { essential = true, hiddenSpell = true },
+  equipActive = { essential = true, utility = true },      -- retail EquipSlotEssential → {Essential, Utility}
   hiddenSpell = { essential = true, utility = true },
   trackedBuff = { trackedBar = true, hiddenAura = true },
   trackedBar  = { trackedBuff = true, hiddenAura = true },
@@ -188,6 +261,11 @@ function Adapter.Assign(spellID, fromCat, toCat, class)
   local fromMeta, toMeta = CATS[fromCat], CATS[toCat]
   if not (fromMeta and toMeta) then return false end
 
+  -- A source-pool row is an equip item and MUST route through AssignEquip. Falling through here
+  -- would write its use-spell into the editable list as if the player had picked a spell, which
+  -- looks right until you unequip the trinket and the entry stays behind, pointing at nothing.
+  if fromMeta.source or toMeta.source then return false end
+
   -- Auras are one pool keyed by assignment, so a move is a single write.
   if toMeta.aura then
     M.SetAuraAssignment(class, spellID, toMeta.aura)
@@ -201,11 +279,24 @@ function Adapter.Assign(spellID, fromCat, toCat, class)
   return true
 end
 
+-- Reassign an EQUIP item by TOKEN. Separate from Assign because an equip row's identity is its
+-- token: the spellID may be shared with a curated entry, and for a source-pool row there is no
+-- stored list to write into at all — the whole state is the one assignment value.
+function Adapter.AssignEquip(token, fromCat, toCat)
+  if not (token and toCat and CATS[toCat]) then return false end
+  if fromCat and not Adapter.CanTarget(fromCat, toCat) then return false end
+  M.SetEquipAssignment(token, ASSIGN_FOR_CAT[toCat])
+  if M.RefreshActiveViewer then M.RefreshActiveViewer() end
+  return true
+end
+
 -- Remove a user-added entry outright. Only meaningful for auras: a spell's "removal" is just
--- returning it to the Hidden catalog, which Assign already does.
+-- returning it to the Hidden catalog, which Assign already does, and an equip row is discovered
+-- rather than stored — it leaves by being unequipped.
 function Adapter.IsRemovable(spellID, catID, class)
   local meta = CATS[catID]
   if not (meta and meta.aura and spellID) then return false end
+  if meta.source then return false end
   if not class then local _; _, class = UnitClass("player") end
   for _, e in ipairs(M.GetTrackedAuraList(class) or {}) do
     if e.spellID == spellID then return true end

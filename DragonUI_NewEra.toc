@@ -230,6 +230,9 @@ modules\cooldownviewer\ClassData.lua
 # Must load AFTER ClassData (it appends to those tables) and BEFORE the viewer core reads them.
 modules\cooldownviewer\CdmSeedWotLK.lua
 modules\cooldownviewer\CooldownViewer.lua
+# On-use trinket discovery + the per-token assignment registry. Overrides CooldownViewer.lua's
+# GetEquipItemsForCategory fallback, so it must load after it and before Viewers reads it.
+modules\cooldownviewer\Equip.lua
 modules\cooldownviewer\ItemMixins.lua
 modules\cooldownviewer\Viewers.lua
 # Phase 3, the aura-driven viewers. AuraItemMixins needs M.CropIcon/M.TooltipSetSpell from

@@ -84,10 +84,17 @@ end
 
 -- ── The item menu ───────────────────────────────────────────────────────────────────────────────
 
+-- An equip row moves by TOKEN, a spell or aura by spellID. The two stores are genuinely different —
+-- a spell move rewrites an editable list, a trinket move writes one assignment value — so the
+-- branch is here rather than hidden inside Assign, where a caller could not tell which happened.
 local function addMoveEntries(root, item, class)
   for _, target in ipairs(Adapter.GetValidTargets(item._catID)) do
     root:CreateButton("Move to " .. Adapter.Label(target), function()
-      Adapter.Assign(item.spellID, item._catID, target, class)
+      if item.token then
+        Adapter.AssignEquip(item.token, item._catID, target)
+      else
+        Adapter.Assign(item.spellID, item._catID, target, class)
+      end
       CDS.RefreshLayout()
     end)
   end
@@ -211,8 +218,9 @@ function CDS.ItemMenuGenerator(item, class)
     addMoveEntries(root, item, class)
 
     -- Remove only appears when the entry is genuinely deletable — a stored user aura. A spell is
-    -- never removed, only returned to the Hidden catalog, which "Move to Hidden" already does.
-    if Adapter.IsRemovable and Adapter.IsRemovable(item.spellID, item._catID, class) then
+    -- never removed, only returned to the Hidden catalog, which "Move to Hidden" already does; a
+    -- trinket is discovered, so it leaves by being unequipped and never by a menu.
+    if not item.token and Adapter.IsRemovable and Adapter.IsRemovable(item.spellID, item._catID, class) then
       root:CreateDivider()
       root:CreateButton("|cffff5555Remove|r", function()
         Adapter.Remove(item.spellID, item._catID, class)
@@ -228,7 +236,7 @@ end
 -- Called by SettingsCategories for every tile click.
 function CDS.OnItemClick(item, button)
   if button ~= "RightButton" then return end
-  if not (item and item._catID and item.spellID) then return end
+  if not (item and item._catID and (item.spellID or item.token)) then return end
   if not (NE.menu and NE.menu.OpenContext) then return end
   local _, class = UnitClass("player")
   NE.menu.OpenContext(CDS.ItemMenuGenerator(item, class))
