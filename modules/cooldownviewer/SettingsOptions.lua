@@ -199,6 +199,19 @@ local function build(parent)
     buildViewerSection(c, spec)
   end
 
+  -- ── Buffed spells. Retail tints the swipe gold while a spell's own buff is on you; that setter is
+  -- WoD+, so ours lights the tile's frame instead (PORT_PLAN §H.2 8c).
+  c:AddSection("Buffed spells", false)
+  c:AddText("While a spell's own buff is active on you, its icon in Essential or Utility shows the "
+    .. "buff's remaining time instead of the cooldown. This marks those icons so the two are not "
+    .. "mistaken for each other.")
+  c:AddCheckbox({
+    label = "Glow while buffed",
+    desc  = "Light the icon's frame gold while the spell's buff (or, for a shaman, its totem) is up.",
+    get   = function() return M.IsBuffGlowEnabled() end,
+    set   = function(v) M.SetBuffGlowEnabled(v) end,
+  })
+
   -- ── Buff tracking. The buff viewers have no curated list: any player buff shorter than the
   -- auto-track window shows automatically, which is what makes trinket, potion and proc buffs work
   -- without enumerating them in advance.

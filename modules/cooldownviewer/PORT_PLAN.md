@@ -5,15 +5,16 @@ TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global conventio
 
 **Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets), 6 (loose
 ends) and 7 (the tracked-aura catalog) implemented — the whole of both phasing tables except the
-deliberate cuts. Offline harnesses pass (`qa/offline/`, 483 boot assertions). Phases 1-3 and the 4b-1
+deliberate cuts. Offline harnesses pass (`qa/offline/`, 517 boot assertions). Phases 1-3 and the 4b-1
 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
 fixed, §G.7.1/§G.7.2).
 
-**Open work is §8b-8e and §H.3** (planned, not built): the cooldown swipe (8b), the buffed-spell glow
-(8c), bar theming (8d) and the pandemic ring (8e); then **Phase 9**, the audit against Wowhead's current
-guide, whose only real gap is that same glow (§H.3). **8a is DONE** (§H.2.1): six atlases the viewers
-had been setting by name were registered nowhere, so every one rendered as an invisible texture — which
-is why the icons looked like bare spellbook icons.
+**Open work is §8b, 8d, 8e and §H.3** (planned, not built): the cooldown swipe (8b), bar theming (8d)
+and the pandemic ring (8e); then **Phase 9**, the audit against Wowhead's current guide, which after 8c
+has no remaining feature gap (§H.3). **8a is DONE** (§H.2.1): six atlases the viewers had been setting
+by name were registered nowhere, so every one rendered as an invisible texture — which is why the icons
+looked like bare spellbook icons. **8c is DONE** (§H.2.2): a spell whose own buff is up now lights its
+frame gold, closing the last headline feature the retail guide lists and we did not have.
 Phase 7 is **DONE** (§H.1, notes in §H.1.1): the Tracked Buffs tab now has two real sources — a
 generated per-class catalog gated on the player's actual talents, and a registry of auras the scan has
 met — which also makes target-DoT tracking reachable for the first time.
@@ -1613,7 +1614,7 @@ It is not free: the rig builds five frames and a rotating animation per cooldown
 `SetAlpha` on the Cooldown frame. Wire it behind a setting, default on, measured on a full Essential
 row before it is trusted — §C3's caution was about the wrong thing but it was not baseless.
 
-### 8c. The glow on a buffed spell
+### 8c. The glow on a buffed spell — **DONE**
 
 The guide's second headline feature: "Tracks combat buffs and puts glow effects around buffed spells."
 
@@ -1625,6 +1626,51 @@ describes on Keg Smash. What is missing is the visual distinction: retail tints 
 LibCustomGlow is already a dependency and already drives the alert FX (§E6), so a glow while a linked
 aura is active is a small, contained addition — and it substitutes for the colour we cannot set rather
 than approximating it.
+
+### H.2.2 What 8c shipped, and why it is not LibCustomGlow
+
+The plan above nominated LibCustomGlow because it was already there. Building it made the objection
+obvious: **every glow that library renders moves.** Marching ants, a pulsing button glow, orbiting
+sparkles — and on this addon motion already has a meaning. It is the alert vocabulary (§E6): something
+needs attention *now*. "Your buff is up" is a steady state, and retail draws it as one, with a flat
+gold swipe tint. Reusing the alert language for it would make every buffed spell read as an alarm, and
+would collide visually with a real alert on the same tile.
+
+What shipped instead: **a second copy of the tile's own frame art, in the same rect, drawn additively
+in gold.** The border lights up; the transparent interior contributes nothing under `ADD`. Three
+things fall out of using the same geometry rather than a border drawn *around* the tile:
+
+- it aligns to the pixel at both tile sizes for free, with no per-size constant to get wrong — the
+  opposite rule from everything else in 8a, which anchors to the *icon* rect (see §H.2.1). The harness
+  asserts against `IconOverlay`'s anchors rather than restating numbers, so the two rules stay
+  distinguishable;
+- it costs one texture per tile and no OnUpdate at all, where the lib's renderers each drive one;
+- it cannot collide with an alert glow, because it is not the same mechanism.
+
+Deliberately **not** aura-only: the totem branch (`RefreshCooldown` 1b) glows too. A live totem is not
+an aura, but it is the same state — this tile's effect is currently up — and that branch already
+carries `COLOR_AURA` for exactly that reason. Glowing one and not the other would leave a shaman's
+totem tiles as the only active tiles on screen that look inactive.
+
+Two clears matter more than the light itself, and both are pinned by a named assertion:
+
+1. **The cooldown path.** The aura branch returns early, so a glow left un-cleared there would stay up
+   for the rest of the session. One `SetBuffGlow(false)` sits below both precedence branches rather
+   than being repeated in each of the paths under it.
+2. **The pooling loop** (`Viewers.lua`). `RefreshCooldown` returns early with no `spellID`, so nothing
+   on the refresh path can clear a recycled tile — the next spell to reuse it would inherit a gold
+   frame from the spell that used to live there.
+
+Settings: "Glow while buffed" under a new **Buffed spells** section, default ON (it is a retail
+feature, not an addition of ours). `SetBuffGlowEnabled` refreshes rather than waiting to be noticed —
+turning it off has to reach a tile glowing *right now*, and for a buff already up the next natural
+refresh can be a minute away.
+
+Harness: 17 assertions, and two stub fidelity fixes — `SetBlendMode` and `SetDrawLayer` were both
+discarding their argument, and both carry meaning here (without `ADD` the copy *darkens* the tile
+instead of lighting it; without the sublevel it draws under the art it is meant to light). Five guards
+confirmed load-bearing by removal, each failing on its own named assertion: the aura-branch light, the
+cooldown-path clear, the pooling clear, the setting's live refresh, and the additive blend.
 
 ### 8d. Bar theming
 
@@ -1670,8 +1716,10 @@ Every feature and setting the guide describes, with a verdict. Consumables exclu
 
 **Missing, and worth doing:**
 
-1. **The glow around a buffed spell** → 8c. The only headline feature from the guide's own list that we
-   do not have in some form.
+1. ~~**The glow around a buffed spell** → 8c. The only headline feature from the guide's own list that
+   we do not have in some form.~~ **DONE** (§H.2.2). Nothing on the guide's feature list is now
+   missing; what remains under Phase 9 is the "Not Displayed" naming preference and the two deliberate
+   cuts below.
 2. **Target DoT timers.** The guide lists "timers for ... damage-over-time effects". The code exists
    (`ScanTargetTrackedAuras`) and has never been reachable — fixed as a side effect of Phase 7, which
    is worth stating plainly: one empty table was disabling two features.
@@ -1699,6 +1747,11 @@ tracking. 7a-7c are contained (one registry, one adapter branch, one empty state
 **Then 8a**, which is the largest look-and-feel change per line of code in the whole port — three
 registrations turning bare icons into Cooldown Manager tiles. **Then 8c** (the glow, small and it
 closes the last guide feature), **8b** (the swipe, needs measuring), **8d/8e** (screenshot work).
+
+8a and 8c are done. What is left in §H.2 is **8b**, and it is the one item here that could make things
+worse rather than better: ClassicAPI's radial swipe builds five frames and a rotating animation per
+cooldown and hijacks `SetAlpha`. It wants measuring on a full Essential row before it is trusted, and
+it wants doing after an in-game look at 8c rather than stacked on top of it unverified.
 
 **Phase 9** is bookkeeping absorbed by the two above, apart from the "Not Displayed" rename, which is
 a one-line owner preference.

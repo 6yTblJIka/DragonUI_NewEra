@@ -377,6 +377,22 @@ function M.SetShowUnlearned(v)
   M.RefreshActiveViewer()
 end
 
+-- Light the tile's frame gold while the spell's own buff is on the player (§H.2 8c, the substitute
+-- for retail's gold swipe). ON by default: it is a retail feature, not an addition of ours.
+function M.IsBuffGlowEnabled()
+  local cd = store(false)
+  if cd and cd.buffGlow ~= nil then return cd.buffGlow and true or false end
+  return true
+end
+
+function M.SetBuffGlowEnabled(v)
+  local cd = store(true)
+  if cd then cd.buffGlow = v and true or false end
+  -- Turning it OFF has to reach tiles that are glowing right now, and RefreshCooldown only revisits
+  -- the glow when something about the spell changes — which for a buff already up may be a minute away.
+  M.RefreshActiveViewer()
+end
+
 -- Is this spell currently enabled in the category? Reads the custom list WITHOUT seeding one.
 function M.IsSpellEnabled(category, spellID)
   if not (category and spellID) then return true end

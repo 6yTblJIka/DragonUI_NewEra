@@ -64,7 +64,11 @@ local function newRegion(kind)
   function r:GetWidth() return self._w or 0 end
   function r:GetHeight() return self._h or 0 end
   function r:GetSize() return self._w or 0, self._h or 0 end
-  function r:SetDrawLayer() end
+  -- Recorded from Phase 8c: the buffed-spell glow is a second copy of the frame art in the same rect,
+  -- so BOTH of these carry meaning — without ADD it darkens the tile instead of lighting it, and
+  -- without the sublevel it draws under the art it is supposed to light.
+  function r:SetDrawLayer(layer, sub) self._layer, self._sublevel = layer, sub end
+  function r:GetDrawLayer() return self._layer, self._sublevel end
   function r:SetTexCoordModifiesRect() end
   function r:SetRotation() end
   function r:SetJustifyH() end
@@ -72,7 +76,8 @@ local function newRegion(kind)
   -- Word-wrapped description text measures itself to decide its row height. A fixed answer is enough
   -- for the layout maths to be exercised; the real client returns the wrapped height.
   function r:GetStringHeight() return 12 end
-  function r:SetBlendMode() end
+  function r:SetBlendMode(m) self._blend = m end
+  function r:GetBlendMode() return self._blend or "BLEND" end
   function r:SetParent(p) self._parent = p end
   return r
 end
@@ -1501,6 +1506,82 @@ do
   assertf(e.width % 2 == 0 and e.height % 11 == 0,
     "the flipbook strip divides into 2x11 whole frames")
   assertf(e.width / 2 == e.height / 11, "…and those frames are square (47x47)")
+end
+
+print("\n=== BUFFED-SPELL GLOW (Phase 8c) ===")
+do
+  local glow = mb.BuffGlow
+  assertf(glow ~= nil, "the tile has a buff-glow region")
+
+  -- It is the FRAME's rect, not the icon's — which is the whole reason this substitution works
+  -- without a mask: it is the same art in the same place, so it cannot misalign at either tile size.
+  -- Everything else drawn over an icon this phase deliberately does the opposite (see 8a above), so
+  -- asserting against the overlay rather than restating numbers keeps the two rules distinguishable.
+  local gp, _, _, gx, gy = glow:GetPoint(1)
+  local op, _, _, ox, oy = mb.IconOverlay:GetPoint(1)
+  assertf(gp == op and gx == ox and gy == oy, "…sharing the frame art's rect, not the icon's")
+
+  assertf(glow:GetTexture() ~= nil, "…with the frame atlas resolved onto it")
+  assertf(glow:GetBlendMode() == "ADD", "…drawn additively, so it LIGHTS the frame")
+  local layer, sub = glow:GetDrawLayer()
+  local _, osub = mb.IconOverlay:GetDrawLayer()
+  assertf(layer == "OVERLAY" and (sub or 0) > (osub or 0),
+    "…above the frame art it lights, not under it")
+  local r, g, b = glow:GetVertexColor()
+  assertf(r > g and g > b, "…in gold, the colour retail gives the swipe it cannot set here")
+
+  -- The state machine. A tile with no aura of its own must not glow, or the signal means nothing.
+  BUFFS.player[1] = nil
+  COOLDOWNS[10947] = nil
+  nextFrame(); mb:RefreshCooldown()
+  assertf(glow:IsShown() == false, "no glow with the spell's buff absent")
+
+  BUFFS.player[1] = { name = "Mind Blast", rank = "Rank 3", icon = "i",
+                      duration = 15, expiration = GetTime() + 10 }
+  nextFrame(); mb:RefreshCooldown()
+  assertf(glow:IsShown() == true, "glows while the spell's own buff is on the player")
+
+  -- The cooldown path must take it off again. This is the one that would break silently: the aura
+  -- branch returns early, so a glow left un-cleared there stays up for the rest of the session.
+  BUFFS.player[1] = nil
+  COOLDOWNS[10947] = { GetTime(), 30 }
+  nextFrame(); mb:RefreshCooldown()
+  assertf(glow:IsShown() == false, "…and comes off when the buff falls and the cooldown starts")
+  COOLDOWNS[10947] = nil; mb:RefreshCooldown()
+
+  -- The opt-out has to reach a tile that is glowing RIGHT NOW. RefreshCooldown only revisits the
+  -- glow when something about the spell changes, which for a buff already up can be a minute away —
+  -- so the setter refreshes rather than waiting to be noticed.
+  BUFFS.player[1] = { name = "Mind Blast", rank = "Rank 3", icon = "i",
+                      duration = 15, expiration = GetTime() + 10 }
+  nextFrame(); mb:RefreshCooldown()
+  assertf(glow:IsShown() == true, "glowing again for the opt-out check")
+  M.SetBuffGlowEnabled(false)
+  assertf(M.IsBuffGlowEnabled() == false, "the setting stores off")
+  assertf(glow:IsShown() == false, "…and clears a glow that was already up")
+  nextFrame(); mb:RefreshCooldown()
+  assertf(glow:IsShown() == false, "…and refreshing does not bring it back")
+  M.SetBuffGlowEnabled(true)
+  nextFrame(); mb:RefreshCooldown()
+  assertf(glow:IsShown() == true, "…and turning it back on restores it")
+  assertf(M.IsBuffGlowEnabled() == true, "on is the default state")
+
+  -- A recycled tile keeps its texture regions. RefreshCooldown returns early without a spellID, so
+  -- nothing on the refresh path can clear a glow left behind by the spell that used to live here —
+  -- the pooling loop has to do it, or the next spell to reuse the tile inherits a gold frame.
+  local ev = M.viewers.essential
+  local last = ev.items[#ev.items]
+  last:SetBuffGlow(true)
+  assertf(last.BuffGlow:IsShown() == true, "a spare tile is glowing before the list shrinks")
+  M.SetSpellEnabled("essential", 8092, false)
+  ev:Rebuild()
+  assertf(last.BuffGlow:IsShown() == false, "…and recycling the tile out of the layout clears it")
+  M.SetSpellEnabled("essential", 8092, true)
+  M.ResetCustomList("essential", "PRIEST")
+  ev:Rebuild()
+
+  BUFFS.player[1] = nil
+  nextFrame()
 end
 
 print("\n=== CATEGORY GRIDS (Phase 4b-2) ===")

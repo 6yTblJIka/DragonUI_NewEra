@@ -55,6 +55,16 @@ local function createItem(parent, category)
   item.IconOverlay:SetPoint("TOPLEFT", item, "TOPLEFT", -ox, oy)
   item.IconOverlay:SetPoint("BOTTOMRIGHT", item, "BOTTOMRIGHT", ox, -oy)
 
+  -- DOWNPORT (§H.2 8c): retail marks a spell whose own buff is up by tinting its swipe gold, and
+  -- SetSwipeColor is WoD+. The substitute is a second copy of the frame art in the SAME rect, drawn
+  -- additively in gold: the border lights up, the transparent interior contributes nothing, and it
+  -- lines up exactly because it is the same geometry. See ItemMixin:SetBuffGlow.
+  item.BuffGlow = item:CreateTexture(nil, "OVERLAY")
+  item.BuffGlow:SetPoint("TOPLEFT", item, "TOPLEFT", -ox, oy)
+  item.BuffGlow:SetPoint("BOTTOMRIGHT", item, "BOTTOMRIGHT", ox, -oy)
+  item.BuffGlow:SetDrawLayer("OVERLAY", 2)   -- above IconOverlay, which sits at the default sublevel
+  item.BuffGlow:Hide()
+
   -- DOWNPORT: the three regions below are `setAllPoints` on the TILE upstream, and are anchored to the
   -- ICON's rect here. Retail can use the tile because its swipe, shadow and flash are rounded art cut
   -- to the masked icon; ours are the engine's plain sweep, a flat shade and a square-ish sprite, so at
@@ -383,6 +393,9 @@ function BaseViewerMixin:RebuildInner()
     it._itemCDID    = nil
     it._iconItemID  = nil
     it.ignoreInLayout = true
+    -- The glow is driven from RefreshCooldown, which returns early without a spellID — so a recycled
+    -- tile would keep the previous spell's gold border the next time it is shown.
+    if it.SetBuffGlow then it:SetBuffGlow(false) end
     it:Hide()
   end
 

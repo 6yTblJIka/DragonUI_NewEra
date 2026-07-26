@@ -38,6 +38,16 @@ local function applyItemAtlases(item)
   if item.IconOverlay then set(item.IconOverlay, "UI-HUD-CoolDownManager-IconOverlay", false) end
   if item.OutOfRange  then set(item.OutOfRange,  "UI-CooldownManager-OORshadow",       false) end
 
+  -- The buff glow is the frame art again, additive and gold (see ItemMixin:SetBuffGlow). Without the
+  -- atlas it would be an invisible texture, which is exactly the failure mode §H.2 8a existed to fix,
+  -- so it degrades to nothing rather than to a white block.
+  if item.BuffGlow then
+    set(item.BuffGlow, "UI-HUD-CoolDownManager-IconOverlay", false)
+    item.BuffGlow:SetBlendMode("ADD")
+    item.BuffGlow:SetVertexColor(M.COLOR_BUFF_GLOW[1], M.COLOR_BUFF_GLOW[2], M.COLOR_BUFF_GLOW[3],
+                                 M.COLOR_BUFF_GLOW[4])
+  end
+
   -- The ready-flash sprite. The retail GCD flipbook atlas is not registered on this client, so give
   -- the texture the fallback highlight the stepper pulses instead (see the Ready flash section).
   local flash = item.CooldownFlash
@@ -244,6 +254,32 @@ local function setSwipeColor(cooldown, c)
   if cooldown and cooldown.SetSwipeColor then
     cooldown:SetSwipeColor(c[1], c[2], c[3], c[4])
   end
+end
+
+-- ── The buffed-spell glow (§H.2 8c) ─────────────────────────────────────────────────────────────
+-- The guide's second headline feature: "puts glow effects around buffed spells". Retail expresses it
+-- as COLOR_AURA on the swipe — which, per the note above, this client cannot set. Rather than
+-- approximate the tint we substitute the signal: a gold copy of the tile's own frame art, drawn
+-- additively over it, so the border lights up while the spell's buff is on the player.
+--
+-- Not LibCustomGlow, which §H.2 nominated. Every glow that library renders MOVES (marching ants,
+-- pulsing button glow, orbiting sparkles), and motion on this addon already means something else —
+-- it is the alert vocabulary (Alerts.lua), fired when something needs attention NOW. A buff being up
+-- is a steady state, and retail draws it as one. Using the same geometry as the frame also means it
+-- lines up to the pixel at both tile sizes, which a border drawn around the tile would not.
+--
+-- Tunable: additive gold over dark metal reads warm rather than bright, which is the intent — a lit
+-- frame, not an alarm. Raise the alpha if it needs to carry further.
+M.COLOR_BUFF_GLOW = { 1, 0.82, 0.30, 0.9 }
+
+function ItemMixin:SetBuffGlow(on)
+  local glow = self.BuffGlow
+  if not glow then return end
+  on = on and true or false
+  if on and not M.IsBuffGlowEnabled() then on = false end
+  if self._buffGlow == on then return end
+  self._buffGlow = on
+  if on then glow:Show() else glow:Hide() end
 end
 
 -- GCD detection. Retail reads C_Spell.GetSpellCooldown(spellID).isOnGCD; we replicate the manual
@@ -579,6 +615,7 @@ function ItemMixin:RefreshCooldown()
     if self.Cooldown.SetDrawSwipe then self.Cooldown:SetDrawSwipe(true) end
     CooldownFrame_Set(self.Cooldown, auraStart, aura.duration, 1)
     if self.Icon then self.Icon:SetDesaturated(false) end
+    self:SetBuffGlow(true)
     self:ClearFlash()
     if self.hideWhenInactive then self:Show() end
     return
@@ -592,10 +629,18 @@ function ItemMixin:RefreshCooldown()
     if self.Cooldown.SetDrawSwipe then self.Cooldown:SetDrawSwipe(true) end
     CooldownFrame_Set(self.Cooldown, totemStart, totemDur, 1)
     if self.Icon then self.Icon:SetDesaturated(false) end
+    -- A live totem is not an aura, but it is the same STATE — this tile's effect is currently up —
+    -- and the branch above already gives it COLOR_AURA for that reason. Glowing one and not the
+    -- other would make a shaman's totem tiles the only active tiles on screen that look inactive.
+    self:SetBuffGlow(true)
     self:ClearFlash()
     if self.hideWhenInactive then self:Show() end
     return
   end
+
+  -- Every path from here down is "no effect of ours is up", so the glow comes off exactly once,
+  -- rather than being cleared in each of the branches below.
+  self:SetBuffGlow(false)
 
   -- 2. Spell cooldown.
   local start, duration, enabled = self:ReadCooldown()
