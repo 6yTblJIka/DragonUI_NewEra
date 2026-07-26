@@ -32,6 +32,12 @@ local SB = NE.spellbook
 
 SB.SPELLID = SB.SPELLID or {}
 
+-- Lowercased set of every ability name currently in the player's spellbook, for the class in
+-- SB.SPELLID. Built from GetSpellBookItemName ALONE — deliberately no spell-ID resolution — so it
+-- still works when GetSpellLink parsing (compat/SpellBook.lua) fails for an entry. This is the
+-- authoritative "do I actually know this?" test; see SB.IsSpellNameKnown.
+SB.KNOWN_NAMES = SB.KNOWN_NAMES or {}
+
 local BOOKTYPE = BOOKTYPE_SPELL or "spell"
 
 -- "Rank 5" / "Rango 5" / "Rang 5" — every locale puts the digits last, so pull the trailing number
@@ -49,6 +55,7 @@ function SB.BuildRankTable()
 
   local byName = {}
   local ranks  = {}   -- name -> { [id] = rankNumber } for the sort below
+  local known  = {}
 
   for tab = 1, (GetNumSpellTabs() or 0) do
     local _, _, offset, numSlots = GetSpellTabInfo(tab)
@@ -56,6 +63,9 @@ function SB.BuildRankTable()
       for slot = offset + 1, offset + numSlots do
         local name, rankText = GetSpellBookItemName(slot, BOOKTYPE)
         if name then
+          -- Record the NAME before any id resolution, so a spell whose link can't be parsed is
+          -- still correctly reported as known.
+          known[name:lower()] = true
           -- compat/SpellBook.lua maps this onto GetSpellLink parsing on 3.3.5a; it returns
           -- ("SPELL", spellID) and spellID may be nil if the link can't be parsed.
           local _, spellID = GetSpellBookItemInfo(slot, BOOKTYPE)
@@ -89,15 +99,45 @@ function SB.BuildRankTable()
   end
 
   SB.SPELLID[class] = byName
+  SB.KNOWN_NAMES = known
+  SB.built = true
   return byName
 end
+
+-- Build on demand if nothing has yet. PLAYER_LOGIN and SPELLS_CHANGED both rebuild on a deferred
+-- timer (see the watcher below), but a consumer can run BEFORE that timer fires — the cooldown
+-- viewers rebuild on PLAYER_ENTERING_WORLD, for instance. Without this, their first pass would read
+-- an empty table and conclude the player knows nothing.
+local function ensureBuilt()
+  if not SB.built then
+    local ok = pcall(SB.BuildRankTable)
+    if not ok then return false end
+  end
+  return SB.built and true or false
+end
+SB.EnsureBuilt = ensureBuilt
 
 -- The rank id list for an ability name, for the player's class.
 function SB.KnownRankIDs(name)
   if not name then return nil end
+  ensureBuilt()
   local _, class = UnitClass("player")
   local byName = class and SB.SPELLID[class]
   return byName and byName[name:lower()] or nil
+end
+
+-- Is this ability in the player's spellbook RIGHT NOW, at any rank?
+--
+-- This is the authoritative learn test, and it is deliberately name-keyed rather than id-keyed.
+-- IsSpellKnown(id) checks one EXACT rank, so a curated rank-1 id reports false the moment the
+-- player trains rank 2 — which is what made talent-granted and higher-rank abilities vanish from
+-- the cooldown viewers. Matching on name is immune to that, and equally immune to level
+-- requirements (relevant on level-squished servers, where a character can know an ability well
+-- below its stock level).
+function SB.IsSpellNameKnown(name)
+  if not name then return false end
+  ensureBuilt()
+  return SB.KNOWN_NAMES[name:lower()] and true or false
 end
 
 -- Highest rank of `name` the player has learned. Falls back to the passed spellID for single-rank
@@ -124,6 +164,20 @@ watcher:SetScript("OnEvent", function()
   C_Timer.After(0, function()
     watcher._queued = false
     local ok, err = pcall(SB.BuildRankTable)
-    if not ok and NE.Log then NE.Log("SPELLRANKS", "rebuild failed: " .. tostring(err)) end
+    if not ok then
+      if NE.Log then NE.Log("SPELLRANKS", "rebuild failed: " .. tostring(err)) end
+      return
+    end
+    -- Consumers gate on this table (the cooldown viewers' learn-check, for one), so anything that
+    -- changed the spellbook — training, a talent respec, a spec switch — has to re-run them now
+    -- that the table reflects reality. Without this a newly-learned ability only appeared after
+    -- some later unrelated rebuild.
+    for _, fn in ipairs(SB._onRebuilt) do pcall(fn) end
   end)
 end)
+
+-- Subscribe to "the spellbook changed and the table is up to date".
+SB._onRebuilt = SB._onRebuilt or {}
+function SB.OnRebuilt(fn)
+  if type(fn) == "function" then SB._onRebuilt[#SB._onRebuilt + 1] = fn end
+end

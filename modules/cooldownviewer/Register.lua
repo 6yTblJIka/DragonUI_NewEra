@@ -84,6 +84,52 @@ local function boot()
       frame:UpdateVisibility()
     end
   end
+
+  -- The learn-gate reads the spellbook table (core/SpellRanks.lua). Re-source every viewer once
+  -- that table has been rebuilt — training a rank, switching spec or respeccing all change what
+  -- the player knows, and the viewers must follow.
+  if NE.spellbook and NE.spellbook.OnRebuilt then
+    NE.spellbook.OnRebuilt(function()
+      M.InvalidateCuratedCache()
+      M.RefreshActiveViewer()
+    end)
+  end
+end
+
+-- ── Diagnostic ──────────────────────────────────────────────────────────────────────────────────
+-- /necdm — report, per curated spell for the player's class, exactly what the learn-gate decided
+-- and why. Added after a report that talent-granted abilities (Penance on Disc, Guardian Spirit on
+-- Holy) and level-squished abilities (Divine Hymn at 60) were being filtered out: guessing at which
+-- of the three checks failed is far slower than printing all three.
+SLASH_NECDM1 = "/necdm"
+SlashCmdList["NECDM"] = function()
+  local _, class = UnitClass("player")
+  local SB = NE.spellbook
+  local function say(msg) DEFAULT_CHAT_FRAME:AddMessage("|cff1784d1CDM|r " .. msg) end
+
+  say(("class=%s  spellbook built=%s  names=%d"):format(
+    tostring(class),
+    tostring(SB and SB.built),
+    (function() local n = 0; for _ in pairs(SB and SB.KNOWN_NAMES or {}) do n = n + 1 end; return n end)()))
+
+  for _, category in ipairs({ "essential", "utility" }) do
+    local source = M.SPELL_DATA_BY_CATEGORY and M.SPELL_DATA_BY_CATEGORY[category]
+    local list = source and source[class] or {}
+    local shown = M.GetActiveSpellList(category)
+    local inShown = {}
+    for _, id in ipairs(shown) do inShown[id] = true end
+    say(("|cffffcc55%s|r — %d curated, %d shown"):format(category, #list, #shown))
+    for _, id in ipairs(list) do
+      local name = GetSpellInfo(id)
+      local book = name and SB and SB.IsSpellNameKnown and SB.IsSpellNameKnown(name)
+      local known = IsSpellKnown and IsSpellKnown(id)
+      local byname = name and GetSpellInfo(name) ~= nil
+      if not inShown[id] then
+        say(("   |cffff5555hidden|r %-24s id=%-6d book=%-5s IsSpellKnown=%-5s byName=%s"):format(
+          tostring(name or "?"), id, tostring(book), tostring(known), tostring(byname)))
+      end
+    end
+  end
 end
 
 local bootFrame = CreateFrame("Frame")

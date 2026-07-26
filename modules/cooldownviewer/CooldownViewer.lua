@@ -341,11 +341,27 @@ function M.InvalidateCuratedCache()
   curatedSetCache = {}
 end
 
--- Known including ANY rank: IsSpellKnown checks the exact ID; the name lookup catches the case
--- where the player has a different rank of the same ability (the vanilla rank gotcha).
+-- Does the player know this ability, at ANY rank?
+--
+-- DOWNPORT / BUGFIX: the source tries IsSpellKnown(spellID) first, then GetSpellInfo(name). Both
+-- are unreliable here, and between them they hid every talent-granted and higher-rank ability:
+--
+--   * IsSpellKnown(id) tests ONE EXACT RANK. Our curated lists key each ability by its rank-1 id,
+--     so the moment the player trains rank 2 the check reports false — Penance (47540) on a Disc
+--     priest who has trained past rank 1, for instance.
+--   * GetSpellInfo(name) is a spell-database lookup on this client, not a reliable membership test.
+--
+-- Neither is level-aware either, which matters on a level-squished server where a character can
+-- legitimately know an ability far below its stock level (Divine Hymn at 60).
+--
+-- So we ask the SPELLBOOK, by name (core/SpellRanks.lua). That is authoritative, rank-agnostic and
+-- level-agnostic: if it is in the book, the player has it. The old checks stay as fallbacks in case
+-- the book scan is unavailable, so this can only ever widen what shows, never narrow it.
 local function isLearned(spellID)
-  if IsSpellKnown and IsSpellKnown(spellID) then return true end
   local name = GetSpellInfo(spellID)
+  local SB = NE.spellbook
+  if name and SB and SB.IsSpellNameKnown and SB.IsSpellNameKnown(name) then return true end
+  if IsSpellKnown and IsSpellKnown(spellID) then return true end
   return (name and GetSpellInfo(name)) and true or false
 end
 

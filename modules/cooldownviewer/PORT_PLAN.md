@@ -315,6 +315,31 @@ the sourcing rule exists.
 overrides spell data there, these IDs reflect the stock client. Repeated in the generated file's
 header.
 
+## E4. Learn-gate fix (after first in-game test of Phases 2-3)
+
+Reported: a Disc priest's **Penance** and a Holy priest's **Guardian Spirit** never appeared despite
+both talents being taken, and **Divine Hymn** never appeared on a level-squished server where the
+character knows it at 60. All three are one fault — the learn-gate, not the data.
+
+The source checks `IsSpellKnown(spellID)` then falls back to `GetSpellInfo(name)`. Both fail here:
+
+- `IsSpellKnown(id)` tests **one exact rank**. Our curated lists key each ability by its rank-1 id,
+  so the check goes false the moment the player trains rank 2 — which is most talent abilities.
+- `GetSpellInfo(name)` is a spell-database lookup on this client, not a membership test.
+- Neither consults the spellbook, and neither is level-aware — which matters on a squished server.
+
+Fixed by asking the **spellbook, by name** (`SB.IsSpellNameKnown`, core/SpellRanks.lua). That is
+authoritative, rank-agnostic and level-agnostic. The name set is built from `GetSpellBookItemName`
+alone — deliberately without id resolution — so an entry whose `GetSpellLink` can't be parsed still
+counts as known. The old checks remain as fallbacks, so the change can only widen what shows.
+
+Two supporting changes: the rank table now builds lazily on first use (viewers rebuild on
+`PLAYER_ENTERING_WORLD`, which can precede the deferred `SPELLS_CHANGED` build), and
+`SB.OnRebuilt` lets the viewers re-source after training or a spec switch.
+
+`/necdm` prints the gate's decision per curated spell — book / IsSpellKnown / byName — so the next
+report of a missing icon doesn't need guesswork.
+
 ## F. Open questions / unverified
 
 1. **`Cooldown:SetDrawEdge` on 3.3.5a** — ClassicAPI assumes it exists (C3). Confirm.

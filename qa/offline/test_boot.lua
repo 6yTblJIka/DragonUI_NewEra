@@ -208,7 +208,7 @@ function GetSpellLink(slot, bookType)
 end
 
 -- Spellbook: 8 slots in one tab.
-local BOOK = { 8092, 8102, 10947, 10060, 14751, 2944, 17, 586 }
+BOOK = { 8092, 8102, 10947, 10060, 14751, 2944, 17, 586 }
 _G.__SLOT_IDS = BOOK
 function GetNumSpellTabs() return 1 end
 function GetSpellTabInfo(tab) return "General", "", 0, #BOOK end
@@ -250,6 +250,8 @@ end
 C_Container = {}
 C_Item = {}
 LibStub = nil
+SlashCmdList = {}
+DEFAULT_CHAT_FRAME = { AddMessage = function() end }
 
 -- ── DragonUI host stub ──────────────────────────────────────────────────────
 local profile = { newera = { enabled = true, modules = {} }, movers = {}, widgets = {} }
@@ -596,6 +598,48 @@ ess._editPreview = false
 UnitClass = function() return "Priest", "PRIEST" end
 M.InvalidateCuratedCache()
 settle(function() ess:Rebuild() end)
+
+print("\n=== LEARN GATE ===")
+-- Regressions reported in-game: a Disc priest's Penance and a Holy priest's Guardian Spirit were
+-- filtered out, as was Divine Hymn on a level-squished (60) server. All three are the same fault —
+-- the gate keyed on an exact rank id / level rather than on the spellbook.
+
+-- 1. Higher rank trained. The curated id is rank 1; the book holds rank 3 under the SAME name, and
+--    IsSpellKnown on the rank-1 id says false. This is the Penance case.
+SPELLS[47540] = { "Penance", "Rank 1" }   -- curated seed id
+SPELLS[53007] = { "Penance", "Rank 3" }   -- what the player actually trained
+BOOK[#BOOK + 1] = 53007
+IsSpellKnown = function(id) return id == 53007 end   -- exact-rank semantics, as the client has
+_G.__SLOT_IDS = BOOK
+settle(function() NE.spellbook.BuildRankTable() end)
+assertf(NE.spellbook.IsSpellNameKnown("Penance") == true, "spellbook knows Penance by name")
+assertf(M.IsTrackable(47540, "PRIEST") == true,
+        "rank-1 curated id passes the gate when a HIGHER rank is trained")
+
+-- 2. Level squish: an ability known far below its stock level. The gate must not consult level at
+--    all — being in the book is sufficient. This is the Divine Hymn case.
+SPELLS[64843] = { "Divine Hymn", "" }
+BOOK[#BOOK + 1] = 64843
+_G.__SLOT_IDS = BOOK
+settle(function() NE.spellbook.BuildRankTable() end)
+assertf(M.IsTrackable(64843, "PRIEST") == true, "level-squished ability passes on spellbook presence")
+
+-- 3. The gate must still EXCLUDE something genuinely not known, or it is useless.
+assertf(M.IsTrackable(47585, "PRIEST") == false, "unknown curated spell is still filtered (Dispersion)")
+
+-- 4. A spellbook entry whose link can't be parsed (GetSpellBookItemInfo -> nil id) must still count
+--    as known: KNOWN_NAMES is built from names alone for exactly this reason.
+SPELLS[47788] = { "Guardian Spirit", "" }
+BOOK[#BOOK + 1] = 47788
+_G.__SLOT_IDS = BOOK
+local realLink = GetSpellLink
+GetSpellLink = function() return nil end          -- simulate unparseable links
+settle(function() NE.spellbook.BuildRankTable() end)
+assertf(NE.spellbook.IsSpellNameKnown("Guardian Spirit") == true,
+        "name-only book scan survives failed link parsing")
+assertf(M.IsTrackable(47788, "PRIEST") == true, "talent-granted ability passes without an id")
+GetSpellLink = realLink
+settle(function() NE.spellbook.BuildRankTable() end)
 
 print("\n=== UNIT-EVENT FILTER ===")
 local probe = CreateFrame("Frame")
