@@ -359,6 +359,21 @@ function M.SetSpellEnabled(category, spellID, enabled)
   return true
 end
 
+-- Should the settings panel list curated spells the player has not learned?
+--
+-- Off by default: Essential/Utility show what you can actually cast. The Hidden catalog ignores this
+-- and always lists everything, because a low-level character seeing an empty picker reads as broken.
+function M.GetShowUnlearned()
+  local cd = store(false)
+  return (cd and cd.showUnlearned) and true or false
+end
+
+function M.SetShowUnlearned(v)
+  local cd = store(true)
+  if cd then cd.showUnlearned = v and true or false end
+  M.RefreshActiveViewer()
+end
+
 -- Is this spell currently enabled in the category? Reads the custom list WITHOUT seeding one.
 function M.IsSpellEnabled(category, spellID)
   if not (category and spellID) then return true end

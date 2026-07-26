@@ -244,6 +244,12 @@ modules\cooldownviewer\Alerts.lua
 # core/PanelChrome.lua, which load far earlier.
 modules\cooldownviewer\SettingsAssets.lua
 modules\cooldownviewer\SettingsPanel.lua
+# 4b-2: the category model and the grids that render it. CdmArsenal is generated
+# (tools/cdm-spellgen/gen_arsenal.py) and feeds the adapter's Hidden catalog, so it loads first;
+# SettingsCategories replaces the panel's RefreshLayout stub, so it loads after the panel.
+modules\cooldownviewer\CdmArsenal.lua
+modules\cooldownviewer\SettingsAdapter.lua
+modules\cooldownviewer\SettingsCategories.lua
 modules\cooldownviewer\Register.lua
 
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---

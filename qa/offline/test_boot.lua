@@ -414,6 +414,9 @@ local FILES = {
   "core/FrameUtil.lua",
   "modules/cooldownviewer/SettingsAssets.lua",
   "modules/cooldownviewer/SettingsPanel.lua",
+  "modules/cooldownviewer/CdmArsenal.lua",
+  "modules/cooldownviewer/SettingsAdapter.lua",
+  "modules/cooldownviewer/SettingsCategories.lua",
   "modules/cooldownviewer/Register.lua",
 }
 
@@ -1027,6 +1030,77 @@ end
 assertf(NE.tex.HasAtlas("questlog-tab-side"), "side-tab body atlas registered")
 assertf(NE.tex.HasAtlas("icon_cooldownmanager"), "Spells tab glyph registered")
 assertf(NE.tex.HasAtlas("icon_trackedbuffs"), "Auras tab glyph registered")
+
+print("\n=== CATEGORY GRIDS (Phase 4b-2) ===")
+local A = CDS.adapter
+assertf(A ~= nil, "adapter present")
+assertf(#A.MODE_ORDER.spells == 3 and #A.MODE_ORDER.auras == 3, "three categories per mode")
+
+-- The arsenal is what turns Hidden from an undo list into a picker.
+assertf(M.ARSENAL_BY_CLASS ~= nil, "generated arsenal loaded")
+assertf(#(M.ARSENAL_BY_CLASS.PRIEST or {}) > 15,
+        "priest arsenal populated (" .. #(M.ARSENAL_BY_CLASS.PRIEST or {}) .. ")")
+
+M.ResetCustomList("essential", "PRIEST")
+M.ResetCustomList("utility", "PRIEST")
+CDS.OpenTo("essential")
+
+local ess = A.GetItems("essential", "PRIEST")
+local hid = A.GetItems("hiddenSpell", "PRIEST")
+assertf(#ess > 0, "Essential lists the curated spells (" .. #ess .. ")")
+assertf(#hid > 0, "Hidden lists the rest of the arsenal (" .. #hid .. ")")
+
+-- The two must not overlap: a placed spell is not offered again.
+local placed = {}
+for _, id in ipairs(ess) do placed[id] = true end
+local overlap = 0
+for _, id in ipairs(hid) do if placed[id] then overlap = overlap + 1 end end
+assertf(overlap == 0, "Hidden excludes what is already placed (" .. overlap .. " overlaps)")
+
+-- Grids built and stacked.
+local grids = CDS._categories
+assertf(grids.essential ~= nil and grids.hiddenSpell ~= nil, "spell category frames built")
+assertf(grids.essential._count == #ess, "Essential grid holds every entry (" .. grids.essential._count .. ")")
+assertf(grids.essential.items[1] ~= nil and grids.essential.items[1].spellID ~= nil, "tiles bound to spells")
+assertf(sp.content:GetHeight() > 1, "scroll child sized to the stacked sections (" .. sp.content:GetHeight() .. ")")
+
+-- Collapsing must resize, or the scrollbar range goes stale.
+local tallExpanded = grids.essential:GetHeight()
+grids.essential:Toggle()
+assertf(grids.essential:GetHeight() < tallExpanded, "collapsing a section shrinks it")
+grids.essential:Toggle()
+
+-- Search dims rather than reflows, so positions stay put while typing.
+CDS.ApplyItemFilter("zzzznomatch")
+local dimmed = grids.essential.items[1]:GetAlpha()
+assertf(dimmed < 1, "non-matching tiles dim (" .. dimmed .. ")")
+CDS.ApplyItemFilter("")
+assertf(grids.essential.items[1]:GetAlpha() == 1, "clearing the search restores them")
+
+-- Moving a spell between categories, which is what 4b-3's menu will drive.
+local moved = ess[1]
+assertf(A.CanTarget("essential", "utility"), "essential -> utility is a legal move")
+assertf(not A.CanTarget("essential", "trackedBar"), "cross-mode moves are illegal")
+assertf(A.Assign(moved, "essential", "utility", "PRIEST"), "assign reports success")
+local ess2 = A.GetItems("essential", "PRIEST")
+local uti2 = A.GetItems("utility", "PRIEST")
+local stillEss, nowUti = false, false
+for _, id in ipairs(ess2) do if id == moved then stillEss = true end end
+for _, id in ipairs(uti2) do if id == moved then nowUti = true end end
+assertf(not stillEss, "moved spell left Essential")
+assertf(nowUti, "…and arrived in Utility")
+M.ResetCustomList("essential", "PRIEST")
+M.ResetCustomList("utility", "PRIEST")
+
+-- Aura categories read the tracked-aura pool.
+CDS.SetDisplayMode("auras")
+M.SetAuraAssignment("PRIEST", 10060, "bar")
+CDS.RefreshLayout()
+local bars = A.GetItems("trackedBar", "PRIEST")
+assertf(#bars == 1 and bars[1] == 10060, "aura assigned to bars shows under Tracked Bars")
+assertf(grids.trackedBar ~= nil and grids.trackedBar.kind == "bar", "bar category uses bar rows")
+M.ResetTracking()
+CDS.HidePanel()
 
 print("\n=== UNIT-EVENT FILTER ===")
 local probe = CreateFrame("Frame")

@@ -3,10 +3,10 @@
 Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/` (Classic 1.15 /
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
-**Status:** Phases 0-4a implemented (engine only — no assignment UI, see §E6). Offline harnesses
-pass (`qa/offline/`, 156 boot assertions).
-Phases 1-3 are confirmed working in-game. Remaining: Phase 4b, the standalone `/cdm` settings panel —
-scoped in §G.
+**Status:** Phases 0-4a plus 4b-1 and 4b-2 implemented. Offline harnesses pass (`qa/offline/`, 203
+boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working in-game. Remaining:
+4b-3 (the item menu, which is what makes alerts and sounds reachable), 4b-4 drag reorder, 4b-5
+presets, plus the trinket/equip port — all scoped in §G.
 
 ---
 
@@ -587,18 +587,16 @@ which `NE.scrollbar.Reskin` already knows how to restyle.
   (StaticPopup + base64 + a hand-rolled parser, no `loadstring`), but it is a convenience on top of
   a picker that does not exist yet. Defer to last.
 
-**Open decision — the Equip categories.** `DataAdapter` renders "Equip Active" and "Equip Passive"
-pools from `M.GetEquipItemsForCategory`, which is still the Phase 1 stub returning `{}`. Either port
-`CooldownViewerEquip.lua` (182 lines, assessed "ports as-is") or hide those two categories. Porting
-it is the better answer — on-use trinkets are exactly what a cooldown viewer is for — but it is
-separable and should not gate the picker.
+**Resolved — the Equip categories.** Owner's call: port `CooldownViewerEquip.lua` (182 lines) so
+on-use trinkets and potions are trackable, and add the two source-pool categories back. Not yet done;
+it is separable from the picker and does not gate 4b-3.
 
 ## G.5. Phasing
 
 | Step | Scope | Exit criterion |
 |---|---|---|
-| **4b-1** | Window shell: chrome, Spells/Auras side tabs, scroll body, search box, `/cdm` toggle, ESC-close | `/cdm` opens and closes a correctly-chromed empty window |
-| **4b-2** | `DataAdapter` + `Categories` grid, read-only | All six categories render the player's real spells |
+| **4b-1** | Window shell: chrome, Spells/Auras side tabs, scroll body, search box, `/cdm` toggle, ESC-close. **DONE** | `/cdm` opens and closes a correctly-chromed empty window |
+| **4b-2** | `SettingsAdapter` + `SettingsCategories` grids, read-only. **DONE** | All categories render the player's real spells |
 | **4b-3** | `core/Menu.lua` + the item context menu | **The payoff.** Spell visibility, alerts and sounds are all settable, and Phase 4a stops being dormant |
 | **4b-4** | Drag reorder | Items can be dragged between categories and reordered |
 | **4b-5** | Presets / import / export | Optional |
@@ -606,3 +604,26 @@ separable and should not gate the picker.
 4b-3 is the milestone that matters; 4b-4 and 4b-5 are polish. Rough size: ~1,400 lines adapted from
 the source plus ~200 of new shim, against 2,139 in the original — the difference being the Group
 Buffs tab, Edit Mode wiring, and the retail menu framework.
+
+## G.6. 4b-2 notes (adapter + grids)
+
+**The Hidden section needed data that did not exist.** Upstream's Hidden is the opt-in catalog, and
+it is driven by a generated `NE_CDM_HIDDEN` global — every class ability with a real cooldown.
+Without an equivalent, Hidden could only ever re-offer spells the player had removed, which is an
+undo list, not a picker. `tools/cdm-spellgen/gen_arsenal.py` emits `CdmArsenal.lua`
+(`M.ARSENAL_BY_CLASS`, 303 abilities across ten classes) from the same `resolved.json` the Phase 2
+seed came from, so it costs one thin emitter rather than new analysis.
+
+Expect Hidden to look SHORT in game. Our curation is deliberately broad, so most of a class's
+cooldown abilities already sit in Essential or Utility; what remains is the difference. That is the
+intended behaviour — the section fills up as the player moves things out.
+
+**`NE.listheader` substituted inline**, the same call `modules/character/Reputation.lua` made for the
+same missing Core helper, using the client's own +/- collapse buttons.
+
+**Bug worth recording: a tri-state predicate that only ever returned two.** `listHasEnabled` answers
+"is this spell listed and enabled?" with true / false / **nil**, where nil means *not mentioned* and
+is what sends `isPlaced` to the curated defaults. It returned `false` for a missing list instead of
+nil, so the curated fallback was unreachable and every curated spell appeared in Hidden alongside
+itself. Caught by asserting the two sets do not overlap — a property that is obvious to state and
+was not obvious to eyeball.
