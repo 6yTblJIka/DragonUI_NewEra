@@ -8,10 +8,15 @@ ends) implemented — the whole of both phasing tables except the deliberate cut
 (`qa/offline/`, 394 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working
 in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and fixed, §G.7.1/§G.7.2).
 
-**Nothing is left that offline work can close.** Remaining: consumables (§G.9, parked as a stretch goal
-by the owner — blocked on a generator pass, not on effort), and three items that need the game rather
-than the harness — §F4 taint under a combat restack, §F5's four-movers-versus-one call, and an in-game
-pass over 4b-4, 4b-5, 5a and 4c. See the end of §G.13.
+**Open work is now §H** (planned, not built): **Phase 7** — the Tracked Buffs tab is structurally empty
+and always has been, which also disables target-DoT tracking (§H.1); **Phase 8** — retail theming, whose
+core finding is that the viewer icon art is asked for by name and registered nowhere (§H.2); **Phase 9**
+— the audit against Wowhead's current guide, whose only real gap is the glow on a buffed spell (§H.3).
+
+Also outstanding: consumables (§G.9, parked as a stretch goal by the owner — blocked on a generator
+pass, not on effort), and three items needing the game rather than the harness — §F4 taint under a
+combat restack, §F5's four-movers-versus-one call, and an in-game pass over 4b-4, 4b-5, 5a and 4c. See
+the end of §G.13.
 
 ---
 
@@ -1222,3 +1227,250 @@ Three items, all needing the game rather than the harness:
   most recent phases have not. Every in-game pass so far has found something (§G.7.1, §G.7.2), and none
   of those faults were the kind an offline harness can reach — three of them were art and event-order
   problems visible only on a real frame.
+
+---
+
+# H. Phases 7-9 — the Tracked Buffs tab, retail theming, and the guide audit
+
+Written after an in-game report ("Tracked buffs never shows anything") and a re-read of Wowhead's
+current Cooldown Manager guide (`wowhead.com/guide/ui/cooldown-manager-setup`, updated 2026-06-16).
+Consumables stay parked (§G.9).
+
+## H.1. Phase 7 — the Tracked Buffs tab is structurally empty
+
+**The report is not a rendering fault. The tab cannot ever show anything.**
+
+`store().trackedAura[CLASS]` is an OVERRIDE registry, and its header says so: "It starts EMPTY by
+design: the auto window provides the defaults, this is the override registry"
+(`CooldownViewer.lua:534`). The Auras tab renders that registry and nothing else — all three of its
+categories are one filtered pass over the same list:
+
+```
+trackedBuff -> entries with assignment == "icon"
+trackedBar  -> entries with assignment == "bar"
+hiddenAura  -> entries with assignment == "hidden"
+```
+
+The only writer is `M.SetAuraAssignment`, whose only caller is `Adapter.Assign` — reached by dragging
+or right-clicking **a row on that tab**. So the registry is a store whose sole editor is a view of the
+store: nothing can enter it, because entering requires a row that only entry could create. Three
+empty sections, forever, on every character.
+
+**It disables a second feature too.** `ScanTargetTrackedAuras` deliberately honours explicit
+assignments only, never the auto window (`BuffViewers.lua:171`) — which is the right call, since
+auto-tracking every debuff on your target would be noise. But its input is the same unreachable
+registry, so **target DoT tracking has never been reachable either.** The guide lists DoT timers as a
+headline feature.
+
+Note what is NOT broken: the buff *viewers* work. The auto-track window drives them off a live scan
+that never consults this registry, so Buff Icons and Buff Bars have been showing procs correctly all
+along. The bug is confined to the picker and to overrides.
+
+### Why upstream doesn't have this bug, and we do
+
+Retail's Buffs menu lists a Blizzard-curated per-spec aura set from `C_CooldownViewer` — the guide's
+categories are populated before the player touches anything, and the comments complain about exactly
+that ("You can only pick from the list Blizzard feels are the relevant abilities"). Upstream on Era
+has no such data either, so it drives the viewers from the auto window — but it also never had to make
+the *picker* work, because §G.4 cut its Group Buffs tab and its aura tab inherits the same emptiness.
+We shipped the tab; the data source was never built.
+
+### 7a. A seen-aura registry (the fix)
+
+`rebuildFromAuras` already walks every player buff on `UNIT_AURA` and asks `ShouldTrackBuff` about
+each one. Record what it sees:
+
+```
+store().seenAura[CLASS] = { [spellID] = { name =, icon =, duration =, last = <GetTime()> } }
+```
+
+- **Recorded before the include/exclude decision, not after.** An aura the player has hidden must stay
+  in the list or Hidden becomes a one-way door — hide it, the row vanishes, and there is nothing left
+  to unhide.
+- **Record the name and icon, not just the id.** `GetSpellInfo(spellID)` fails for auras whose id the
+  client doesn't know, and a nameless row cannot be searched or labelled.
+- **Cap it** (~60/class) with eviction by `last`. Unbounded, a long-lived character accumulates every
+  proc, trinket and consumable buff it has ever carried into a SavedVariables table that is also
+  copied into every layout snapshot (§G.11).
+- **Bound it by the same window the auto-tracker uses**, so permanent toggles and hour-long food buffs
+  never enter — matching the guide's "does not track out-of-combat buffs such as food buffs, phials
+  and flasks, world events, zone buffs".
+- Cost is one table write in a path that already runs, gated on `last` being stale enough to bother.
+
+### 7b. Category contents become "override ∪ seen"
+
+`Adapter.GetItems` for an aura category returns explicit entries as today, plus seen auras with no
+explicit assignment routed by the auto-track destination (`M.AutoTrackDest`): `both` puts a row in each
+of Tracked Buffs and Tracked Bars, `icon`/`bar` in one. That makes the tab a description of what the
+bars are actually doing, which is what a player opening it is asking.
+
+Auto rows need to read as auto — retail has no equivalent because its list is curated, so this is ours
+to design. Cheapest honest option: the existing unlearned-tint machinery already proves per-tile state
+is easy; a tooltip line plus a subtle desaturation is enough, and `_applyAlertBadge` shows where a
+corner badge would go if that reads better in practice.
+
+**Dragging an auto row is what makes it explicit.** No new write path: the drag already calls
+`SetAuraAssignment`, which is exactly "stop auto-deciding this one".
+
+### 7c. An empty state, not three "(empty)" sections
+
+A character who has not had a short buff yet should get one line — "Buffs you've had appear here.
+Nothing tracked yet." — rather than three empty headers, which is what the report describes and reads
+as broken. §G.9 already established the pattern for this (an empty *source* pool is skipped outright
+rather than shown empty); the same judgement applies.
+
+### 7d. Optional: a generated per-class aura catalog (the retail shape)
+
+7a-7c fix the tab with zero new data, but they are retrospective: the list is what you have had, not
+what you *can* have. Retail's is a catalog. The same generator that produced `CdmArsenal.lua` can
+produce one: `Spell.dbc` effect `ApplyAura` + a duration via `DurationIndex` → `SpellDuration.dbc`,
+filtered to the class's own spells and to durations inside the auto window.
+
+Two unknowns, both the kind §E3 already solved once: the effect and DurationIndex column positions
+(locate empirically against known anchors, never assume), and whether a self-buff can be distinguished
+from a debuff by effect target without guessing. Worth a spike before committing, and strictly after
+7a-7c — a catalog is a nicer picker, but the empty tab is the bug.
+
+### Verification
+
+- Offline: assert the tab is non-empty after a simulated `UNIT_AURA` carrying one short buff; assert a
+  hidden aura stays listed under Hidden (the one-way-door regression); assert the cap evicts oldest
+  first; assert `ScanTargetTrackedAuras` now has reachable input.
+- Negative: remove the "record before the decision" ordering and the Hidden test must fail.
+- In-game: log in, take any short buff, open `/cdm` → Tracked Buffs.
+
+## H.2. Phase 8 — theming, to match retail
+
+**The core finding: the art is already asked for, and nothing ships it.** Three atlases are set by name
+in the viewer code and registered nowhere, so every `SetAtlas` returns false and the region renders as
+nothing at all:
+
+| Atlas | Sheet | Used by | Effect of its absence |
+|---|---|---|---|
+| `UI-HUD-CoolDownManager-IconOverlay` | 6704514 | `ItemMixins:38`, `AuraItemMixins:178`, both `BuffViewers` item shapes | **No icon frame.** This is why the icons read as bare spellbook icons rather than Cooldown Manager tiles — the single biggest visual difference |
+| `UI-CooldownManager-OORshadow` | 6685874 | `ItemMixins:39` | No out-of-range shading |
+| `UI-HUD-ActionBar-GCD-Flipbook` | 5199404 | `ItemMixins:46` | No ready-flash (guarded by `HasAtlas`, so it silently no-ops) |
+
+Every BLP is already on disk in `ReferenceAddons/NewEra/Art/Common/`, alongside two more the port never
+wired: `6731092-ui-hud-cooldownmanager-icon-swipe` and `5423465-ui-hud-actionbar-secondarycooldown`.
+
+**Why they were missed:** upstream never registers rects for them. Classic Era ships the atlas *names*
+in client data even when the art differs, so upstream only needs `RegisterLocal` on the sheet FDID and
+lets `C_Texture.GetAtlasInfo` supply the rect. 3.3.5a has no atlas database at all, so our port must
+supply both — and for these three, only the `SetAtlas` calls were ported, not the data behind them.
+Nothing errored, because a missed atlas is an invisible texture.
+
+### 8a. Ship and register the art
+
+Copy the BLPs to `Textures/CooldownViewer/`, `RegisterLocal` each FDID, and add the rects. The rects
+must be **derived, not assumed**: each of these is a single-purpose sheet, so a full-file 0→1 rect is
+likely, but "likely" is how you ship a texture stretched to the wrong aspect. Decode each BLP for its
+real dimensions first (`node` + ImageMagick, per the repo's BLP workflow) and record the measured size
+as the atlas `width`/`height`.
+
+Harness: `HasAtlas` assertions for all five, mirroring the side-tab-art assertions that caught
+`core/Tabs.lua`'s stale "sheet not shipped" note. That check is exactly what would have caught this.
+
+### 8b. The cooldown swipe
+
+§C3 recorded `SetSwipeTexture` / `SetEdgeTexture` / `SetUseCircularEdge` as MISSING. That was right
+about the native widget and wrong about the platform: **ClassicAPI implements `SetSwipeTexture` and
+`SetUseCircularEdge`** over a four-quadrant ScrollFrame capture rig (`Util/WidgetAPI.lua:1076-1135`,
+`Util/Cooldown.lua`), and only `SetEdgeTexture`/`SetEdgeColor`/`SetEdgeScale` are stubbed as
+"Incompatible (3.3.5)". So the retail radial sweep is reachable.
+
+It is not free: the rig builds five frames and a rotating animation per cooldown, and it hijacks
+`SetAlpha` on the Cooldown frame. Wire it behind a setting, default on, measured on a full Essential
+row before it is trusted — §C3's caution was about the wrong thing but it was not baseless.
+
+### 8c. The glow on a buffed spell
+
+The guide's second headline feature: "Tracks combat buffs and puts glow effects around buffed spells."
+
+We have half of it. `ItemMixins:568-580` already gives an active self-aura precedence over the
+cooldown, showing the aura's remaining time on the spell's own icon — the behaviour one commenter
+describes on Keg Smash. What is missing is the visual distinction: retail tints that swipe gold, and
+`SetSwipeColor` is WoD+ (the file says so at line 13).
+
+LibCustomGlow is already a dependency and already drives the alert FX (§E6), so a glow while a linked
+aura is active is a small, contained addition — and it substitutes for the colour we cannot set rather
+than approximating it.
+
+### 8d. Bar theming
+
+The bar rows are functional: icon, name, depleting fill. Against retail they want the fill texture, the
+spark, and the name/timer typography and alignment checked side by side. Lowest-confidence item here,
+because it is the one that needs a screenshot comparison rather than a code reading — scope it after
+8a, when the icons are right and the bars are the remaining mismatch.
+
+### 8e. The pandemic ring
+
+`Alerts.lua`'s `refresh` type is already upstream's `CooldownPandemicFXTemplate` in behaviour, tinted
+pandemic-orange. The retail art (`PandemicFX-Icon01/02/03`, `PandemicFX-Bar`) is on sheet 6685874,
+which 8a ships anyway. The two clip masks (7552325, 7553101) are unusable — §C2, `<MaskTexture>` cannot
+be polyfilled — so the ring needs the unmasked art plus a crop, the same substitution the icons use for
+their rounded corners.
+
+### Verification
+
+Screenshots, into `screenshots/`, per the repo's existing practice: an Essential row on cooldown, a
+Utility row with one spell buffed, a Buff Bar mid-depletion, and an out-of-range target. Offline
+harness can only assert the atlases resolve — the rest is the eye.
+
+## H.3. Phase 9 — audit against the current retail guide
+
+Every feature and setting the guide describes, with a verdict. Consumables excluded by owner decision.
+
+**Have it:**
+
+- Enable checkbox + a button through to the settings window ("Enable Cooldown Manager", "Advanced
+  Cooldown Settings") — §G.12, as an enable toggle plus "Open Cooldown Manager".
+- Two picker tabs, spells and buffs, with icon tooltips on hover. (We have three; the Settings tab is
+  ours. Retail keeps its settings in Edit Mode.)
+- Essential / Utility / third "not displayed" category, per mode.
+- Not-talented spells greyed out — our unlearned tint, which goes further: it explains itself in the
+  tooltip.
+- Right-click to move between categories.
+- Sound and visual alerts via right-click, choosing trigger and effect — §E6/§G.7. **We are ahead
+  here:** the guide says alerts are "only available with castable spells, and not buffs".
+- Drag to reorder, and to reassign — §G.8. **Also ahead:** the guide's comments are three people asking
+  for reordering and being told it does not exist.
+- All four elements movable — four movers plus, since Phase 6, a per-viewer Position button.
+- Buff timers on tracked buffs; out-of-combat buffs excluded.
+
+**Missing, and worth doing:**
+
+1. **The glow around a buffed spell** → 8c. The only headline feature from the guide's own list that we
+   do not have in some form.
+2. **Target DoT timers.** The guide lists "timers for ... damage-over-time effects". The code exists
+   (`ScanTargetTrackedAuras`) and has never been reachable — fixed as a side effect of Phase 7, which
+   is worth stating plainly: one empty table was disabling two features.
+3. **"Not Displayed"** is retail's name for what we call "Hidden", in both modes. A one-line fidelity
+   fix; "Hidden" is arguably clearer, so this is a preference, not a defect.
+
+**Deliberately not doing:**
+
+- **Charges / recharge** ("Max 2 Charges ... 12 sec recharge"). No charge system exists on 3.3.5a.
+- **Pet and AoE-spell timers.** Totems are already trackable as ordinary cooldowns via the arsenal;
+  a totem's *remaining duration* would need `GetTotemInfo` polling and a per-class totem→spell mapping,
+  which is a feature in its own right rather than a gap in this one. Flag for a later decision.
+- **Retail's curated per-spec buff list.** 7d is the closest we can get from client data, and the
+  guide's comment thread is largely people complaining that the curated list omits their abilities —
+  a generated catalog plus the seen registry is arguably a better answer than the thing being copied.
+
+## H.4. Suggested order
+
+**Phase 7 first**, and not because it is a bug: 8a is a bigger visible change, but the Tracked Buffs
+tab is currently a feature that appears broken on every character, and it is also blocking target-DoT
+tracking. 7a-7c are contained (one registry, one adapter branch, one empty state).
+
+**Then 8a**, which is the largest look-and-feel change per line of code in the whole port — three
+registrations turning bare icons into Cooldown Manager tiles. **Then 8c** (the glow, small and it
+closes the last guide feature), **8b** (the swipe, needs measuring), **8d/8e** (screenshot work).
+
+**Phase 9** is bookkeeping absorbed by the two above, apart from the "Not Displayed" rename, which is
+a one-line owner preference.
+
+Phase 7 and 8a are also the two that most want an in-game pass immediately after, which argues for
+doing them before the deferred verification of 4b-4 / 4b-5 / 5a / 4c rather than after — one trip
+through the game covering all of it.
