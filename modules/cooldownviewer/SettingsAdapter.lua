@@ -220,6 +220,56 @@ function Adapter.Remove(spellID, catID, class)
   return true
 end
 
+-- The ordered backing list for a category: the editable spell list, or the tracked-aura pool.
+-- Hidden (spells) has neither — it is computed — so it returns nil and reorders there are no-ops.
+local function orderedList(catID, class)
+  local meta = CATS[catID]
+  if not meta then return nil end
+  if meta.list then return M.GetEditableList(meta.list, class) end
+  if meta.aura then return M.GetTrackedAuraList(class) end
+  return nil
+end
+
+local function indexOf(list, spellID)
+  for i, e in ipairs(list) do
+    if e.spellID == spellID then return i end
+  end
+  return nil
+end
+
+-- Move spellID to sit immediately before (offset 0) or after (offset 1) targetID, inside one
+-- category. This is drag-only: retail reorders by drag and has no menu equivalent, so neither do we.
+function Adapter.ReorderTo(catID, spellID, targetID, offset, class)
+  if not (spellID and targetID and spellID ~= targetID) then return false end
+  if not class then local _; _, class = UnitClass("player") end
+  local list = orderedList(catID, class)
+  if not list then return false end
+
+  local from = indexOf(list, spellID)
+  if not from then return false end
+  local entry = table.remove(list, from)
+
+  -- Recompute the target index AFTER the removal. Pulling the entry out shifts everything below it
+  -- up by one, so an index captured beforehand lands a slot too far whenever the item moved DOWN
+  -- the list — the classic off-by-one in every drag reorder.
+  local to = indexOf(list, targetID)
+  if not to then table.insert(list, from, entry); return false end
+  table.insert(list, to + ((offset == 1) and 1 or 0), entry)
+
+  local meta = CATS[catID]
+  if meta.list then M.RefreshActiveViewer(meta.list) else M.RefreshActiveViewer() end
+  return true
+end
+
+-- Cross-category move that lands at a POSITION rather than at the end of the destination.
+function Adapter.AssignAt(spellID, fromCat, toCat, dropID, offset, class)
+  if not Adapter.Assign(spellID, fromCat, toCat, class) then return false end
+  if dropID and dropID ~= spellID then
+    Adapter.ReorderTo(toCat, spellID, dropID, offset, class)
+  end
+  return true
+end
+
 -- Reorder within a category. Spell order is the editable list's order; aura order is the pool's.
 function Adapter.MoveWithin(catID, spellID, delta, class)
   local meta = CATS[catID]

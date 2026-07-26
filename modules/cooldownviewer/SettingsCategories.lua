@@ -69,6 +69,12 @@ local function wireItem(b)
   b:SetScript("OnLeave", itemOnLeave)
   b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   b:SetScript("OnClick", itemOnClick)
+  -- Left-drag is retail's primary way to reorder and reassign; the right-click menu is the
+  -- keyboard-free alternative. SettingsReorder (4b-4) provides BeginDrag.
+  b:RegisterForDrag("LeftButton")
+  b:SetScript("OnDragStart", function(self)
+    if CDS.BeginDrag then CDS.BeginDrag(self) end
+  end)
 end
 
 local function makeIconItem(parent)

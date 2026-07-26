@@ -3,9 +3,9 @@
 Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/` (Classic 1.15 /
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
-**Status:** Phases 0-4a plus 4b-1, 4b-2 and 4b-3 implemented. Offline harnesses pass (`qa/offline/`,
-245 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working in-game; 4b-2 and
-4b-3 are harness-verified and awaiting an in-game pass. Remaining: 4b-4 drag reorder, 4b-5 presets,
+**Status:** Phases 0-4a plus 4b-1 through 4b-4 implemented. Offline harnesses pass (`qa/offline/`,
+260 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working in-game; 4b-2 and
+4b-3 are confirmed in-game (three faults found and fixed, §G.7.1/§G.7.2). Remaining: 4b-5 presets,
 plus the trinket/equip port — all scoped in §G.
 
 ---
@@ -598,7 +598,7 @@ it is separable from the picker and does not gate 4b-3.
 | **4b-1** | Window shell: chrome, Spells/Auras side tabs, scroll body, search box, `/cdm` toggle, ESC-close. **DONE** | `/cdm` opens and closes a correctly-chromed empty window |
 | **4b-2** | `SettingsAdapter` + `SettingsCategories` grids, read-only. **DONE** | All categories render the player's real spells |
 | **4b-3** | `core/Menu.lua` + the item context menu. **DONE** | **The payoff.** Spell visibility, alerts and sounds are all settable, and Phase 4a stops being dormant |
-| **4b-4** | Drag reorder | Items can be dragged between categories and reordered |
+| **4b-4** | Drag reorder. **DONE** | Items can be dragged between categories and reordered |
 | **4b-5** | Presets / import / export | Optional |
 
 4b-3 is the milestone that matters; 4b-4 and 4b-5 are polish. Rough size: ~1,400 lines adapted from
@@ -760,3 +760,40 @@ execute/reactive entry never glows on 'usable'"* — and it passed, for the wron
 bug and hid it until the owner reported the feature did nothing. **A test that encodes "this feature
 is off here" cannot tell you the feature is broken.** Where the intended behaviour is negative,
 assert the positive case somewhere too, or the negative one proves nothing.
+
+## G.8. 4b-4 notes (drag reorder)
+
+**The one real downport is the drag's ending.** `GLOBAL_MOUSE_UP` is retail 9.x and upstream uses it
+six times. But a drag already runs an `OnUpdate` to follow the cursor, so the release is detected
+there instead, by watching `IsMouseButtonDown` transitions: left down→up commits, right down at any
+point cancels. Same two outcomes, no event. `GetMouseFoci` → `GetMouseFocus` was already
+fallback-handled upstream. Nothing else about the file needed changing.
+
+**`Adapter.ReorderTo` / `Adapter.AssignAt` are new.** Our storage model keeps a per-category editable
+list of `{spellID, enabled}`, so ordering is that list's order; the aura pool orders itself the same
+way, which lets one function serve both. `AssignAt` is `Assign` followed by a `ReorderTo`, which is
+what carries the drop POSITION across a category boundary — dropping onto a tile inserts at that
+caret rather than appending.
+
+**The off-by-one that every drag reorder has.** `ReorderTo` must recompute the target index AFTER
+removing the dragged entry: pulling it out shifts everything below it up by one, so an index taken
+beforehand overshoots by one whenever the item moved DOWN the list. Both drop-direction assertions
+fail against the pre-removal version, which is the point of having two.
+
+**Cuts.** The equip-token branches (no `CooldownViewerEquip` yet — every path here is spellID-keyed)
+and `CDS.SetDragActive`, which illuminates the "+" drop slots this panel does not have. The
+consequence is that dropping on empty space does nothing; drop onto a TILE, or onto a category's
+HEADER, which resolves to that category on the walk up. Enabling mouse on the category container
+would make empty-area drops work too, but it risks the scroll frame's wheel handling for an
+affordance the header already provides.
+
+**Sounds.** 3.3.5a's `SOUNDKIT` (ClassicAPI `Util/SoundKit.lua`) is a dozen entries and carries none
+of retail's cursor kits. The three names used here are confirmed present in this client's own
+FrameXML, and each play is `pcall`ed and checks the `willPlay` return, so an unknown name is silence
+rather than an error.
+
+**Panel close cancels the drag**, hooked on `OnHide` rather than in `CDS.HidePanel`: the close button
+and ESC both call `Hide()` directly. Without it a closed window would strand the cursor icon
+(parented to UIParent) and leave the source tile dimmed and locked. The offline harness now fires
+`OnHide` on a shown→hidden transition, matching the client — it previously fired only `OnShow`, so
+this whole class of teardown bug was invisible to it.

@@ -48,6 +48,7 @@ local function newRegion(kind)
   function r:SetJustifyH() end
   function r:SetJustifyV() end
   function r:SetBlendMode() end
+  function r:SetParent(p) self._parent = p end
   return r
 end
 
@@ -88,7 +89,13 @@ function frameMeta:Show()
   self._shown = true
   if not was and self._scripts.OnShow then self._scripts.OnShow(self) end
 end
-function frameMeta:Hide() self._shown = false end
+-- Symmetrically, OnHide fires on a shown -> hidden transition. The settings panel cancels an
+-- in-flight drag from there, because the close button and ESC both call Hide() directly.
+function frameMeta:Hide()
+  local was = self._shown
+  self._shown = false
+  if was and self._scripts.OnHide then self._scripts.OnHide(self) end
+end
 function frameMeta:IsShown() return self._shown end
 function frameMeta:SetPoint(p, rel, relP, x, y) self._points[#self._points + 1] = { p, rel, relP, x, y } end
 function frameMeta:SetAllPoints(rel) self._points[#self._points + 1] = { "ALL", rel } end
@@ -119,6 +126,15 @@ function frameMeta:SetMaxResize() end
 function frameMeta:GetRegions() return unpack(self._regions) end
 function frameMeta:GetObjectType() return self._kind end
 function frameMeta:GetName() return self._name end
+function frameMeta:GetEffectiveScale() return self._scale or 1 end
+-- Drag targeting is geometry: the caret goes before or after the tile depending on which side of
+-- its CENTRE the cursor sits. A stub that cannot answer GetCenter cannot test that at all, so
+-- tests place tiles explicitly via _center.
+function frameMeta:GetCenter()
+  local c = self._center
+  if c then return c[1], c[2] end
+  return nil
+end
 function frameMeta:LockHighlight() self._locked = true end
 function frameMeta:UnlockHighlight() self._locked = false end
 function frameMeta:SetBackdrop() end
@@ -371,6 +387,18 @@ function LibStub(name, silent)
   return nil
 end
 
+-- ── mouse, for the drag reorder ─────────────────────────────────────────────
+-- 3.3.5a has no GLOBAL_MOUSE_UP, so SettingsReorder ends a drag by watching IsMouseButtonDown in
+-- its OnUpdate. That makes the button state a first-class input to the code under test, not
+-- scenery: a test drives a drop by releasing the button and stepping the driver.
+CURSOR = { x = 0, y = 0 }
+MOUSE_DOWN = { LeftButton = false, RightButton = false }
+MOUSE_FOCUS = nil
+
+function GetCursorPosition() return CURSOR.x, CURSOR.y end
+function IsMouseButtonDown(btn) return MOUSE_DOWN[btn or "LeftButton"] and true or false end
+function GetMouseFocus() return MOUSE_FOCUS end
+
 -- ── C_UIDropDownMenu stand-in ───────────────────────────────────────────────
 -- NOT a reimplementation. It records the `info` tables core/Menu.lua hands to AddButton, which is
 -- the part of menu rendering that is OURS and therefore checkable here. The bug this exists to
@@ -492,6 +520,7 @@ local FILES = {
   "modules/cooldownviewer/SettingsAdapter.lua",
   "modules/cooldownviewer/SettingsCategories.lua",
   "modules/cooldownviewer/SettingsMenu.lua",
+  "modules/cooldownviewer/SettingsReorder.lua",
   "modules/cooldownviewer/Register.lua",
 }
 
@@ -1367,6 +1396,111 @@ do
   M.ResetTracking()
   M.ResetAlerts()
   S.HidePanel()
+end
+
+print("\n=== DRAG REORDER (Phase 4b-4) ===")
+do
+  local S  = NE.cooldownviewersettings
+  local A2 = S.adapter
+
+  M.ResetTracking()
+  S.OpenTo("essential")
+
+  local ess2 = S._categories.essential
+  local a, b = ess2.items[1], ess2.items[2]
+  assertf(a and b and a.spellID ~= b.spellID, "two distinct tiles to drag between")
+
+  -- Order is the editable list's order, so assert on that rather than on tile positions.
+  local function orderOf(cat)
+    local out = {}
+    for _, e in ipairs(M.GetEditableList(cat, "PRIEST") or {}) do out[#out + 1] = e.spellID end
+    return out
+  end
+  local function indexIn(list, id)
+    for i, v in ipairs(list) do if v == id then return i end end
+  end
+
+  local first, second = a.spellID, b.spellID
+  assertf(indexIn(orderOf("essential"), first) < indexIn(orderOf("essential"), second),
+          "tile 1 sorts before tile 2 to start with")
+
+  -- One drag: press, hover the target's right half, release, step the driver each time.
+  local function drag(source, target, cursorX, cursorY, cancel)
+    MOUSE_DOWN.LeftButton, MOUSE_DOWN.RightButton = true, false
+    S.BeginDrag(source)
+    local df = S._dragFrame
+    MOUSE_FOCUS = target
+    CURSOR.x, CURSOR.y = cursorX, cursorY
+    S._dragOnUpdate(df)                       -- hover: picks the target and the caret side
+    if cancel then
+      MOUSE_DOWN.RightButton = true
+    else
+      MOUSE_DOWN.LeftButton = false           -- release
+    end
+    S._dragOnUpdate(df)                       -- the transition the missing GLOBAL_MOUSE_UP replaces
+    MOUSE_DOWN.RightButton = false
+    MOUSE_FOCUS = nil
+  end
+
+  b._center = { 100, 100 }
+  b._w, b._h = 38, 38
+
+  MOUSE_DOWN.LeftButton = true
+  S.BeginDrag(a)
+  assertf(S._dragState.active, "drag begins")
+  assertf(a:GetAlpha() == 0.5, "…and locks the source tile")
+  S.CancelDrag()
+  assertf(not S._dragState.active and a:GetAlpha() == 1, "cancel restores it")
+
+  -- Right of the target's centre = drop AFTER it.
+  drag(a, b, 140, 100)
+  local after = orderOf("essential")
+  assertf(not S._dragState.active, "releasing the button ends the drag (no GLOBAL_MOUSE_UP here)")
+  assertf(indexIn(after, first) == indexIn(after, second) + 1,
+          "dropping right of a tile lands immediately after it")
+
+  -- …and left of centre drops BEFORE, which is where the off-by-one lives: removing the entry
+  -- first shifts everything below it up, so an index captured beforehand overshoots.
+  local c = S._categories.essential.items[1]
+  local d = S._categories.essential.items[3]
+  if c and d and c.spellID ~= d.spellID then
+    d._center, d._w, d._h = { 200, 100 }, 38, 38
+    local moved, anchor = c.spellID, d.spellID
+    drag(c, d, 180, 100)                       -- left of d's centre → before
+    local ord = orderOf("essential")
+    assertf(indexIn(ord, moved) == indexIn(ord, anchor) - 1,
+            "dropping left of a tile lands immediately before it")
+  end
+
+  -- Right-click mid-drag cancels without committing.
+  local ordBefore = table.concat(orderOf("essential"), ",")
+  local e, f2 = S._categories.essential.items[1], S._categories.essential.items[4]
+  if e and f2 then
+    f2._center, f2._w, f2._h = { 300, 100 }, 38, 38
+    drag(e, f2, 340, 100, true)
+    assertf(table.concat(orderOf("essential"), ",") == ordBefore, "right-click mid-drag commits nothing")
+    assertf(e:GetAlpha() == 1, "…and unlocks the source")
+  end
+
+  -- Cross-category: legality is the adapter's, and an illegal target must not commit.
+  assertf(not A2.CanTarget("essential", "trackedBar"), "essential -> Tracked Bars stays illegal")
+  local hop = S._categories.essential.items[1].spellID
+  assertf(A2.AssignAt(hop, "essential", "utility", nil, 0, "PRIEST"), "AssignAt moves across categories")
+  local uti = {}
+  for _, e2 in ipairs(M.GetEditableList("utility", "PRIEST") or {}) do
+    if e2.enabled then uti[#uti + 1] = e2.spellID end
+  end
+  assertf(indexIn(uti, hop) ~= nil, "…and the spell arrives in the destination list")
+
+  -- Closing the window mid-drag must not strand the cursor icon or a dimmed tile.
+  local g = S._categories.essential.items[1]
+  MOUSE_DOWN.LeftButton = true
+  S.BeginDrag(g)
+  S.HidePanel()
+  assertf(not S._dragState.active and g:GetAlpha() == 1, "closing the panel mid-drag clears the drag")
+  MOUSE_DOWN.LeftButton = false
+
+  M.ResetTracking()
 end
 
 print("\n=== UNIT-EVENT FILTER ===")

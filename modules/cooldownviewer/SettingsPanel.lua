@@ -77,6 +77,13 @@ local function build()
     if self:IsShown() then CDS.RefreshLayout() end
   end)
 
+  -- On OnHide, not in HidePanel: the close button and ESC both call Hide() directly. A drag in
+  -- flight owns a cursor icon parented to UIParent and a dimmed, locked source tile, and closing
+  -- the window out from under it would strand both.
+  f:HookScript("OnHide", function()
+    if CDS.CancelDrag then CDS.CancelDrag() end
+  end)
+
   -- Shared modern chrome: hides the classic ButtonFrameTemplate border, applies our nineslice,
   -- retextures the streaks and sets the title styling. Same path modules/collections/Window.lua uses.
   local PC = NE.panelchrome
