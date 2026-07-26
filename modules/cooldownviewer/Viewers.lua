@@ -56,12 +56,13 @@ local function createItem(parent, category)
   item.IconOverlay:SetPoint("BOTTOMRIGHT", item, "BOTTOMRIGHT", ox, -oy)
 
   -- DOWNPORT (§H.2 8c): retail marks a spell whose own buff is up by tinting its swipe gold, and
-  -- SetSwipeColor is WoD+. The substitute is a second copy of the frame art in the SAME rect, drawn
-  -- additively in gold: the border lights up, the transparent interior contributes nothing, and it
-  -- lines up exactly because it is the same geometry. See ItemMixin:SetBuffGlow.
+  -- SetSwipeColor is WoD+. The substitute is a static gold halo on the tile. Its rect is OVERSIZED
+  -- rather than matched to the frame or the icon — the glow texture carries a wide transparent
+  -- margin of its own, so a tight rect hides the ring inside the icon. See M.BuffGlowInset.
   item.BuffGlow = item:CreateTexture(nil, "OVERLAY")
-  item.BuffGlow:SetPoint("TOPLEFT", item, "TOPLEFT", -ox, oy)
-  item.BuffGlow:SetPoint("BOTTOMRIGHT", item, "BOTTOMRIGHT", ox, -oy)
+  local go = M.BuffGlowInset(spec.size)
+  item.BuffGlow:SetPoint("TOPLEFT", item, "TOPLEFT", -go, go)
+  item.BuffGlow:SetPoint("BOTTOMRIGHT", item, "BOTTOMRIGHT", go, -go)
   item.BuffGlow:SetDrawLayer("OVERLAY", 2)   -- above IconOverlay, which sits at the default sublevel
   item.BuffGlow:Hide()
 

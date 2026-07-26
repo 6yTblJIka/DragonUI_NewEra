@@ -5,7 +5,7 @@ TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global conventio
 
 **Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets), 6 (loose
 ends) and 7 (the tracked-aura catalog) implemented — the whole of both phasing tables except the
-deliberate cuts. Offline harnesses pass (`qa/offline/`, 517 boot assertions). Phases 1-3 and the 4b-1
+deliberate cuts. Offline harnesses pass (`qa/offline/`, 519 boot assertions). Phases 1-3 and the 4b-1
 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
 fixed, §G.7.1/§G.7.2).
 
@@ -1636,16 +1636,45 @@ needs attention *now*. "Your buff is up" is a steady state, and retail draws it 
 gold swipe tint. Reusing the alert language for it would make every buffed spell read as an alarm, and
 would collide visually with a real alert on the same tile.
 
-What shipped instead: **a second copy of the tile's own frame art, in the same rect, drawn additively
-in gold.** The border lights up; the transparent interior contributes nothing under `ADD`. Three
-things fall out of using the same geometry rather than a border drawn *around* the tile:
+What shipped instead is a **static gold halo on the tile**: one texture, no OnUpdate where the lib's
+renderers each drive one, and no possible collision with an alert glow because it is not the same
+mechanism.
 
-- it aligns to the pixel at both tile sizes for free, with no per-size constant to get wrong — the
-  opposite rule from everything else in 8a, which anchors to the *icon* rect (see §H.2.1). The harness
-  asserts against `IconOverlay`'s anchors rather than restating numbers, so the two rules stay
-  distinguishable;
-- it costs one texture per tile and no OnUpdate at all, where the lib's renderers each drive one;
-- it cannot collide with an alert glow, because it is not the same mechanism.
+#### The first version rendered nothing, and the art says why
+
+It drew a gold additive copy of the tile's **own `IconOverlay` art**, in the same rect — the reasoning
+being that lighting the existing frame would align to the pixel at both tile sizes for free, with no
+constant to get wrong. Reported from the game as "I dont see this in effect", and it was not a wiring
+fault. Decoding the cell:
+
+```
+mid-row across the left border, 6704514 overlay cell (86x86 at 1,1):
+  x0..13  (0,0,0) a1 -> a48        the soft outer falloff
+  x14     (0,0,0) a104             the "crisp border line" 8a measured
+  x15..19 (0,0,0) a93 -> a7
+  x20+    (255,255,255) a0         fully transparent interior
+cell texels with alpha>8: 2795;  mean effective luminance: 0.0 / 255
+```
+
+**Every texel is pure black.** The frame is a *drop shadow*, not a metal border — the "crisp line" 8a
+found at art x14-19 is just where the black is least transparent. `ADD` blending emits `src.rgb x
+alpha`, so a black source emits zero light no matter what vertex colour is multiplied over it. The
+atlas resolved, the region was shown, the blend was `ADD`, the tint was gold, and the arithmetic
+produced an invisible texture — 8a's exact failure mode reached by a completely different route.
+
+The replacement is `Interface\Buttons\UI-ActionButton-Border`, the stock 3.3.5a soft-glow ring this
+repo already uses for the bag rarity glow, the auction detail ring and the profession reagent slots
+(`modules/bags/BagSkin.lua:29`). Its rect is **oversized by 35%** of the tile edge — the figure those
+three call sites converged on, because the texture carries a wide transparent margin and at a tight
+rect the visible ring falls inside the icon rather than on its edge. That is the reverse of the 8a
+rule (anchor to the *icon* rect) and of the first version's rule (match the frame), so it is a
+constant, `M.BUFF_GLOW_OVERSIZE`, with the reasoning next to it.
+
+**What the harness now asserts is the source, not the mechanism.** Everything about the broken version
+passed — atlas resolved, region shown, blend `ADD`, tint gold — because each of those was true. The
+assertion that catches it is that an additive region is given art that can *carry* light, expressed
+as: the glow's texture is the stock ring, and is not from the CoolDownManager sheet at all. Mutating
+it back to a sheet path fails on exactly that line.
 
 Deliberately **not** aura-only: the totem branch (`RefreshCooldown` 1b) glows too. A live totem is not
 an aura, but it is the same state — this tile's effect is currently up — and that branch already
@@ -1666,11 +1695,17 @@ feature, not an addition of ours). `SetBuffGlowEnabled` refreshes rather than wa
 turning it off has to reach a tile glowing *right now*, and for a buff already up the next natural
 refresh can be a minute away.
 
-Harness: 17 assertions, and two stub fidelity fixes — `SetBlendMode` and `SetDrawLayer` were both
+`/necdm` reports the glow: on/off, the texture path, and how many of the shown tiles are lit right
+now. The glow has two innocent ways to look broken — the setting is off, or nothing is currently in
+the aura branch — and neither is distinguishable from a fault by looking. The first version added a
+third, which is why the texture is named in the output.
+
+Harness: 19 assertions, and two stub fidelity fixes — `SetBlendMode` and `SetDrawLayer` were both
 discarding their argument, and both carry meaning here (without `ADD` the copy *darkens* the tile
-instead of lighting it; without the sublevel it draws under the art it is meant to light). Five guards
-confirmed load-bearing by removal, each failing on its own named assertion: the aura-branch light, the
-cooldown-path clear, the pooling clear, the setting's live refresh, and the additive blend.
+instead of lighting it; without the sublevel it draws under the art it is meant to light). Seven
+guards confirmed load-bearing by removal, each failing on its own named assertion: the aura-branch
+light, the cooldown-path clear, the pooling clear, the setting's live refresh, the additive blend,
+the glow's source art, and the oversized rect.
 
 ### 8d. Bar theming
 

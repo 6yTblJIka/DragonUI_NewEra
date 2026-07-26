@@ -1513,16 +1513,26 @@ do
   local glow = mb.BuffGlow
   assertf(glow ~= nil, "the tile has a buff-glow region")
 
-  -- It is the FRAME's rect, not the icon's — which is the whole reason this substitution works
-  -- without a mask: it is the same art in the same place, so it cannot misalign at either tile size.
-  -- Everything else drawn over an icon this phase deliberately does the opposite (see 8a above), so
-  -- asserting against the overlay rather than restating numbers keeps the two rules distinguishable.
-  local gp, _, _, gx, gy = glow:GetPoint(1)
-  local op, _, _, ox, oy = mb.IconOverlay:GetPoint(1)
-  assertf(gp == op and gx == ox and gy == oy, "…sharing the frame art's rect, not the icon's")
+  -- ADD blending emits src.rgb x alpha. The first version of this drew a gold additive copy of the
+  -- tile's own IconOverlay atlas, and 6704514's overlay cell is PURE BLACK — (0,0,0) throughout,
+  -- with only an alpha ramp — because it is a drop shadow, not a metal frame. Everything about that
+  -- version passed: the atlas resolved, the region was shown, the blend was ADD, the tint was gold.
+  -- It rendered nothing, because zero times gold is zero. So the assertion is on the SOURCE: an
+  -- additive region has to be given art that can carry light, and none of the sheet we ship can.
+  local tx = glow:GetTexture()
+  assertf(tx == M.BUFF_GLOW_TEXTURE, "…drawn from the stock soft-glow ring, not a sheet atlas")
+  assertf(not tostring(tx):find("CooldownViewer", 1, true),
+    "…and NOT from the CoolDownManager sheet, whose art is black and emits nothing under ADD")
+  assertf(glow:GetBlendMode() == "ADD", "…blended additively, so it lights rather than darkens")
 
-  assertf(glow:GetTexture() ~= nil, "…with the frame atlas resolved onto it")
-  assertf(glow:GetBlendMode() == "ADD", "…drawn additively, so it LIGHTS the frame")
+  -- Oversized, not matched to the frame or the icon: the ring has a wide transparent margin of its
+  -- own, and at the tile's rect the visible part falls inside the icon instead of on its edge.
+  local gp, _, _, gx, gy = glow:GetPoint(1)
+  local over = M.BuffGlowInset(50)
+  assertf(gp == "TOPLEFT" and gx == -over and gy == over,
+    ("…and oversized past the tile by %dpx (got %s,%s)"):format(over, tostring(gx), tostring(gy)))
+  local ox = select(4, mb.IconOverlay:GetPoint(1))
+  assertf(over > math.abs(ox), "…which is wider than the frame art's own overhang")
   local layer, sub = glow:GetDrawLayer()
   local _, osub = mb.IconOverlay:GetDrawLayer()
   assertf(layer == "OVERLAY" and (sub or 0) > (osub or 0),

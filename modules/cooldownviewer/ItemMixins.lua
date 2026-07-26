@@ -38,11 +38,9 @@ local function applyItemAtlases(item)
   if item.IconOverlay then set(item.IconOverlay, "UI-HUD-CoolDownManager-IconOverlay", false) end
   if item.OutOfRange  then set(item.OutOfRange,  "UI-CooldownManager-OORshadow",       false) end
 
-  -- The buff glow is the frame art again, additive and gold (see ItemMixin:SetBuffGlow). Without the
-  -- atlas it would be an invisible texture, which is exactly the failure mode §H.2 8a existed to fix,
-  -- so it degrades to nothing rather than to a white block.
+  -- The buff glow (see ItemMixin:SetBuffGlow). Deliberately NOT an atlas from the sheet above.
   if item.BuffGlow then
-    set(item.BuffGlow, "UI-HUD-CoolDownManager-IconOverlay", false)
+    item.BuffGlow:SetTexture(M.BUFF_GLOW_TEXTURE)
     item.BuffGlow:SetBlendMode("ADD")
     item.BuffGlow:SetVertexColor(M.COLOR_BUFF_GLOW[1], M.COLOR_BUFF_GLOW[2], M.COLOR_BUFF_GLOW[3],
                                  M.COLOR_BUFF_GLOW[4])
@@ -258,18 +256,41 @@ end
 
 -- ── The buffed-spell glow (§H.2 8c) ─────────────────────────────────────────────────────────────
 -- The guide's second headline feature: "puts glow effects around buffed spells". Retail expresses it
--- as COLOR_AURA on the swipe — which, per the note above, this client cannot set. Rather than
--- approximate the tint we substitute the signal: a gold copy of the tile's own frame art, drawn
--- additively over it, so the border lights up while the spell's buff is on the player.
+-- as COLOR_AURA on the swipe — which, per the note above, this client cannot set. So we substitute
+-- the signal rather than the colour: a static gold halo on the tile while the spell's buff is up.
 --
 -- Not LibCustomGlow, which §H.2 nominated. Every glow that library renders MOVES (marching ants,
 -- pulsing button glow, orbiting sparkles), and motion on this addon already means something else —
 -- it is the alert vocabulary (Alerts.lua), fired when something needs attention NOW. A buff being up
--- is a steady state, and retail draws it as one. Using the same geometry as the frame also means it
--- lines up to the pixel at both tile sizes, which a border drawn around the tile would not.
+-- is a steady state, and retail draws it as one.
 --
--- Tunable: additive gold over dark metal reads warm rather than bright, which is the intent — a lit
--- frame, not an alarm. Raise the alpha if it needs to carry further.
+-- The FIRST attempt drew a gold additive copy of the tile's own IconOverlay art, on the reasoning
+-- that lighting the existing frame would align perfectly and cost nothing. It rendered as absolutely
+-- nothing in game, and the art says why: 6704514's overlay cell is pure black — every texel (0,0,0)
+-- carrying only an alpha ramp, peaking at a=104 on the border line. It is a SHADOW, not a metal
+-- frame. ADD blending adds src.rgb x alpha, so black source emits zero light no matter what vertex
+-- colour is multiplied over it. The atlas resolved, the region was shown, and the maths produced an
+-- invisible texture — a different route to 8a's exact failure mode.
+--
+-- So: the stock soft-glow ring, which is what this repo already uses for the bag rarity glow, the
+-- auction detail ring and the profession reagent slots (modules/bags/BagSkin.lua:29). It is present
+-- on every 3.3.5a client, it is pale rather than black, and it is built to be tinted.
+M.BUFF_GLOW_TEXTURE = "Interface\\Buttons\\UI-ActionButton-Border"
+
+-- Oversize, as a fraction of the tile edge. The texture carries a wide transparent margin, so drawn
+-- at the tile's own rect the visible ring lands well inside the icon; 35% is the figure the three
+-- call sites above converged on to put the ring ON the edge. It does mean the falloff bleeds past
+-- the tile — intended for a glow, and the reason this is a constant rather than a literal.
+M.BUFF_GLOW_OVERSIZE = 0.35
+M.BUFF_GLOW_MIN_OVER = 6
+
+function M.BuffGlowInset(size)
+  local over = math.floor((size or 0) * M.BUFF_GLOW_OVERSIZE + 0.5)
+  if over < M.BUFF_GLOW_MIN_OVER then over = M.BUFF_GLOW_MIN_OVER end
+  return over
+end
+
+-- Tunable: warm gold, the colour retail gives the swipe it will not let us tint here.
 M.COLOR_BUFF_GLOW = { 1, 0.82, 0.30, 0.9 }
 
 function ItemMixin:SetBuffGlow(on)

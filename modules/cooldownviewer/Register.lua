@@ -215,6 +215,24 @@ SlashCmdList["NECDM"] = function()
     say(("ready flash: %s"):format(flip and "retail flipbook sprite (22 frames)"
       or "fallback highlight burst (flipbook atlas not registered)"))
   end
+
+  -- Phase 8c. The glow has two independent ways to be invisible — the setting is off, or no tile is
+  -- currently in the aura branch at all — and neither one looks different from a broken glow. Report
+  -- both, plus a live count, so "I don't see it" is answerable rather than guessable. (The first
+  -- version had a third way: art that emits nothing under ADD. Hence naming the texture here.)
+  local lit, withSpell = 0, 0
+  for _, cat in ipairs({ "essential", "utility" }) do
+    local v = M.viewers and M.viewers[cat]
+    for _, it in ipairs((v and v.items) or {}) do
+      if it.spellID and it:IsShown() then
+        withSpell = withSpell + 1
+        if it._buffGlow then lit = lit + 1 end
+      end
+    end
+  end
+  say(("buff glow: %s, texture %s, lit on %d of %d shown tiles"):format(
+    M.IsBuffGlowEnabled() and "ON" or "off (Settings > Buffed spells)",
+    tostring(M.BUFF_GLOW_TEXTURE), lit, withSpell))
 end
 
 local bootFrame = CreateFrame("Frame")
