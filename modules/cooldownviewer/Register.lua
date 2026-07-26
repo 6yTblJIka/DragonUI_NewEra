@@ -48,6 +48,11 @@ local function boot()
   if booted then return end
   booted = true
 
+  -- Before anything reads a spell list: clear custom lists that were auto-seeded by the old
+  -- GetItemMeta side effect. They shadow the curated tables and would hide the whole WotLK seed on
+  -- any character that had run an earlier build. Versioned, so it runs once.
+  if M.MigrateStaleCustomLists then M.MigrateStaleCustomLists() end
+
   for _, spec in ipairs(VIEWERS) do
     local frame = spec.aura and M.CreateBuffViewer(spec.category) or M.CreateViewer(spec.category)
     if not frame then
@@ -118,7 +123,14 @@ SlashCmdList["NECDM"] = function()
     local shown = M.GetActiveSpellList(category)
     local inShown = {}
     for _, id in ipairs(shown) do inShown[id] = true end
-    say(("|cffffcc55%s|r — %d curated, %d shown"):format(category, #list, #shown))
+
+    -- Report whether a CUSTOM list is overriding the curated table. Its absence from the first
+    -- version of this command is why a spell could report book=true on every check and still be
+    -- hidden: the gate was fine, the list it was gating had been replaced.
+    local custom = M.GetCustomList(category, class)
+    say(("|cffffcc55%s|r — %d curated, %d shown%s"):format(
+      category, #list, #shown,
+      custom and ("  |cffff5555[custom list active: %d entries — curated table IGNORED]|r"):format(#custom) or ""))
     for _, id in ipairs(list) do
       local name = GetSpellInfo(id)
       local book = name and SB and SB.IsSpellNameKnown and SB.IsSpellNameKnown(name)

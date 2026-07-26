@@ -340,6 +340,36 @@ Two supporting changes: the rank table now builds lazily on first use (viewers r
 `/necdm` prints the gate's decision per curated spell — book / IsSpellKnown / byName — so the next
 report of a missing icon doesn't need guesswork.
 
+## E5. Custom-list shadowing (the second half of the "missing abilities" report)
+
+The learn-gate fix in §E4 was necessary but not sufficient. `/necdm` then showed the real fault:
+
+```
+hidden Holy Fire  id=14914  book=true  IsSpellKnown=true  byName=true
+```
+
+Every check passing, still hidden — so the gate was never the filter. `10 curated, 3 shown` was the
+tell.
+
+`M.GetItemMeta` is a read-only query, called from `ItemMixins:SetSpell` for **every icon on every
+rebuild** — and it called `GetEditableList`, which SEEDS AND PERSISTS a custom list from the curated
+defaults. So the first time any viewer built, it froze the then-current spell list into
+SavedVariables; `GetActiveSpellList` took the `custom` branch from then on and ignored the curated
+tables permanently. Every ability added later — the entire WotLK seed — was invisible on any
+character that had run an earlier build.
+
+Fixes:
+1. `GetItemMeta` now uses `GetCustomList` (read-only). **A query must never pin persistent state.**
+2. `M.MigrateStaleCustomLists`, versioned and run once at boot, clears lists that were never
+   deliberately authored. Until the Phase 4 picker exists there is no way to author one, so every
+   stored list is an artifact and clearing it loses nothing the user chose.
+3. `/necdm` now reports when a custom list is shadowing the curated table. Its absence from the
+   first version is exactly why this took two rounds to find.
+
+Upstream carries the same guarded one-time reset, for the same reason — its boot block notes a
+stale snapshot was "hiding the new defaults". That block was dropped along with
+`EditModeRegister.lua`; this restores its intent.
+
 ## F. Open questions / unverified
 
 1. **`Cooldown:SetDrawEdge` on 3.3.5a** — ClassicAPI assumes it exists (C3). Confirm.

@@ -641,6 +641,46 @@ assertf(M.IsTrackable(47788, "PRIEST") == true, "talent-granted ability passes w
 GetSpellLink = realLink
 settle(function() NE.spellbook.BuildRankTable() end)
 
+print("\n=== CUSTOM-LIST SHADOWING ===")
+-- The reported fault: every WotLK-seeded ability stayed hidden even though the learn-gate passed
+-- for it. Cause was a stale CUSTOM list frozen into SavedVariables by a read-only query, which
+-- then shadowed the curated tables permanently.
+
+-- 1. GetItemMeta is a query and must NOT create a custom list as a side effect.
+local cd = M._store(true)
+cd.customLists = {}
+M.GetItemMeta(8092, "PRIEST")
+assertf(M.GetCustomList("essential", "PRIEST") == nil,
+        "GetItemMeta does not seed a custom list")
+
+-- 2. With no custom list, the curated table (incl. the WotLK seed) drives the viewer.
+local curated = M.GetActiveSpellList("essential", true)
+local sawSeeded = false
+for _, id in ipairs(curated) do if id == 47540 then sawSeeded = true end end
+assertf(sawSeeded, "curated path includes seeded abilities (Penance)")
+
+-- 3. A stale custom list DOES shadow it — reproducing the bug, so the fix is meaningful.
+M.SetCustomList("essential", "PRIEST", { { spellID = 8092, enabled = true } })
+local shadowed = M.GetActiveSpellList("essential", true)
+local stillSeeded = false
+for _, id in ipairs(shadowed) do if id == 47540 then stillSeeded = true end end
+assertf(not stillSeeded, "a custom list shadows the curated table (the reported bug)")
+
+-- 4. The one-time migration clears it and restores the curated path.
+cd.customListsV2 = nil
+assertf(M.MigrateStaleCustomLists() == true, "migration reports it cleared something")
+assertf(M.GetCustomList("essential", "PRIEST") == nil, "stale list gone")
+local restored = M.GetActiveSpellList("essential", true)
+local backAgain = false
+for _, id in ipairs(restored) do if id == 47540 then backAgain = true end end
+assertf(backAgain, "curated abilities visible again after migration")
+
+-- 5. It must be one-shot: a list authored later (Phase 4 picker) must survive.
+M.SetCustomList("essential", "PRIEST", { { spellID = 8092, enabled = true } })
+assertf(M.MigrateStaleCustomLists() == false, "migration does not run twice")
+assertf(M.GetCustomList("essential", "PRIEST") ~= nil, "a deliberately authored list is preserved")
+M.ResetCustomList("essential", "PRIEST")
+
 print("\n=== UNIT-EVENT FILTER ===")
 local probe = CreateFrame("Frame")
 local got = {}

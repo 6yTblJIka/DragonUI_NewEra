@@ -223,13 +223,21 @@ function M.GetItemUseSpell(item)
   return nil
 end
 
--- On-use item entries live in the editable lists keyed by their USE-SPELL id, carrying itemID +
+-- On-use item entries live in the custom lists keyed by their USE-SPELL id, carrying itemID +
 -- track ("item" = GetItemCooldown / "spell" = GetSpellCooldown on the use-spell).
+--
+-- MUST use GetCustomList, never GetEditableList. This is a read-only QUERY, and it runs from
+-- ItemMixins:SetSpell for every icon on every rebuild. GetEditableList SEEDS AND PERSISTS the
+-- custom list from the curated defaults as a side effect, so calling it here silently froze the
+-- then-current spell list into SavedVariables the very first time a viewer built. After that
+-- GetActiveSpellList took the `custom` branch forever and ignored the curated tables — which is
+-- why every ability added by CdmSeedWotLK.lua stayed invisible on a character that had run an
+-- earlier build. A query must not pin persistent state.
 function M.GetItemMeta(spellID, class)
   if not class then local _; _, class = UnitClass("player") end
   if not (spellID and class) then return nil end
   for _, key in ipairs({ "essential", "utility" }) do
-    local list = M.GetEditableList(key, class)
+    local list = M.GetCustomList(key, class)
     if list then
       for _, e in ipairs(list) do
         if e.itemID and e.spellID == spellID then return e.itemID, e.track or "spell" end
@@ -276,6 +284,32 @@ function M.ResetCustomList(category, class)
   local t = getCustomTable(category)
   if not t then return end
   t[class] = nil
+end
+
+-- One-time migration: drop custom lists that were never deliberately created.
+--
+-- Until the spell picker lands (Phase 4) there is NO user-facing way to author a custom list, so
+-- any list already in SavedVariables is an artifact of the GetItemMeta side effect described above
+-- — a frozen snapshot of whatever the curated defaults happened to be at the time, which then
+-- masks every later addition (the entire WotLK seed, for a character that had run an earlier
+-- build). Clearing them restores the curated path and loses nothing the user chose.
+--
+-- Versioned so it runs exactly once and can never wipe a genuinely authored list later. Upstream
+-- carries the same guarded one-time reset for the same reason ("hiding the new defaults").
+local CUSTOM_LIST_RESET_VERSION = "customListsV2"
+
+function M.MigrateStaleCustomLists()
+  local cd = store(true)
+  if not cd then return false end
+  if cd[CUSTOM_LIST_RESET_VERSION] then return false end
+  cd[CUSTOM_LIST_RESET_VERSION] = true
+  local had = cd.customLists and next(cd.customLists) ~= nil
+  cd.customLists = {}
+  M.InvalidateCuratedCache()
+  if had and NE.Log then
+    NE.Log("CDM", "cleared stale auto-seeded spell lists; curated defaults restored")
+  end
+  return had
 end
 
 function M.GetEditableList(category, class)
