@@ -3,12 +3,12 @@
 Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/` (Classic 1.15 /
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
-**Status:** Phases 0-4a, 4b-1 through 4b-4, and 5a (on-use trinkets) implemented. Offline harnesses
-pass (`qa/offline/`, 293 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working
-in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and fixed, §G.7.1/§G.7.2).
-Remaining: 4b-5 presets (optional), the consumable half of the equip port (§G.9 — blocked on a
-generator, not on effort), and the third settings tab (§G.10 — scoped, awaiting an owner call on
-whether the DragonUI options section shrinks).
+**Status:** Phases 0-4a, 4b-1 through 4b-5, and 5a (on-use trinkets) implemented — the whole of §G.5
+except the deliberate cuts. Offline harnesses pass (`qa/offline/`, 335 boot assertions). Phases 1-3
+and the 4b-1 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three
+faults found and fixed, §G.7.1/§G.7.2). Remaining: the consumable half of the equip port (§G.9 —
+blocked on a generator pass, not on effort) and the third settings tab (§G.10 — scoped, awaiting an
+owner call on whether the DragonUI options section shrinks).
 
 ---
 
@@ -585,9 +585,8 @@ which `NE.scrollbar.Reskin` already knows how to restyle.
   have. Two tabs, not three — `CDS.UpdateGroupBuffsTabState` goes with it.
 - **`NE.editmode.Toggle` / `SelectFrame`** (4 refs). No Edit Mode here (§B1). Either drop the
   "position this frame" affordance or route it at `/dui edit`.
-- **Presets / layouts** (`Presets.lua`, 378 lines) — self-contained and genuinely portable
-  (StaticPopup + base64 + a hand-rolled parser, no `loadstring`), but it is a convenience on top of
-  a picker that does not exist yet. Defer to last.
+- ~~**Presets / layouts**~~ — deferred to last as planned, and **shipped as 4b-5** (§G.11) once the
+  picker it sits on top of was working.
 
 **Resolved — the Equip categories. DONE for trinkets (§G.9).** Owner's call was to port
 `CooldownViewerEquip.lua` so on-use trinkets and potions are trackable. Trinkets shipped as Phase 5a
@@ -604,7 +603,7 @@ bucketed potion list cannot be generated from client data. §G.9 scopes the rout
 | **4b-2** | `SettingsAdapter` + `SettingsCategories` grids, read-only. **DONE** | All categories render the player's real spells |
 | **4b-3** | `core/Menu.lua` + the item context menu. **DONE** | **The payoff.** Spell visibility, alerts and sounds are all settable, and Phase 4a stops being dormant |
 | **4b-4** | Drag reorder. **DONE** | Items can be dragged between categories and reordered |
-| **4b-5** | Presets / import / export | Optional |
+| **4b-5** | Presets / import / export, and the snapshot pair that makes Revert real (§G.11). **DONE** | Layouts save, load, import and export; Revert undoes an apply |
 | **5a** | On-use trinket discovery + the Trinkets source pool (§G.9). **DONE** | An equipped on-use trinket appears in `/cdm`, drags into Essential, and shows on the bar |
 | **5b** | Consumables, via a generated Spell.dbc effect table (§G.9) | Blocked on the generator pass, not on effort |
 | **5c** | Third `/cdm` tab hosting the viewer settings (§G.10) | Scoped; needs an owner call on the options section |
@@ -943,4 +942,71 @@ user may already rely on, so it is an owner's call rather than an implementation
 slider/checkbox helpers `Register.lua` already builds for the options section), plus harness
 coverage that the tab switches modes and that a write from the tab is visible to the options
 section. No new platform gap â€” nothing here needs an API 3.3.5a lacks.
+
+
+## G.11. 4b-5 notes (layouts, import/export, and the real Revert)
+
+Downport of `CooldownViewerSettings/Presets.lua` (378 lines) â†’ `SettingsPresets.lua`.
+
+**The snapshot pair came with it, and that is the point.** Upstream's `Panel.lua` owns
+`snapshotState`/`restoreState` and exposes them as `CDS.SnapshotState` / `CDS.RestoreState` /
+`CDS.DeepCopy`; 4b-1 deferred the Revert button precisely because that pair did not exist. It lives
+here now, so Revert is real. Applying a layout and undoing one are the same operation with a
+different source snapshot â€” building two mechanisms for that would have been the mistake.
+
+A layout is the five editable leaves plus the class it was captured on: `customLists`,
+`trackedAura`, `equipAssign`, `alerts`, `sounds`, `class`. Restore is **whole-leaf assignment, not a
+merge**: a layout is a complete state, so a spell the snapshot does not mention has to end up
+unmentioned rather than surviving from whatever was there before.
+
+`InvalidateCuratedCache` on restore is load-bearing. `GetActiveSpellList` caches the resolved curated
+list, and replacing `customLists` underneath it leaves the viewers rendering the *previous* layout
+until something else happens to dirty the cache â€” the same shape as the Â§E5 shadowing bug.
+
+**Undo is one step, and only for this session.** The panel's edits are individually reversible by
+hand (move it back, pick None), so what a player actually needs is "undo the layout I just applied",
+not a history. The snapshot is taken before any apply / starter / import, and cleared on `OnHide`:
+reverting an hour-old change is not an undo. The selected layout NAME is tracked *beside* the
+snapshot rather than inside it â€” it is session bookkeeping, and putting it in the snapshot would bake
+it into every export string, so a shared layout would arrive carrying the name of the layout its
+author happened to have selected.
+
+### Downport changes
+
+**No `WowStyle1DropdownTemplate`.** The footer control is a plain `UIPanelButtonTemplate` opening
+`CDS.BuildLayoutMenu` through `core/Menu.lua`. Same menu tree; only the widget differs. Its label is
+the selected layout's name, so the footer still answers "which layout am I on" at a glance.
+
+**Import is class-checked, which upstream is not.** A snapshot's spell lists are keyed by class, so
+restoring a Priest layout on a Mage writes into the Priest's slot and appears to do *nothing at all*.
+A silent no-op is the worst outcome for a paste, because the player cannot tell it from a broken
+feature. `Decode` now refuses with a reason naming the class the layout was built for.
+
+**Nothing else.** The codec is upstream's and was already 3.3.5a-clean â€” `string.byte`/`char`,
+`math.floor`, `string.find`, no `bit` library anywhere.
+
+### Safety
+
+Import never executes pasted input: a hand-rolled typed reader, no `loadstring`, no `setfenv`, every
+parse wrapped in `pcall`. Strings are length-prefixed so a spell name containing a tag character is
+still safe. Plain SavedVariables plus StaticPopups throughout â€” nothing here can taint the combat
+path.
+
+**Two bad-input findings, both from writing the negative test rather than the guard:**
+
+1. **The over-long string length is the one bad input that would pass silently.** `string.sub` clamps,
+   so `t1;s5:class` + `s99:PRIEST` parses as `{ class = "PRIEST" }` â€” a well-formed layout built from a
+   truncated read â€” and every later check (is it a table, is `.class` a string, does the class match)
+   then passes. The explicit bounds check in the `s` branch is what stops it. The test pairs it with
+   the same payload at the correct length, so the rejection is provably about the length and not the
+   shape.
+
+2. **The table pair-count cap was dead code, and was removed.** A header claiming a billion pairs is
+   the obvious DoS shape, so the first version capped `count`. The negative test showed the cap
+   changed nothing: every loop iteration must consume at least one byte of payload or raise, so the
+   parser is self-limiting and such a header fails on the first pair. The assertion now states *that*
+   â€” which is what lets the cap stay out instead of sitting there as a guard no input can reach.
+
+Both are the Â§G.7.2 lesson again: a guard whose test passes with the guard removed is telling you
+something, and it is usually that the guard or the test is wrong.
 

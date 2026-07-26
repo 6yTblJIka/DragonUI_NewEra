@@ -537,6 +537,7 @@ local FILES = {
   "modules/cooldownviewer/SettingsCategories.lua",
   "modules/cooldownviewer/SettingsMenu.lua",
   "modules/cooldownviewer/SettingsReorder.lua",
+  "modules/cooldownviewer/SettingsPresets.lua",
   "modules/cooldownviewer/Register.lua",
 }
 
@@ -1640,6 +1641,133 @@ do
   EQUIPPED[13], EQUIPPED[14] = nil, nil
   ITEM_SPELLS = {}
   S.HidePanel()
+  M.ResetTracking()
+end
+
+print("\n=== LAYOUTS / IMPORT-EXPORT (Phase 4b-5) ===")
+do
+  local S  = NE.cooldownviewersettings
+  local P  = S.presets
+  local A2 = S.adapter
+
+  assertf(P ~= nil, "presets module present")
+  M.ResetTracking()
+  S.OpenTo("essential")
+
+  -- ── Snapshot / restore, which the undo and every layout apply share ──
+  local moved = S._categories.essential.items[1].spellID
+  local snap = S.SnapshotState()
+  assertf(type(snap) == "table" and snap.class == "PRIEST", "snapshot records the class it was taken on")
+
+  local function inUtility(id)
+    for _, e in ipairs(M.GetEditableList("utility", "PRIEST") or {}) do
+      if e.spellID == id and e.enabled then return true end
+    end
+    return false
+  end
+
+  A2.Assign(moved, "essential", "utility", "PRIEST")
+  assertf(inUtility(moved), "an edit lands")
+  assertf(S.RestoreState(snap), "restore accepts the snapshot")
+  assertf(not inUtility(moved), "…and puts the edit back")
+
+  -- ── Named layouts ──
+  assertf(#P.Names() == 0, "no layouts to start with")
+  assertf(P.SaveAs("Raid"), "saving a layout")
+  assertf(P.Current() == "Raid", "…selects it")
+  assertf(#P.Names() == 1 and P.Names()[1] == "Raid", "…and lists it")
+
+  -- Edit, then save a second layout capturing that edit.
+  A2.Assign(moved, "essential", "utility", "PRIEST")
+  assertf(P.SaveAs("PvP"), "a second layout captures the edited state")
+  -- Alphabetical, not insertion order: the menu is a list the player scans by name.
+  assertf(P.Names()[1] == "PvP" and P.Names()[2] == "Raid", "names come back sorted")
+
+  -- Applying a layout REPLACES state rather than merging into it — the whole point of a layout.
+  assertf(P.Apply("Raid"), "applying the first layout")
+  assertf(not inUtility(moved), "…restores its state, dropping the later edit")
+  assertf(P.Apply("PvP") and inUtility(moved), "applying the second brings the edit back")
+
+  -- One-step undo. It reverts the APPLY, and it restores the selected-layout name with it.
+  assertf(S.CanRevert(), "an apply arms Revert")
+  assertf(S.Revert(), "revert runs")
+  assertf(not inUtility(moved), "…undoing the apply")
+  assertf(P.Current() == "Raid", "…and restoring the layout that was selected before it")
+  assertf(not S.CanRevert(), "revert is one step, so it disarms itself")
+
+  assertf(P.Rename("Raid", "Raid 2"), "rename")
+  assertf(P.Current() == "Raid 2", "…follows the selection")
+  assertf(P.Delete("Raid 2"), "delete")
+  assertf(P.Current() == nil, "…clears the selection when it was the selected one")
+
+  -- ── The codec ──
+  -- Round-trip through the real share string, not through the table.
+  P.SaveAs("Export Me")
+  local str = P.Encode(S.SnapshotState())
+  assertf(str:sub(1, 6) == "NECDM1", "a share string is tagged")
+  assertf(not str:find("[^%w%+/=]"), "…and is single-line paste-safe base64")
+
+  local back = P.Decode(str)
+  assertf(type(back) == "table" and back.class == "PRIEST", "it decodes back to a snapshot")
+  -- Compare a real nested value, not just the shape: the serializer is length-prefixed and the
+  -- table tag carries a pair count, so a nesting bug shows up here and nowhere else.
+  local origList = S.SnapshotState().customLists
+  local sameShape = (type(back.customLists) == "table")
+  if sameShape and origList and origList.utility and origList.utility.PRIEST then
+    sameShape = type(back.customLists.utility) == "table"
+      and type(back.customLists.utility.PRIEST) == "table"
+      and #back.customLists.utility.PRIEST == #origList.utility.PRIEST
+  end
+  assertf(sameShape, "…with the nested per-class spell lists intact")
+
+  -- Bad input never errors and never executes. Each of these is a distinct failure path.
+  local _, e1 = P.Decode("")                    assertf(e1 ~= nil, "empty paste is rejected with a reason")
+  local _, e2 = P.Decode("hello world")         assertf(e2 ~= nil, "a non-layout string is rejected")
+  local _, e3 = P.Decode("NECDM1!!!!not b64")   assertf(e3 ~= nil, "corrupt payload is rejected, not raised")
+  -- The parser must never be handed to loadstring: a payload that WOULD be valid Lua returning a
+  -- table still has to fail, because we never evaluate it.
+  local ok4 = P.Decode("NECDM1" .. "cmV0dXJuIHtjbGFzcz0iUFJJRVNUIn0=")
+  assertf(ok4 == nil, "a payload that is valid Lua is still not executed")
+
+  -- A length prefix that runs past the end of the payload. This is the one bad-input case that
+  -- string.sub's clamping would otherwise let through SILENTLY: `t1;s5:class` + `s99:PRIEST` parses
+  -- as { class = "PRIEST" } — a well-formed layout built from a truncated read — and every later
+  -- check (is it a table, is .class a string, does the class match) then passes. The control below
+  -- is the same payload with the correct length, to prove the rejection is about the length and not
+  -- about the shape.
+  local good = P.Decode("NECDM1" .. "dDE7czU6Y2xhc3NzNjpQUklFU1Q=")
+  assertf(type(good) == "table" and good.class == "PRIEST", "a hand-built minimal layout decodes")
+  local bad, e5 = P.Decode("NECDM1" .. "dDE7czU6Y2xhc3NzOTk6UFJJRVNU")
+  assertf(bad == nil and e5 ~= nil, "…but an over-long string length is rejected, not silently truncated")
+
+  -- A declared pair count is attacker-controlled, so a header claiming a billion pairs is the
+  -- obvious denial-of-service shape. The parser needs no cap for it: every iteration must consume at
+  -- least one byte of payload or raise, so the loop is self-limiting and this fails on the first
+  -- pair. Asserting it here is what lets the cap stay OUT of parseValue instead of sitting there as
+  -- an unreachable guard. base64("t999999999;").
+  local _, e7 = P.Decode("NECDM1" .. "dDk5OTk5OTk5OTs=")
+  assertf(e7 ~= nil, "a table header claiming a billion pairs fails on the first one")
+
+  -- The class gate upstream lacks: another class's layout is refused with a reason that names it,
+  -- rather than silently writing into that class's slot and appearing to do nothing.
+  local mageSnap = S.SnapshotState()
+  mageSnap.class = "MAGE"
+  local nope, e6 = P.Decode(P.Encode(mageSnap))
+  assertf(nope == nil and (e6 or ""):find("MAGE"), "another class's layout is refused by name")
+
+  -- ── Starter reset ──
+  A2.Assign(moved, "essential", "utility", "PRIEST")
+  if M.SetReadySoundKit then M.SetReadySoundKit(8092, 1) end
+  assertf(P.UseStarter(), "starter reset runs")
+  assertf(not inUtility(moved), "…reverting the spell lists")
+  assertf(not (M.GetReadySoundKit and M.GetReadySoundKit(8092)), "…and clearing the sounds")
+  assertf(P.Current() == nil, "…leaving no layout selected")
+  assertf(S.CanRevert(), "…but it is undoable")
+
+  -- Closing the panel drops the undo: reverting an hour-old change is not an undo.
+  S.HidePanel()
+  assertf(not S.CanRevert(), "closing the panel clears the undo")
+
   M.ResetTracking()
 end
 

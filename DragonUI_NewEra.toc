@@ -262,6 +262,10 @@ modules\cooldownviewer\SettingsMenu.lua
 # 4b-4: drag to reorder and reassign. Needs the adapter's ReorderTo/AssignAt and the tiles built by
 # SettingsCategories, which supplies the OnDragStart that calls in here.
 modules\cooldownviewer\SettingsReorder.lua
+# 4b-5: named layouts, import/export, and the snapshot/restore pair that finally makes the panel's
+# Revert button real. Needs core/Menu.lua for the footer menu and CDS.RefreshLayout from
+# SettingsCategories, so it loads last of the settings files.
+modules\cooldownviewer\SettingsPresets.lua
 modules\cooldownviewer\Register.lua
 
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---

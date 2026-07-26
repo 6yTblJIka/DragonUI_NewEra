@@ -85,6 +85,9 @@ local function build()
   -- the window out from under it would strand both.
   f:HookScript("OnHide", function()
     if CDS.CancelDrag then CDS.CancelDrag() end
+    -- The undo is a SESSION step, and its scope is one visit to this window. Keeping it across a
+    -- close would offer to revert a layout change the player made and then spent an hour building on.
+    if CDS.ClearUndo then CDS.ClearUndo() end
   end)
 
   -- Shared modern chrome: hides the classic ButtonFrameTemplate border, applies our nineslice,
@@ -199,11 +202,48 @@ local function build()
   -- WowScrollBox anywhere in the source to have to replace.
   f.scroll = CreateFrame("ScrollFrame", PANEL_NAME .. "Scroll", f, "UIPanelScrollFrameTemplate")
   f.scroll:SetPoint("TOPLEFT", 17, -72)
-  f.scroll:SetPoint("BOTTOMRIGHT", -30, 29)
+  f.scroll:SetPoint("BOTTOMRIGHT", -30, 34)   -- clears the footer row below
   f.content = CreateFrame("Frame", nil, f.scroll)
   f.content:SetSize(330, 1)
   f.scroll:SetScrollChild(f.content)
   if NE.scrollbar and NE.scrollbar.Reskin then NE.scrollbar.Reskin(f.scroll) end
+
+  -- Footer: the layout picker and Revert. Retail's is a WowStyle1DropdownTemplate, which does not
+  -- exist here — but the widget was never the point. This is a plain button that opens the same menu
+  -- tree through core/Menu.lua, with the selected layout's name as its label so the footer still
+  -- answers "which layout am I on" at a glance.
+  f.layoutButton = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  f.layoutButton:SetSize(180, 22)
+  f.layoutButton:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 18, 6)
+  f.layoutButton:SetScript("OnClick", function(self)
+    if CDS.ToggleLayoutMenu then CDS.ToggleLayoutMenu(self) end
+  end)
+  f.layoutButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Layouts")
+    GameTooltip:AddLine("Save, load, import and export the whole|nCooldown Manager setup for this class.",
+      1, 1, 1)
+    GameTooltip:Show()
+  end)
+  f.layoutButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+  -- Revert was deferred in 4b-1 because it needs a snapshot/restore pair, which arrived with
+  -- SettingsPresets.lua. Disabled until there is something to revert, so it never reads as broken.
+  f.revertButton = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  f.revertButton:SetSize(90, 22)
+  f.revertButton:SetPoint("LEFT", f.layoutButton, "RIGHT", 6, 0)
+  f.revertButton:SetText("Revert")
+  f.revertButton:SetScript("OnClick", function()
+    if CDS.Revert then CDS.Revert() end
+  end)
+  f.revertButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Revert")
+    GameTooltip:AddLine("Undoes the last layout change — applying a layout,|nimporting one, or the "
+      .. "starter reset.|n|nOne step, and only for this session.", 1, 1, 1)
+    GameTooltip:Show()
+  end)
+  f.revertButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
   -- Placeholder while the grids are unbuilt. Removed in 4b-2.
   f.placeholder = f.content:CreateFontString(nil, "ARTWORK", "GameFontDisableLarge")
@@ -236,6 +276,25 @@ end
 
 function CDS.GetDisplayMode() return currentMode end
 
+-- ── Footer state ────────────────────────────────────────────────────────────────────────────────
+-- Both are called from SettingsPresets after any change, and are safe before the panel exists —
+-- Presets loads after this file but a slash command can reach either first.
+
+function CDS.RefreshLayoutDropdown()
+  if not (panel and panel.layoutButton) then return end
+  local cur = CDS.presets and CDS.presets.Current and CDS.presets.Current()
+  panel.layoutButton:SetText(cur or "Layout: Starter")
+end
+
+function CDS.RefreshRevertState()
+  if not (panel and panel.revertButton) then return end
+  if CDS.CanRevert and CDS.CanRevert() then
+    panel.revertButton:Enable()
+  else
+    panel.revertButton:Disable()
+  end
+end
+
 -- ── Search text ─────────────────────────────────────────────────────────────────────────────────
 -- ClassicAPI's SearchBoxTemplate has NO Instructions FontString: its placeholder IS the edit box's
 -- text (SearchBoxTemplate_OnLoad calls SetText(SEARCH), and OnEditFocusLost puts it back). So an
@@ -264,6 +323,8 @@ end
 function CDS.ShowPanel()
   build()
   if not currentMode then CDS.SetDisplayMode("spells") else CDS.RefreshLayout() end
+  if CDS.RefreshLayoutDropdown then CDS.RefreshLayoutDropdown() end
+  if CDS.RefreshRevertState then CDS.RefreshRevertState() end
   panel:Show()
 end
 
