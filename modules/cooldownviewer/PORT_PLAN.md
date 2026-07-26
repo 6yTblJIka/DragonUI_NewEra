@@ -1523,6 +1523,41 @@ the *path* it had been handed; the real API always returns a texture OBJECT. Tha
 beyond the harness, because `AuraItemMixins:193` anchors the Pip to that return value. Also added:
 `GetMinMaxValues`, `GetVertexColor`, `GetStatusBarColor`, `hooksecurefunc`, and texcoord recording.
 
+**THE FIT, found on the first in-game look at 8a.** With the overlay finally visible, the icons read as
+too large for their frames — the reported words were "the icons are just too large and so sit outside
+the new framing", and they were exactly right.
+
+The cause is the other thing the removed MaskTexture was doing. Retail anchors the Icon with
+`setAllPoints` and masks it with 6707800; it is natural to read that mask as "rounds the corners", but
+decoding it shows its outer **3px of 64 are fully transparent**. So it also insets the icon by
+3/64 = 4.7% on every side, and only then rounds what is left, at a corner radius of 4/64.
+
+§C2 recorded that the mask could not be polyfilled and the port moved on. What went unnoticed is that
+the *inset* needs no mask at all — it is an anchor offset. In tile coordinates, for a 50px Essential
+tile:
+
+| | spans |
+|---|---|
+| IconOverlay's crisp border line | 2.07 .. 4.44 (art x 14-19 of the 86px cell, through the -9/+8 anchor) |
+| a MASKED icon (retail) | 2.34 .. 47.66 — edge sits inside the border band, so the frame overlaps it |
+| an UNMASKED icon (ours) | 0 .. 50 — overshoots the line by ~4px into the soft halo |
+
+Fixed with `M.AnchorMaskedIcon` (ItemMixins.lua), applied to all four tile shapes. The corner rounding
+is still absent and turns out to be the cheap half: at radius 4/64 a square corner overshoots the arc
+by 4*(1-1/√2) = 1.17px of 64, under a pixel on a real tile. The four missing pixels of inset were the
+whole visible problem.
+
+The harness asserts the border line lands ON the icon's edge, derived from the art rather than
+restated, and the magnitude is mutation-checked as well as the presence — 1/64 instead of 3/64 fails.
+This was unassertable before: the stub discarded texture anchors entirely, so a texture's geometry
+could not be seen. It records them now.
+
+**And a note on the ready flash, since it reads as unchanged.** The retail GCD flipbook is a thin pale
+rounded-square OUTLINE that traces the tile edge over 22 frames — not a burst. It is genuinely subtler
+than the gold expanding highlight it replaced, so "that still looks like the fallback" is a fair
+reading of a correctly working sprite. `/necdm` now reports which path is live, so the question is
+answerable without guessing.
+
 **A generalised assertion, because the specific one would not have caught the original fault.** Listing
 six names and checking each is registered only tests the names someone thought to list — and the fault
 was six names nobody had listed anywhere. So the harness reads the atlas names back out of the viewer

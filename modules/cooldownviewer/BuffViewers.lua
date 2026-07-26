@@ -32,7 +32,9 @@ local function createBuffIconItem(parent)
   item:EnableMouse(true)
 
   item.Icon = item:CreateTexture(nil, "ARTWORK")
-  item.Icon:SetAllPoints(item)
+  -- The mask's inset, which is what fits the icon inside the overlay's border — see
+  -- M.AnchorMaskedIcon in ItemMixins.lua.
+  M.AnchorMaskedIcon(item.Icon, item, 40)
 
   item.IconOverlay = item:CreateTexture(nil, "OVERLAY")
   item.IconOverlay:SetPoint("TOPLEFT", item, "TOPLEFT", -8, 7)
@@ -77,7 +79,7 @@ local function createBuffBarItem(parent)
   icon:SetSize(30, 30)
   icon:SetPoint("LEFT", item, "LEFT", 0, 0)
   icon.Icon = icon:CreateTexture(nil, "ARTWORK")
-  icon.Icon:SetAllPoints(icon)
+  M.AnchorMaskedIcon(icon.Icon, icon, 30)
   icon.IconOverlay = icon:CreateTexture(nil, "OVERLAY")
   icon.IconOverlay:SetPoint("TOPLEFT", icon, "TOPLEFT", -6, 5)
   icon.IconOverlay:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 6, -5)

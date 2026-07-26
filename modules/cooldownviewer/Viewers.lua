@@ -43,10 +43,13 @@ local function createItem(parent, category)
   item:EnableMouse(true)
 
   item.Icon = item:CreateTexture(nil, "ARTWORK")
-  item.Icon:SetAllPoints(item)
 
-  -- DOWNPORT: the source masks the icon with a MaskTexture here. Unavailable — the rounded look
-  -- comes from CropIcon (applied in ItemMixins.applyItemAtlases) plus the IconOverlay frame art.
+  -- DOWNPORT: the source anchors this with setAllPoints and masks it with a MaskTexture. The mask is
+  -- unavailable, but it was doing two jobs and one of them is reproducible: it inset the icon by 3/64
+  -- of the tile before rounding it. M.AnchorMaskedIcon applies that inset, which is what puts the
+  -- icon's edge under the IconOverlay's border line instead of out past it. See the derivation there.
+  -- The rounding itself is still gone; CropIcon (ItemMixins.applyItemAtlases) trims the baked border.
+  M.AnchorMaskedIcon(item.Icon, item, spec.size)
   item.IconOverlay = item:CreateTexture(nil, "OVERLAY")
   local ox, oy = spec.overlayInset[1], spec.overlayInset[2]
   item.IconOverlay:SetPoint("TOPLEFT", item, "TOPLEFT", -ox, oy)

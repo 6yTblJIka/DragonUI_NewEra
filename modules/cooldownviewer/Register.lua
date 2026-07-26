@@ -190,6 +190,31 @@ SlashCmdList["NECDM"] = function()
   local function has(name) return probe[name] ~= nil and "yes" or "NO" end
   say(("cooldown widget: SetDrawEdge=%s GetDrawEdge=%s SetSwipeTexture=%s SetReverse=%s"):format(
     has("SetDrawEdge"), has("GetDrawEdge"), has("SetSwipeTexture"), has("SetReverse")))
+
+  -- Phase 8a. Six atlases were being set by name with nothing registered, which renders as an
+  -- invisible texture and logs nothing — so the state is worth being able to READ rather than infer
+  -- from how the bars look. The ready flash in particular has two very different code paths, and
+  -- "is it the sprite or the fallback?" is otherwise a guess.
+  if NE.tex and NE.tex.HasAtlas then
+    local names = {
+      "UI-HUD-CoolDownManager-IconOverlay", "UI-CooldownManager-OORshadow",
+      "UI-HUD-ActionBar-GCD-Flipbook", "UI-HUD-CoolDownManager-Bar",
+      "UI-HUD-CoolDownManager-Bar-BG", "UI-HUD-CoolDownManager-Bar-Pip",
+    }
+    local missing = {}
+    for _, n in ipairs(names) do
+      if not NE.tex.HasAtlas(n) then missing[#missing + 1] = n end
+    end
+    if #missing == 0 then
+      say(("viewer art: all %d atlases registered"):format(#names))
+    else
+      say(("viewer art: MISSING %d of %d -- %s"):format(#missing, #names,
+        table.concat(missing, ", ")))
+    end
+    local flip = NE.tex.HasAtlas("UI-HUD-ActionBar-GCD-Flipbook")
+    say(("ready flash: %s"):format(flip and "retail flipbook sprite (22 frames)"
+      or "fallback highlight burst (flipbook atlas not registered)"))
+  end
 end
 
 local bootFrame = CreateFrame("Frame")

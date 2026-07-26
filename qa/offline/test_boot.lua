@@ -37,9 +37,19 @@ local function newRegion(kind)
     return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
   end
   function r:SetDesaturated(v) self._desat = v end
-  function r:SetAllPoints() end
-  function r:SetPoint() end
-  function r:ClearAllPoints() end
+  -- Anchors are RECORDED, in the same shape frames use. Discarding them meant a texture's geometry
+  -- was unassertable, which is how the icon/frame fit went unnoticed: the overlay art was registered
+  -- and the icon overshot its border by four pixels with nothing able to see it.
+  r._points = {}
+  function r:SetAllPoints(rel) self._points[#self._points + 1] = { "ALL", rel } end
+  function r:SetPoint(p, rel, relP, x, y) self._points[#self._points + 1] = { p, rel, relP, x, y } end
+  function r:ClearAllPoints() self._points = {} end
+  function r:GetNumPoints() return #self._points end
+  function r:GetPoint(i)
+    local pt = self._points[i or 1]
+    if not pt then return nil end
+    return pt[1], pt[2], pt[3], pt[4], pt[5]
+  end
   function r:Show() self._shown = true end
   function r:Hide() self._shown = false end
   function r:IsShown() return self._shown end
@@ -1417,6 +1427,45 @@ do
         assertf(magic == "BLP2" and w == SHEET[fdid][1] and h == SHEET[fdid][2],
           ("…and is a BLP2 of the assumed size (%s %dx%d)"):format(magic, w, h))
       end
+    end
+  end
+
+  -- ── icon-vs-frame fit ─────────────────────────────────────────────────────────────────────────
+  -- Registering the overlay made a geometry fault visible that had been latent since Phase 1: retail
+  -- masks the Icon, and that mask insets it by 3/64 of the tile as well as rounding it. Without the
+  -- inset a full-bleed icon overshoots the overlay's border line by ~4px on a 50px tile and sits out
+  -- in the halo — "the icons are too large and sit outside the framing".
+  assertf(math.abs(M.ICON_MASK_INSET - 3 / 64) < 1e-9,
+    "the mask inset is the one decoded from 6707800 (3 of 64)")
+
+  -- The border line's position in tile coordinates, derived from the art rather than restated: the
+  -- crisp line sits at art x 14-19 and 67-71 of the 86px cell, mapped through the overlay's outward
+  -- anchor. The icon's edge must land INSIDE that line, which is what makes the frame overlap the
+  -- icon the way retail's does.
+  local function lineAt(artX, size, ox)
+    return -ox + artX * (size + 2 * ox) / 86
+  end
+  for _, v in ipairs({ { "essential", M.viewers.essential, 50, 9 },
+                       { "utility",   M.viewers.utility,   30, 6 },
+                       { "buffIcon",  M.viewers.buffIcon,  40, 8 } }) do
+    local label, viewer, size, ox = v[1], v[2], v[3], v[4]
+    local item = viewer and viewer.items and viewer.items[1]
+    if item and item.Icon then
+      local p, _, _, x, y = item.Icon:GetPoint(1)
+      local want = size * M.ICON_MASK_INSET
+      assertf(p == "TOPLEFT" and math.abs((x or 0) - want) < 0.01 and math.abs((y or 0) + want) < 0.01,
+        ("%s icon is inset by the mask's %.2fpx (got %s %s,%s)")
+          :format(label, want, tostring(p), tostring(x), tostring(y)))
+      -- The real statement of intent, and not merely "the inset is nonzero": the overlay's crisp
+      -- border line must land ON the icon's edge. The line occupies art x 14-19 of the cell, so the
+      -- icon's edge has to fall inside that band — outside it and the frame floats off the icon
+      -- (which is the old full-bleed behaviour), inside it and the frame eats into the art.
+      local bandOuter, bandInner = lineAt(14, size, ox), lineAt(19, size, ox)
+      assertf(want >= bandOuter - 0.01 and want <= bandInner + 0.01,
+        ("…so the overlay's border line lands on the icon's edge (%.2f within %.2f..%.2f)")
+          :format(want, bandOuter, bandInner))
+    else
+      assertf(false, label .. " has an item to measure")
     end
   end
 

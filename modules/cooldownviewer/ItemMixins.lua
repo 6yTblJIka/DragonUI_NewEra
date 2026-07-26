@@ -730,6 +730,41 @@ function M.CropIcon(tex)
   end
 end
 
+-- The other half of what the removed MaskTexture did, and the half that was missed.
+--
+-- Retail anchors the Icon with setAllPoints and masks it with 6707800. That mask is easy to think of
+-- as "rounds the corners", but decoding it shows it does TWO things: its outer 3px of 64 are FULLY
+-- TRANSPARENT, so it also insets the icon by 3/64 = 4.7% on every side, and only then rounds what is
+-- left with a corner radius of 4/64.
+--
+-- Dropping the mask therefore dropped the inset, and the inset is the part that matters here. The
+-- numbers, for a 50px Essential tile:
+--
+--   IconOverlay's crisp border line falls at item x 4.05 .. 45.56 (the art's line is at 14-19 and
+--     67-71 of an 86px cell, mapped through the -9/+8 outward anchor)
+--   a MASKED icon spans 2.34 .. 47.66, so the frame overlaps its edge by ~1.7px — a frame sitting on
+--     the icon, which is what retail looks like
+--   an UNMASKED icon spans 0 .. 50, so it overshoots the border line by ~4px on every side and lands
+--     out in the soft halo instead
+--
+-- Four pixels does not sound like much, but it is the whole difference between "framed" and "too big
+-- for its frame", which is how it was reported. The corner rounding we still cannot reproduce, and it
+-- turns out not to matter much: at radius 4/64 a square corner overshoots the arc by only
+-- 4*(1-1/sqrt2) = 1.17px of 64, under a pixel on a real tile.
+--
+-- iconSize is applied with SetScale (Viewers.lua), not SetSize, so a fixed pixel inset computed from
+-- the tile's authored size stays correct at every size setting.
+M.ICON_MASK_INSET = 3 / 64
+
+function M.AnchorMaskedIcon(icon, parent, size)
+  if not (icon and parent) then return end
+  local pad = (size or 0) * M.ICON_MASK_INSET
+  icon:ClearAllPoints()
+  icon:SetPoint("TOPLEFT", parent, "TOPLEFT", pad, -pad)
+  icon:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -pad, pad)
+  return pad
+end
+
 function ItemMixin:OnEnter()
   if self.tooltipsShown == false then return end
   if self._equipSlot then
