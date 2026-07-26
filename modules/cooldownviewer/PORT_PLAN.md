@@ -3,10 +3,9 @@
 Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/` (Classic 1.15 /
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
-**Status:** Phases 0, 1 and 3 implemented. Offline harnesses pass (`qa/offline/`). Phase 1 has been
-smoke-tested in-game; Phase 3 has not. **Phase 2 (WotLK data incl. Death Knight) is still
-outstanding** and is now the main gap — Phase 3 was done first because the aura viewers are driven
-by the auto-track window rather than the curated class lists, so they never depended on it.
+**Status:** Phases 0-3 implemented. Offline harnesses pass (`qa/offline/`). Phase 1 has been
+smoke-tested in-game; Phases 2 and 3 have not. Remaining: Phase 4 (alerts, sounds, and the
+standalone settings panel with its spell picker).
 
 ---
 
@@ -286,6 +285,35 @@ Two stride subtleties preserved from upstream, both of which otherwise wrap the 
 phantom extra column: `GetStride` counts LAYOUT children (has `layoutIndex`, not `ignoreInLayout`)
 rather than SHOWN ones, and `BuffBarItem:UpdateShownState` keeps `ignoreInLayout` mirroring
 visibility.
+
+## E3. Phase 2 notes (WotLK data)
+
+131 abilities across all ten classes, including the whole of Death Knight (9 Essential, 15 Utility)
+which had no vanilla base at all. Additive appends onto `ClassData.lua`, same shape as
+`CdmSeedTBC.lua`.
+
+**Every ID is generated from this client's own data, not typed from memory** — see
+`tools/cdm-spellgen/`. `Spell.dbc` and `SkillLineAbility.dbc` are extracted from the locale MPQs
+(`Data/enUS/`, not the base archives), spells are attributed to classes via each skill line's
+ClassMask, and each authored ability NAME resolves to the rank-1 castable ID. "Castable" is defined
+as the lowest-rank, lowest-ID entry carrying a real cooldown (> 1.5s) — which is what separates an
+ability from its triggered sub-spells: Penance resolves to 47540, not its 47666/47750 heal and
+damage triggers; Death Grip to 49576, not 49560/49575.
+
+Only the curation is hand-authored: which ability is Essential vs Utility. An unresolvable name is
+a hard error rather than a silent omission, and `verify.py` independently re-reads the DBC to assert
+every emitted ID exists, matches its comment, has a cooldown, is rank 1, and is unique. That gate
+caught three entries that had no business in a pressable-cooldown list — Immolation Aura and Demon
+Charge (rank `Demon`, Metamorphosis-form only) and Reincarnation (rank `Passive`).
+
+Column positions were located empirically rather than assumed: `Spell.dbc` name 136, rank 153,
+RecoveryTime 29, CategoryRecoveryTime 30 (cooldown is the max of the last two). An early attempt to
+find the cooldown column by matching remembered durations failed outright — a small reminder of why
+the sourcing rule exists.
+
+**Known gap:** `Data/patch-4.MPQ` and `Data/patch-S.mpq` are encrypted and unreadable. If the server
+overrides spell data there, these IDs reflect the stock client. Repeated in the generated file's
+header.
 
 ## F. Open questions / unverified
 

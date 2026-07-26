@@ -160,7 +160,7 @@ function GetItemCooldown() return 0, 0, 0 end
 function GetItemIcon() return "Interface\\Icons\\Test" end
 
 -- A tiny fake spellbook: Mind Blast with three ranks, plus a few singles.
-local SPELLS = {
+SPELLS = {
   [8092]  = { "Mind Blast", "Rank 1" },
   [8102]  = { "Mind Blast", "Rank 2" },
   [10947] = { "Mind Blast", "Rank 3" },
@@ -291,6 +291,7 @@ local FILES = {
   "integration/Register.lua",
   "integration/Options.lua",
   "modules/cooldownviewer/ClassData.lua",
+  "modules/cooldownviewer/CdmSeedWotLK.lua",
   "modules/cooldownviewer/CooldownViewer.lua",
   "modules/cooldownviewer/ItemMixins.lua",
   "modules/cooldownviewer/Viewers.lua",
@@ -547,6 +548,54 @@ settle(function() M.SetAuraAssignment("PRIEST", 2944, "icon") end)
 assertf(shownItems(bIcon) == 1, "explicitly tracked target DoT appears")
 DEBUFFS.target = {}
 settle(function() M.ResetTrackedAura("PRIEST") end)
+
+print("\n=== WOTLK SEED (Phase 2) ===")
+-- Vanilla ClassData has no DEATHKNIGHT at all; CdmSeedWotLK must create it.
+local dkEss = M.ESSENTIAL_BY_CLASS.DEATHKNIGHT
+local dkUti = M.UTILITY_BY_CLASS.DEATHKNIGHT
+assertf(dkEss ~= nil and #dkEss > 0, "Death Knight essential list exists (" .. (dkEss and #dkEss or 0) .. ")")
+assertf(dkUti ~= nil and #dkUti > 0, "Death Knight utility list exists (" .. (dkUti and #dkUti or 0) .. ")")
+
+-- The appends must be additive, not replacements: vanilla Priest entries survive alongside WotLK.
+local pEss = M.ESSENTIAL_BY_CLASS.PRIEST
+local hasVanilla, hasWotlk = false, false
+for _, id in ipairs(pEss) do
+  if id == 8092  then hasVanilla = true end   -- Mind Blast, from ClassData
+  if id == 47540 then hasWotlk   = true end   -- Penance, from the seed
+end
+assertf(hasVanilla and hasWotlk, "seed appends to the vanilla list rather than replacing it")
+
+-- No duplicates anywhere (appendAll dedupes).
+local dupes = 0
+for _, tbl in pairs({ M.ESSENTIAL_BY_CLASS, M.UTILITY_BY_CLASS }) do
+  for _, list in pairs(tbl) do
+    local seen = {}
+    for _, id in ipairs(list) do
+      if seen[id] then dupes = dupes + 1 end
+      seen[id] = true
+    end
+  end
+end
+assertf(dupes == 0, "no duplicate ids after the append (" .. dupes .. ")")
+
+-- A Death Knight must actually populate. Rebuild filters on GetSpellInfo resolving, and the fake
+-- spellbook above deliberately knows only a handful of Priest spells — so register the seed's DK
+-- ids with it first. (Keeping the stub strict by default is what lets Rebuild's "a bad curated
+-- entry can't create a broken tile" guard stay meaningful for every other test.)
+for _, list in ipairs({ dkEss, dkUti }) do
+  for _, id in ipairs(list) do
+    SPELLS[id] = { "DK Ability " .. id, "" }
+  end
+end
+UnitClass = function() return "Death Knight", "DEATHKNIGHT" end
+M.InvalidateCuratedCache()
+ess._editPreview = true          -- preview skips the learn-gate, as edit mode does
+settle(function() ess:Rebuild() end)
+assertf(shownItems(ess) > 0, "Death Knight essential viewer populates (" .. shownItems(ess) .. " icons)")
+ess._editPreview = false
+UnitClass = function() return "Priest", "PRIEST" end
+M.InvalidateCuratedCache()
+settle(function() ess:Rebuild() end)
 
 print("\n=== UNIT-EVENT FILTER ===")
 local probe = CreateFrame("Frame")

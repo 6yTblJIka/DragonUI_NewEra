@@ -222,6 +222,10 @@ modules\encounterjournal\MicroButton.lua
 # CooldownViewer.xml — MaskTexture and GridLayoutFrame are both unavailable here) -> Register
 # (movers + options tab, replacing EditModeRegister.lua). See modules/cooldownviewer/PORT_PLAN.md.
 modules\cooldownviewer\ClassData.lua
+# WotLK seed: additive appends onto the vanilla lists above, plus the whole of Death Knight. Every
+# id is generated from this client's own Spell.dbc + SkillLineAbility.dbc, never hand-typed.
+# Must load AFTER ClassData (it appends to those tables) and BEFORE the viewer core reads them.
+modules\cooldownviewer\CdmSeedWotLK.lua
 modules\cooldownviewer\CooldownViewer.lua
 modules\cooldownviewer\ItemMixins.lua
 modules\cooldownviewer\Viewers.lua
