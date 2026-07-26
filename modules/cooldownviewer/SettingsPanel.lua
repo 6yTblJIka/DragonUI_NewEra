@@ -7,8 +7,11 @@
 -- Downport of NewEra/CooldownViewerSettings/Panel.lua (612 lines). See PORT_PLAN §G for the full
 -- scope. What changed and why:
 --
---   * TWO side tabs, not three. The Group Buffs tab hosts NE.groupbuff.filter, a module this addon
---     does not have (12 references). Dropped whole, along with CDS.UpdateGroupBuffsTabState.
+--   * THREE side tabs, but not upstream's three. Upstream's Group Buffs tab hosts NE.groupbuff.filter,
+--     a module this addon does not have (12 references); it is dropped whole, along with
+--     CDS.UpdateGroupBuffsTabState. In its place is a SETTINGS tab (PORT_PLAN §G.10, §G.12) holding
+--     every viewer setting, which retail keeps in its Edit Mode dialog and we used to keep in
+--     DragonUI's options panel.
 --
 --   * NO strata-raising hack. Upstream fights a real problem — Era opens context menus at
 --     FULLSCREEN_DIALOG, the same strata as its panel, so menus rendered BEHIND it and had to be
@@ -37,7 +40,7 @@ local PANEL_W, PANEL_H = 399, 609
 local PANEL_SCALE = 1.3
 
 -- Which side tab a viewer category belongs to. Essential/Utility are spellbook-driven; the buff
--- viewers are aura-driven.
+-- viewers are aura-driven. Nothing maps to "settings" — that tab is not a list of anything.
 local CATEGORY_TO_MODE = {
   essential = "spells",
   utility   = "spells",
@@ -46,7 +49,7 @@ local CATEGORY_TO_MODE = {
 }
 
 local panel        -- lazily built on first open
-local currentMode  -- "spells" | "auras"
+local currentMode  -- "spells" | "auras" | "settings"
 
 -- ── Build ───────────────────────────────────────────────────────────────────────────────────────
 
@@ -154,7 +157,19 @@ local function build()
   f.aurasTab.displayMode = "auras"
   f.aurasTab:SetPoint("TOP", f.spellsTab, "BOTTOM", 0, -3)
 
-  f.tabButtons = { f.spellsTab, f.aurasTab }
+  -- The settings tab. Its glyph is the client's own questlog cog rather than a third CDM-sheet icon:
+  -- that sheet's spare glyph is icon_buffreorder, which means "reorder group buffs" and would be a
+  -- lie here. Reusing the cog also ties the tab to the cog beside the search box, which is what a
+  -- player already reads as "options in this window". At 18px it is a hair over its native 15x16, so
+  -- it stays crisp.
+  f.settingsTab = NE.tabs.MakeSideTab(f, {
+    activeAtlas = "questlog-icon-setting", tooltip = "Settings", iconSize = 18,
+    onClick = function() CDS.SetDisplayMode("settings") end,
+  })
+  f.settingsTab.displayMode = "settings"
+  f.settingsTab:SetPoint("TOP", f.aurasTab, "BOTTOM", 0, -3)
+
+  f.tabButtons = { f.spellsTab, f.aurasTab, f.settingsTab }
 
   -- Search box. Filtering DIMS non-matching items in place rather than reflowing the grid, which is
   -- what retail does; Categories.lua owns the per-item overlay in 4b-2.
@@ -207,6 +222,14 @@ local function build()
   f.content:SetSize(330, 1)
   f.scroll:SetScrollChild(f.content)
   if NE.scrollbar and NE.scrollbar.Reskin then NE.scrollbar.Reskin(f.scroll) end
+
+  -- A SECOND scroll child for the settings tab, swapped in by SetDisplayMode. The grids own
+  -- `f.content` end to end — RefreshLayout rebuilds it from the adapter on every call — so a page of
+  -- controls needs its own child rather than a corner of theirs (PORT_PLAN §G.10 option (a)). Empty
+  -- until the tab is first opened; SettingsOptions.lua fills it then.
+  f.settingsContent = CreateFrame("Frame", nil, f.scroll)
+  f.settingsContent:SetSize(330, 1)
+  f.settingsContent:Hide()
 
   -- Footer: the layout picker and Revert. Retail's is a WowStyle1DropdownTemplate, which does not
   -- exist here — but the widget was never the point. This is a plain button that opens the same menu
@@ -263,7 +286,7 @@ CDS.Build = build
 
 function CDS.SetDisplayMode(mode)
   build()
-  if mode ~= "spells" and mode ~= "auras" then mode = "spells" end
+  if mode ~= "spells" and mode ~= "auras" and mode ~= "settings" then mode = "spells" end
   currentMode = mode
   CDS.displayMode = mode   -- read by the category grids in 4b-2
 
@@ -271,7 +294,40 @@ function CDS.SetDisplayMode(mode)
     tab:SetSelectedState(tab.displayMode == mode)
   end
 
-  CDS.RefreshLayout()
+  local settings = (mode == "settings")
+
+  -- The search box and the cog are both about the GRIDS: one dims non-matching tiles, the other
+  -- holds the Show Unlearned filter. Neither has any meaning over a page of sliders, and a search
+  -- box that silently does nothing is worse than an absent one.
+  if settings then panel.search:Hide() else panel.search:Show() end
+  if settings then panel.settingsCog:Hide() else panel.settingsCog:Show() end
+
+  -- Same for the footer: a layout captures spell lists, tracked auras, trinket placement, alerts and
+  -- sounds — not viewer geometry. Leaving "Layout: X" under a page of icon-size sliders would imply
+  -- it saves them.
+  if settings then panel.layoutButton:Hide() else panel.layoutButton:Show() end
+  if settings then panel.revertButton:Hide() else panel.revertButton:Show() end
+
+  if settings then
+    -- Built on first use; a player who never opens this tab never pays for its ~60 frames.
+    if CDS.EnsureSettingsPage then CDS.EnsureSettingsPage() end
+    panel.content:Hide()
+    panel.settingsContent:Show()
+    panel.scroll:SetScrollChild(panel.settingsContent)
+    if CDS.RefreshSettingsPage then CDS.RefreshSettingsPage() end
+  else
+    panel.settingsContent:Hide()
+    panel.content:Show()
+    panel.scroll:SetScrollChild(panel.content)
+    CDS.RefreshLayout()
+  end
+
+  -- After the refresh, so the new child has its final height: the ScrollFrame recomputes its range
+  -- from the child, and the scrollbar is stale until it does. The offset is one number on the SCROLL
+  -- frame, not per-child, so a swap from halfway down a long page would otherwise land the short one
+  -- scrolled past its own end.
+  panel.scroll:UpdateScrollChildRect()
+  panel.scroll:SetVerticalScroll(0)
 end
 
 function CDS.GetDisplayMode() return currentMode end
@@ -320,9 +376,12 @@ end
 
 -- ── Public entry points ─────────────────────────────────────────────────────────────────────────
 
+-- Always through SetDisplayMode, never a bare RefreshLayout: which body is on screen, which chrome is
+-- shown, and which refresher runs all depend on the mode, and re-opening on the settings tab has to
+-- re-read the store rather than rebuild the grids.
 function CDS.ShowPanel()
   build()
-  if not currentMode then CDS.SetDisplayMode("spells") else CDS.RefreshLayout() end
+  CDS.SetDisplayMode(currentMode or "spells")
   if CDS.RefreshLayoutDropdown then CDS.RefreshLayoutDropdown() end
   if CDS.RefreshRevertState then CDS.RefreshRevertState() end
   panel:Show()
@@ -337,11 +396,14 @@ function CDS.TogglePanel()
   if panel:IsShown() then panel:Hide() else CDS.ShowPanel() end
 end
 
--- Open with a viewer category pre-selecting the right tab.
+-- Open with a viewer category pre-selecting the right tab. `category` may also be a display mode, so
+-- the DragonUI options button can open straight onto "settings".
 function CDS.OpenTo(category)
   build()
+  currentMode = CATEGORY_TO_MODE[category]
+    or ((category == "spells" or category == "auras" or category == "settings") and category)
+    or "spells"
   CDS.ShowPanel()
-  CDS.SetDisplayMode(CATEGORY_TO_MODE[category] or "spells")
 end
 
 -- One entry point for slash commands and any future keybind.

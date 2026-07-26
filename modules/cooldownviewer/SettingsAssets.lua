@@ -30,8 +30,15 @@ NE.tex.RegisterAtlases({
   ["questlog-tab-side-glow-hover"]  = { file = 5684744, left = 0.001953, right = 0.101562, top = 0.396484, bottom = 0.513672, width = 51, height = 60 },
   ["questlog-tab-side-glow-select"] = { file = 5684744, left = 0.001953, right = 0.101562, top = 0.578125, bottom = 0.695312, width = 51, height = 60 },
 
+  -- The Settings tab's glyph, and the cog beside the search box. Same sheet as the tab body, and the
+  -- same rect modules/spellbook/Assets.lua registers for its own cog — restated here so this module
+  -- declares every atlas it draws rather than depending on which other module happens to have loaded.
+  -- RegisterAtlases is a plain table write, so the duplicate is harmless either way round.
+  ["questlog-icon-setting"] = { file = 5684744, left = 0.138672, right = 0.167969, top = 0.035156, bottom = 0.066406, width = 15, height = 16 },
+
   -- CDM side-tab glyphs (sheet 7289697, 512x128). icon_buffreorder is deliberately absent: it
-  -- belongs to the Group Buffs tab, which this port does not have (PORT_PLAN §G.4).
+  -- belongs to upstream's Group Buffs tab, which this port does not have (PORT_PLAN §G.4) — and its
+  -- "reorder group buffs" meaning is why the Settings tab reuses the cog above instead.
   ["icon_cooldownmanager"] = { file = 7289697, left = 0.330078, right = 0.455078, top = 0.085938, bottom = 0.585938, width = 32, height = 32 },
   ["icon_trackedbuffs"]    = { file = 7289697, left = 0.201172, right = 0.326172, top = 0.007813, bottom = 0.507813, width = 32, height = 32 },
 })

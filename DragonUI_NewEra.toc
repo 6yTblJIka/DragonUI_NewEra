@@ -266,6 +266,12 @@ modules\cooldownviewer\SettingsReorder.lua
 # Revert button real. Needs core/Menu.lua for the footer menu and CDS.RefreshLayout from
 # SettingsCategories, so it loads last of the settings files.
 modules\cooldownviewer\SettingsPresets.lua
+# 4c: the Settings tab. SettingsControls is the widget kit (checkbox / slider / menu-button over the
+# client's own templates, since DragonUI's AceGUI option controls only render inside an AceGUI
+# container); SettingsOptions is the page it builds. The page reads M.VIEWER_SPECS, which Register.lua
+# defines below — that is fine, it is read when the tab is first opened, not at load.
+modules\cooldownviewer\SettingsControls.lua
+modules\cooldownviewer\SettingsOptions.lua
 modules\cooldownviewer\Register.lua
 
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---

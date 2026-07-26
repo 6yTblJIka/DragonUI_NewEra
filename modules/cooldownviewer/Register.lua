@@ -6,7 +6,11 @@
 --
 --   position  -> DragonUI's MoversSystem, reached through NE.RegisterPanel (CONTRACTS §4: panel
 --                modules never touch DragonUI internals directly)
---   settings  -> the New Era options tab, via NE.RegisterOptionSection
+--   settings  -> the /cdm window's own Settings tab (SettingsOptions.lua). They spent Phases 1-4b in
+--                the New Era options tab, for want of anywhere better; §G.10/§G.12 moved them, which
+--                is both where retail keeps them and one editor per stored value instead of two.
+--                What NE.RegisterOptionSection still registers is the master enable toggle and a
+--                button that opens the window.
 --
 -- Dropped with Edit Mode, deliberately: bottom-managed stacking (EM.RegisterBottomManaged — the
 -- viewers would rise above the action-bar tower as bars are added; DragonUI has no equivalent, so
@@ -179,115 +183,19 @@ bootFrame:SetScript("OnEvent", function()
 end)
 
 -- ── Options ─────────────────────────────────────────────────────────────────────────────────────
-
--- The ten retail Edit Mode settings, per viewer. Order and ranges match
--- EditModeSettingDisplayInfo.lua so a player who knows retail finds what they expect.
-local function buildViewerControls(parent, C, spec)
-  local frameID = M.FRAME_ID[spec.category]
-
-  local function get(key) return M.GetOpt(frameID, key) end
-  local function set(key)
-    return function(v) M.SetOpt(frameID, key, v) end
-  end
-
-  C:AddToggle(parent, {
-    label   = "Enabled",
-    desc    = "Show this cooldown viewer.",
-    getFunc = function() return M.IsCategoryEnabled(spec.category) end,
-    setFunc = function(v) M.SetCategoryEnabled(spec.category, v) end,
-  })
-
-  if C.AddDropdown then
-    C:AddDropdown(parent, {
-      label   = "Orientation",
-      values  = { horizontal = "Horizontal", vertical = "Vertical" },
-      getFunc = function() return get("orientation") end,
-      setFunc = set("orientation"),
-    })
-    C:AddDropdown(parent, {
-      label   = "Icon direction",
-      values  = { right = "Right", left = "Left" },
-      getFunc = function() return get("iconDirection") end,
-      setFunc = set("iconDirection"),
-    })
-    C:AddDropdown(parent, {
-      label   = "Visibility",
-      values  = { always = "Always", incombat = "In Combat", hidden = "Hidden" },
-      getFunc = function() return get("visibleSetting") end,
-      setFunc = set("visibleSetting"),
-    })
-  end
-
-  if C.AddSlider then
-    C:AddSlider(parent, {
-      label   = "Icon limit",
-      min = 1, max = 20, step = 1,
-      getFunc = function() return get("iconLimit") end,
-      setFunc = set("iconLimit"),
-    })
-    C:AddSlider(parent, {
-      label   = "Icon size (%)",
-      min = 50, max = 200, step = 10,
-      getFunc = function() return get("iconSize") end,
-      setFunc = set("iconSize"),
-    })
-    C:AddSlider(parent, {
-      label   = "Icon padding (px)",
-      min = 0, max = 14, step = 1,
-      getFunc = function() return get("iconPadding") end,
-      setFunc = set("iconPadding"),
-    })
-    C:AddSlider(parent, {
-      label   = "Opacity (%)",
-      min = 50, max = 100, step = 1,
-      getFunc = function() return get("opacity") end,
-      setFunc = set("opacity"),
-    })
-  end
-
-  C:AddToggle(parent, {
-    label   = "Show timer",
-    desc    = "Draw the countdown number on each icon.",
-    getFunc = function() return get("showTimer") and true or false end,
-    setFunc = set("showTimer"),
-  })
-  C:AddToggle(parent, {
-    label   = "Show tooltips",
-    desc    = "Show a tooltip when hovering an icon.",
-    getFunc = function() return get("showTooltips") and true or false end,
-    setFunc = set("showTooltips"),
-  })
-  -- Hide When Inactive only takes effect on the aura viewers: retail's Essential/Utility templates
-  -- do not set allowHideWhenInactive, so those always show every known cooldown.
-  C:AddToggle(parent, {
-    label   = "Hide when inactive",
-    desc    = spec.aura
-      and "Show a slot only while its aura is active."
-      or  "No effect here — Essential and Utility always show known cooldowns, matching retail.",
-    getFunc = function() return get("hideWhenInactive") and true or false end,
-    setFunc = set("hideWhenInactive"),
-  })
-
-  -- Bar-only settings (retail exposes these on the BuffBar system alone).
-  if spec.bar then
-    if C.AddDropdown then
-      C:AddDropdown(parent, {
-        label   = "Bar content",
-        values  = { iconAndName = "Icon and Name", iconOnly = "Icon Only", nameOnly = "Name Only" },
-        getFunc = function() return get("barContent") end,
-        setFunc = set("barContent"),
-      })
-    end
-    if C.AddSlider then
-      C:AddSlider(parent, {
-        label   = "Bar width (%)",
-        min = 50, max = 200, step = 5,
-        getFunc = function() return get("barWidthScale") end,
-        setFunc = set("barWidthScale"),
-      })
-    end
-  end
-end
+--
+-- TWO CONTROLS, deliberately. This section used to carry every viewer setting — the ten per-viewer
+-- ones, the two bar-only ones, buff auto-tracking and both resets — because Phase 1 had nowhere else
+-- to put them. They now live on the Cooldown Manager's own Settings tab (SettingsOptions.lua), which
+-- is where retail keeps them and where a player already is when they care about them.
+--
+-- What stays is what only makes sense here: the master OFF switch, because DragonUI's options panel is
+-- where a player goes to turn a module off, and nobody looks inside a window for the way to make that
+-- window's frames stop existing — plus a button to reach the rest.
+--
+-- No stored VALUE is rendered in both places. A setting with two editors stays consistent only while
+-- both are rebuilt on show, and the first time one is not, the player is reading a stale control and
+-- cannot tell that from a setting that failed to apply.
 
 NE.RegisterOptionSection({
   id    = "cooldownviewer",
@@ -296,80 +204,31 @@ NE.RegisterOptionSection({
     if C.AddSpacer then C:AddSpacer(scroll) end
     C:AddHeading(scroll, "Cooldown Manager")
     C:AddDescription(scroll,
-      "Retail's Cooldown Manager, driven from curated per-class cooldown lists. Drag the viewers "
-      .. "with DragonUI's editor mode to reposition them.")
-
-    local AceGUI = LibStub and LibStub("AceGUI-3.0")
-    if AceGUI then
-      local row = AceGUI:Create("SimpleGroup")
-      row:SetFullWidth(true)
-      row:SetLayout("Flow")
-      scroll:AddChild(row)
-      for _, spec in ipairs(VIEWERS) do
-        local col = AceGUI:Create("SimpleGroup")
-        col:SetRelativeWidth(0.49)
-        col:SetLayout("List")
-        row:AddChild(col)
-        local hdr = AceGUI:Create("Heading")
-        hdr:SetText(spec.label)
-        hdr:SetFullWidth(true)
-        col:AddChild(hdr)
-        buildViewerControls(col, C, spec)
-      end
-    else
-      for _, spec in ipairs(VIEWERS) do
-        C:AddHeading(scroll, spec.label)
-        buildViewerControls(scroll, C, spec)
-      end
-    end
-
-    -- Aura auto-tracking. The buff viewers have no curated list: any player buff shorter than the
-    -- auto-track window shows automatically, which is what makes trinket/potion/proc buffs work
-    -- without enumerating them in advance.
-    if C.AddSpacer then C:AddSpacer(scroll) end
-    C:AddHeading(scroll, "Buff tracking")
-    C:AddDescription(scroll,
-      ("Buff Icons and Buff Bars automatically track any buff on you lasting %d seconds or less. "):format(
-        M.BUFF_TRACK_MAX_DURATION or 120)
-      .. "Longer buffs and permanent toggles are ignored, so the viewers stay quiet out of combat.")
+      "Retail's Cooldown Manager, driven from curated per-class cooldown lists. Every setting — which "
+      .. "spells and buffs are tracked, each viewer's layout, size and visibility, alerts and ready "
+      .. "sounds — lives in the Cooldown Manager window itself (/cdm). Drag the viewers with DragonUI's "
+      .. "editor mode to reposition them.")
 
     C:AddToggle(scroll, {
-      label   = "Auto-track short buffs",
-      desc    = "Turn off to show only auras you have explicitly assigned.",
-      getFunc = function() return M.IsAutoTrackBuffs() end,
-      setFunc = function(v) M.SetAutoTrackBuffs(v) end,
+      label   = "Enable Cooldown Manager",
+      desc    = "Turn off to hide all four viewers. Takes effect immediately, and nothing is forgotten — "
+                .. "turning it back on restores your setup exactly.",
+      getFunc = function() return M.IsEnabled() end,
+      setFunc = function(v) M.SetEnabled(v) end,
     })
-    if C.AddDropdown then
-      C:AddDropdown(scroll, {
-        label   = "Show auto-tracked buffs as",
-        values  = { both = "Both icons and bars", icon = "Icons only", bar = "Bars only" },
-        getFunc = function() return M.AutoTrackDest() end,
-        setFunc = function(v) M.SetAutoTrackDest(v) end,
+
+    if C.AddButton then
+      C:AddButton(scroll, {
+        label    = "Open Cooldown Manager",
+        desc     = "Opens the Cooldown Manager window (/cdm) on its Settings tab.",
+        callback = function()
+          if M.OpenSettingsPanel then M.OpenSettingsPanel("settings") end
+        end,
       })
+    else
+      -- An older DragonUI_Options with no AddButton. Name the command rather than leaving this section
+      -- as an off switch and no way through.
+      C:AddDescription(scroll, "Type /cdm to open the Cooldown Manager window.")
     end
-
-    C:AddToggle(scroll, {
-      label   = "Reset tracked spells and auras",
-      desc    = "Clear per-character spell-list overrides and aura assignments, falling back to the "
-                .. "curated defaults and the auto-track window. Does not move or resize the viewers.",
-      getFunc = function() return false end,
-      setFunc = function() M.ResetTracking() end,
-    })
-
-    -- The alert/sound ENGINE ships here; the per-spell picker that drives it belongs to the
-    -- settings panel (PORT_PLAN §E6, Phase 4b). Until then nothing can be assigned, so this
-    -- section says so plainly rather than advertising a feature with no way in.
-    if C.AddSpacer then C:AddSpacer(scroll) end
-    C:AddHeading(scroll, "Alerts and sounds")
-    C:AddDescription(scroll,
-      "Cooldowns can carry a visual alert and a ready sound. Choosing them per spell needs the "
-      .. "settings panel, which is not built yet — this clears anything already stored.")
-
-    C:AddToggle(scroll, {
-      label   = "Clear all alerts and sounds",
-      desc    = "Remove every per-spell alert and ready sound. Spell lists and positions are untouched.",
-      getFunc = function() return false end,
-      setFunc = function() M.ResetAlerts() end,
-    })
   end,
 })

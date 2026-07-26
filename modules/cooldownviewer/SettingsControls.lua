@@ -1,0 +1,408 @@
+-- DragonUI_NewEra/modules/cooldownviewer/SettingsControls.lua — the control kit behind the /cdm
+-- Settings tab.
+--
+-- WHY A KIT, AND NOT DragonUI's PanelControls. The options-tab helpers (Controls:AddToggle /
+-- AddSlider / AddDropdown in DragonUI_Options/panel/controls.lua) are AceGUI widgets: they only lay
+-- themselves out inside an AceGUI container, and they call `parent:AddChild(...)`. Our panel body is
+-- a plain ScrollFrame over a plain Frame, so there is no container to hand them — and DragonUI is
+-- read-only to us (CONTRACTS §0), so teaching its controls to render into a raw frame is not on the
+-- table. This is the three widgets the settings page actually needs, over the client's own
+-- templates: UICheckButtonTemplate, OptionsSliderTemplate and a menu button through core/Menu.lua.
+--
+-- NO WowStyle1DropdownTemplate, for the same reason the footer has none (PORT_PLAN §G.11): it is
+-- retail-only. A dropdown here is a plain button labelled with the current value that opens a radio
+-- menu — the widget differs, the behaviour does not.
+--
+-- SHAPE. `Kit.New(parent, width)` returns a column with a y cursor. Every Add* appends a
+-- fixed-height row and returns it; `col:Relayout()` stacks the visible rows and sizes `parent` so
+-- the scrollbar learns the extent. Sections are collapsible, and a collapsed section's rows are
+-- HIDDEN rather than destroyed — the same pooling contract the category grids use, and what makes
+-- collapsing free of any rebuild.
+--
+-- EVERY CONTROL KEEPS A `refresh` CLOSURE that re-reads its own getter, and `col:Refresh()` runs all
+-- of them. That is what keeps the page honest when a setting changes from somewhere that is not this
+-- page: a layout apply, the master toggle in DragonUI's options, a reset. A page that only wrote
+-- would drift silently, and a stale checkbox is indistinguishable from a setting that did not take.
+--
+-- Taint: plain frames and SavedVariables writes. Nothing here is secure or protected.
+
+local NE = DragonUI_NewEra
+
+NE.cooldownviewersettings = NE.cooldownviewersettings or {}
+local CDS = NE.cooldownviewersettings
+
+local Kit = {}
+CDS.controls = Kit
+
+local ROW_INDENT   = 6     -- rows inside a section sit in a little from the header
+local HEADER_H     = 24
+local CHECK_H      = 26
+local SLIDER_H     = 46
+local DROPDOWN_H   = 28
+local BUTTON_H     = 30
+local SECTION_GAP  = 10
+
+-- OptionsSliderTemplate finds its Low/High/Text FontStrings through $parent name lookups, so every
+-- slider needs a global name. UIPanelButtonTemplate does not, but naming both keeps /framestack
+-- readable when something is mis-anchored.
+local serial = 0
+local function nextName(kind)
+  serial = serial + 1
+  return "NE_CDMSetting" .. kind .. serial
+end
+
+local function tip(frame, title, text)
+  if not title then return end
+  frame:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(title)
+    if text then GameTooltip:AddLine(text, 1, 1, 1, true) end
+    GameTooltip:Show()
+  end)
+  frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
+end
+
+local function labelFor(values, v)
+  for _, e in ipairs(values) do
+    if e[1] == v then return e[2] end
+  end
+  return tostring(v)
+end
+
+-- Slider values arrive continuous from a drag on this client — SetObeyStepOnDrag is retail-only, and
+-- SetValueStep alone only governs the arrow keys. So the step is applied here, on the way in, which
+-- is what Blizzard's own option sliders do.
+local function snap(v, step, minV)
+  if not step or step <= 0 then return v end
+  return minV + math.floor((v - minV) / step + 0.5) * step
+end
+
+-- ── Column ──────────────────────────────────────────────────────────────────────────────────────
+
+local Column = {}
+Column.__index = Column
+
+function Kit.New(parent, width)
+  local col = setmetatable({
+    frame    = parent,
+    width    = width or 330,
+    entries  = {},          -- ordered rows: { frame =, h =, section =, gap =, indent = }
+    sections = {},
+    refreshers = {},
+  }, Column)
+  return col
+end
+
+function Column:_add(frame, h, opts)
+  opts = opts or {}
+  self.entries[#self.entries + 1] = {
+    frame  = frame,
+    h      = h,
+    -- A row belongs to whatever section was opened last. Rows added before the first AddSection
+    -- (the page's intro text) have no section and are therefore never collapsible.
+    section = opts.standalone and nil or self._section,
+    gap    = opts.gap or 0,
+    indent = opts.indent or (self._section and ROW_INDENT or 0),
+  }
+  return frame
+end
+
+function Column:_row(kind, h, opts)
+  local f = CreateFrame(kind or "Frame", nil, self.frame)
+  f:SetHeight(h)
+  f:SetWidth(self.width - ((opts and opts.indent) or (self._section and ROW_INDENT or 0)))
+  self:_add(f, h, opts)
+  return f
+end
+
+function Column:Relayout()
+  local y = 0
+  for _, e in ipairs(self.entries) do
+    local visible = (not e.section) or e.section.expanded
+    if visible then
+      y = y + e.gap
+      e.frame:ClearAllPoints()
+      e.frame:SetPoint("TOPLEFT", self.frame, "TOPLEFT", e.indent, -y)
+      e.frame:Show()
+      y = y + e.h
+    else
+      e.frame:Hide()
+    end
+  end
+  -- The trailing pad stops the last row butting against the footer.
+  self.frame:SetHeight(math.max(1, y + 10))
+  self._height = y
+  return y
+end
+
+function Column:Refresh()
+  for _, fn in ipairs(self.refreshers) do fn() end
+end
+
+-- ── Section header ──────────────────────────────────────────────────────────────────────────────
+-- Same look as the category headers next door (a faint bar with the client's own +/- glyph), because
+-- the two tabs are the same window and a settings section that styled itself differently would read
+-- as belonging to a different addon.
+
+function Column:AddSection(title, expanded)
+  local section = { expanded = expanded and true or false, title = title }
+  self.sections[#self.sections + 1] = section
+
+  self._section = nil          -- the header itself is never inside the section it opens
+  local h = self:_row("Button", HEADER_H, { gap = SECTION_GAP, indent = 0 })
+  self._section = section
+  section.header = h
+
+  local bg = h:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints()
+  bg:SetTexture(1, 1, 1, 0.06)
+
+  h.Toggle = h:CreateTexture(nil, "ARTWORK")
+  h.Toggle:SetSize(16, 16)
+  h.Toggle:SetPoint("LEFT", h, "LEFT", 4, 0)
+
+  h.Text = h:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  h.Text:SetPoint("LEFT", h.Toggle, "RIGHT", 4, 0)
+  h.Text:SetText(title)
+
+  local function paint()
+    h.Toggle:SetTexture(section.expanded and "Interface\\Buttons\\UI-MinusButton-Up"
+                                          or "Interface\\Buttons\\UI-PlusButton-Up")
+  end
+  paint()
+
+  h:SetScript("OnClick", function()
+    section.expanded = not section.expanded
+    paint()
+    self:Relayout()
+  end)
+
+  section.SetExpanded = function(_, on)
+    section.expanded = on and true or false
+    paint()
+  end
+  return section
+end
+
+-- Ends the current section, so a following row is top-level again.
+function Column:EndSection()
+  self._section = nil
+end
+
+-- ── Description text ────────────────────────────────────────────────────────────────────────────
+
+function Column:AddText(text, opts)
+  opts = opts or {}
+  local indent = opts.indent or (self._section and ROW_INDENT or 0)
+  local f = CreateFrame("Frame", nil, self.frame)
+  f:SetWidth(self.width - indent)
+
+  local fs = f:CreateFontString(nil, "ARTWORK", opts.font or "GameFontDisableSmall")
+  fs:SetPoint("TOPLEFT")
+  fs:SetWidth(self.width - indent - 4)
+  fs:SetJustifyH("LEFT")
+  fs:SetText(text)
+
+  -- GetStringHeight is only meaningful once the text and width are set; the floor covers the offline
+  -- harness, whose FontString stub cannot measure.
+  local h = math.max(14, (fs.GetStringHeight and fs:GetStringHeight() or 0) + 2)
+  f:SetHeight(h)
+  f.Text = fs
+  self:_add(f, h, { gap = opts.gap or 2, indent = indent })
+  return f
+end
+
+-- ── Checkbox ────────────────────────────────────────────────────────────────────────────────────
+-- o = { label, desc, get, set, onChanged }
+
+function Column:AddCheckbox(o)
+  local row = self:_row("Button", CHECK_H)
+
+  local cb = CreateFrame("CheckButton", nextName("Check"), row, "UICheckButtonTemplate")
+  cb:SetSize(24, 24)
+  cb:SetPoint("LEFT", row, "LEFT", 0, 0)
+
+  local label = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  label:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+  label:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+  label:SetJustifyH("LEFT")
+  label:SetText(o.label or "")
+
+  local function refresh()
+    cb:SetChecked(o.get and o.get() and true or false)
+  end
+
+  local function apply(on)
+    cb:SetChecked(on)
+    if o.set then o.set(on) end
+    if PlaySound then
+      PlaySound(on and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
+    end
+    if o.onChanged then o.onChanged(on) end
+  end
+
+  -- UICheckButtonTemplate has already flipped its own state by the time OnClick runs, so the box
+  -- reports the NEW value; the row has not, so it flips the current one. Both land in `apply`, which
+  -- is the only thing that writes.
+  cb:SetScript("OnClick", function(self) apply(self:GetChecked() and true or false) end)
+  row:SetScript("OnClick", function() apply(not (cb:GetChecked() and true or false)) end)
+
+  tip(cb, o.label, o.desc)
+  refresh()
+  self.refreshers[#self.refreshers + 1] = refresh
+  row.Check, row.Label, row.Refresh = cb, label, refresh
+  return row
+end
+
+-- ── Slider ──────────────────────────────────────────────────────────────────────────────────────
+-- o = { label, desc, min, max, step, get, set, format }
+
+function Column:AddSlider(o)
+  local row = self:_row("Frame", SLIDER_H)
+  local minV, maxV, step = o.min or 0, o.max or 100, o.step or 1
+
+  local label = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  label:SetPoint("TOPLEFT", row, "TOPLEFT", 2, -2)
+  label:SetJustifyH("LEFT")
+  label:SetText(o.label or "")
+
+  local value = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+  value:SetPoint("TOPRIGHT", row, "TOPRIGHT", -4, -2)
+  value:SetJustifyH("RIGHT")
+
+  local name = nextName("Slider")
+  local sl = CreateFrame("Slider", name, row, "OptionsSliderTemplate")
+  sl:SetPoint("TOPLEFT", row, "TOPLEFT", 6, -20)
+  sl:SetWidth(self.width - (self._section and ROW_INDENT or 0) - 24)
+  sl:SetMinMaxValues(minV, maxV)
+  sl:SetValueStep(step)
+  if sl.SetObeyStepOnDrag then sl:SetObeyStepOnDrag(true) end
+
+  -- The template's own three FontStrings: $parentText sits centred ABOVE the bar, which would
+  -- duplicate our label, so it is blanked. Low/High carry the range.
+  local function templateText(suffix, text)
+    local fs = _G[name .. suffix]
+    if fs and fs.SetText then fs:SetText(text) end
+  end
+  templateText("Text", "")
+  templateText("Low",  tostring(minV))
+  templateText("High", tostring(maxV))
+
+  local function fmt(v)
+    if o.format then return o.format(v) end
+    return tostring(v)
+  end
+
+  local function refresh()
+    local cur = snap(o.get and o.get() or minV, step, minV)
+    sl._neSuppress = true
+    sl:SetValue(cur)
+    sl._neSuppress = false
+    sl._neVal = cur
+    value:SetText(fmt(cur))
+  end
+
+  sl:SetScript("OnValueChanged", function(self, raw)
+    if self._neSuppress then return end
+    local v = snap(raw or minV, step, minV)
+    if v < minV then v = minV elseif v > maxV then v = maxV end
+    -- Re-seat the thumb on the snapped value. Guarded, or this SetValue re-enters us.
+    if v ~= raw then
+      self._neSuppress = true
+      self:SetValue(v)
+      self._neSuppress = false
+    end
+    value:SetText(fmt(v))
+    -- Only WRITE on a real change. A drag fires this continuously, and every write re-runs the
+    -- viewer's RefreshLayout — which relays out every icon.
+    if self._neVal ~= v then
+      self._neVal = v
+      if o.set then o.set(v) end
+      if o.onChanged then o.onChanged(v) end
+    end
+  end)
+
+  tip(sl, o.label, o.desc)
+  refresh()
+  self.refreshers[#self.refreshers + 1] = refresh
+  row.Slider, row.Label, row.Value, row.Refresh = sl, label, value, refresh
+  return row
+end
+
+-- ── Dropdown ────────────────────────────────────────────────────────────────────────────────────
+-- o = { label, desc, values = { {value, label}, ... }, get, set }
+--
+-- `values` is an ORDERED array, not the value->label map the options tab takes: that map is fed to
+-- AceGUI, which sorts it for you, and a radio menu has to decide its own order. "Always / In Combat
+-- / Hidden" reads as a progression; alphabetised it does not.
+
+function Column:AddDropdown(o)
+  local row = self:_row("Frame", DROPDOWN_H)
+  local values = o.values or {}
+
+  local label = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  label:SetPoint("LEFT", row, "LEFT", 2, 0)
+  label:SetJustifyH("LEFT")
+  label:SetText(o.label or "")
+
+  local btn = CreateFrame("Button", nextName("Drop"), row, "UIPanelButtonTemplate")
+  btn:SetSize(o.width or 130, 22)
+  btn:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+
+  local function refresh()
+    btn:SetText(labelFor(values, o.get and o.get()))
+  end
+
+  local function generator(_, root)
+    for _, entry in ipairs(values) do
+      local v, text = entry[1], entry[2]
+      root:CreateRadio(text,
+        function() return (o.get and o.get()) == v end,
+        function()
+          if o.set then o.set(v) end
+          refresh()
+          if o.onChanged then o.onChanged(v) end
+        end)
+    end
+  end
+  row.MenuGenerator = generator   -- test seam: the tree is assertable without opening a menu
+
+  btn:SetScript("OnClick", function(self)
+    if NE.menu and NE.menu.ToggleAnchored then
+      NE.menu.ToggleAnchored(generator, self,
+        { point = "TOPRIGHT", relativePoint = "BOTTOMRIGHT", x = 0, y = -2 })
+    end
+  end)
+
+  tip(btn, o.label, o.desc)
+  refresh()
+  self.refreshers[#self.refreshers + 1] = refresh
+  row.Button, row.Label, row.Refresh = btn, label, refresh
+  return row
+end
+
+-- ── Action button ───────────────────────────────────────────────────────────────────────────────
+-- o = { label, desc, onClick, width }
+
+function Column:AddButton(o)
+  local row = self:_row("Frame", BUTTON_H)
+
+  local btn = CreateFrame("Button", nextName("Button"), row, "UIPanelButtonTemplate")
+  btn:SetSize(o.width or 200, 22)
+  btn:SetPoint("LEFT", row, "LEFT", 2, 0)
+  btn:SetText(o.label or "")
+  btn:SetScript("OnClick", function()
+    if o.onClick then o.onClick() end
+  end)
+
+  tip(btn, o.label, o.desc)
+  row.Button = btn
+  return row
+end
+
+function Column:AddSpacer(h)
+  local f = CreateFrame("Frame", nil, self.frame)
+  f:SetSize(1, h or 8)
+  self:_add(f, h or 8, {})
+  return f
+end

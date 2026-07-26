@@ -341,6 +341,15 @@ function CDS.RefreshLayout()
   local _, class = UnitClass("player")
   local mode = CDS.GetDisplayMode() or "spells"
 
+  -- The settings tab is not a grid of anything. Its page is a sibling scroll child owned by
+  -- SettingsOptions.lua, so re-reading it is a refresh, not a rebuild — and the panel's event handler
+  -- calls this on every SPELL_UPDATE_ICON, which would otherwise deactivate and re-source every
+  -- category behind a page the player is not looking at.
+  if mode == "settings" then
+    if CDS.RefreshSettingsPage then CDS.RefreshSettingsPage() end
+    return
+  end
+
   -- Deactivate everything first, so a category that belongs to the other tab can't linger.
   for _, c in pairs(categories) do c._active = false; c:Hide() end
 

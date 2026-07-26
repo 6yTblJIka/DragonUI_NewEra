@@ -47,6 +47,9 @@ local function newRegion(kind)
   function r:SetRotation() end
   function r:SetJustifyH() end
   function r:SetJustifyV() end
+  -- Word-wrapped description text measures itself to decide its row height. A fixed answer is enough
+  -- for the layout maths to be exercised; the real client returns the wrapped height.
+  function r:GetStringHeight() return 12 end
   function r:SetBlendMode() end
   function r:SetParent(p) self._parent = p end
   return r
@@ -172,10 +175,32 @@ function frameMeta:CreateFontString() local t = newRegion("FontString"); self._r
 function frameMeta:SetCooldown(s, d) self._cdStart, self._cdDur = s, d end
 function frameMeta:SetDrawEdge() end
 function frameMeta:SetReverse(v) self._reverse = v end
--- StatusBar surface (BuffBar rows).
+-- StatusBar surface (BuffBar rows) — and Slider, which shares it.
 function frameMeta:SetMinMaxValues(lo, hi) self._min, self._max = lo, hi end
-function frameMeta:SetValue(v) self._value = v end
+-- The client fires OnValueChanged whenever SetValue actually MOVES the value, including when the
+-- caller is code rather than a drag. The settings sliders depend on that being true: each one
+-- re-seats its thumb from inside its own OnValueChanged handler, and re-reads its getter on every
+-- page refresh. A stub that swallowed those calls could not tell a working re-entrancy guard from a
+-- missing one.
+function frameMeta:SetValue(v)
+  local old = self._value
+  self._value = v
+  if old ~= v and self._scripts.OnValueChanged then self._scripts.OnValueChanged(self, v) end
+end
 function frameMeta:GetValue() return self._value end
+function frameMeta:SetValueStep(s) self._valueStep = s end
+function frameMeta:SetOrientation(o) self._orientation = o end
+-- CheckButton surface. 3.3.5a returns 1/nil rather than true/false, which is why every reader in the
+-- settings kit normalises with `and true or false`; the stub returns booleans because the difference
+-- is only interesting at the call site, and a test asserting `== true` on a real client would pass
+-- anyway through that normalisation.
+function frameMeta:SetChecked(v) self._checked = v and true or false end
+function frameMeta:GetChecked() return self._checked end
+function frameMeta:Click(button)
+  if self._scripts.OnClick then self._scripts.OnClick(self, button or "LeftButton") end
+end
+-- SetObeyStepOnDrag is deliberately ABSENT: it is retail-only, which is why the slider kit snaps the
+-- value itself. Adding it here would hide that.
 function frameMeta:SetStatusBarColor(...) self._barColor = { ... } end
 function frameMeta:SetStatusBarTexture(t) self._barTex = t end
 function frameMeta:GetStatusBarTexture() return self._barTex end
@@ -386,6 +411,14 @@ function PlaySoundFile(path, channel)
   return true
 end
 
+-- UI click sounds (the settings checkboxes) go through PlaySound, which takes a NAME on this client.
+-- Kept in its own table so the ready-sound assertions above still count only what they play.
+UI_SOUNDS = {}
+function PlaySound(kit)
+  UI_SOUNDS[#UI_SOUNDS + 1] = kit
+  return true
+end
+
 -- LibCustomGlow stands in for the FX renderers. It records the live glow per frame so the tests can
 -- assert on what is showing rather than on internal bookkeeping.
 GLOWS = setmetatable({}, { __mode = "k" })
@@ -538,6 +571,8 @@ local FILES = {
   "modules/cooldownviewer/SettingsMenu.lua",
   "modules/cooldownviewer/SettingsReorder.lua",
   "modules/cooldownviewer/SettingsPresets.lua",
+  "modules/cooldownviewer/SettingsControls.lua",
+  "modules/cooldownviewer/SettingsOptions.lua",
   "modules/cooldownviewer/Register.lua",
 }
 
@@ -1156,7 +1191,10 @@ if sp then
   assertf(sp:IsShown(), "panel shown after first /cdm")
   assertf(sp._w == 399 and sp._h == 609, "panel sized 399x609 (" .. sp._w .. "x" .. sp._h .. ")")
   assertf(CDS.GetDisplayMode() == "spells", "opens on the Spells tab")
-  assertf(#sp.tabButtons == 2, "two side tabs, not three (" .. #sp.tabButtons .. ")")
+  -- Three tabs: Spells, Tracked Buffs, Settings. NOT upstream's three — its third is Group Buffs,
+  -- which needs NE.groupbuff.filter and is dropped whole (PORT_PLAN §G.4).
+  assertf(#sp.tabButtons == 3, "three side tabs (" .. #sp.tabButtons .. ")")
+  assertf(sp.settingsTab.displayMode == "settings", "…the third being Settings, not Group Buffs")
   assertf(sp.scroll ~= nil and sp.content ~= nil, "scroll body built")
   assertf(sp.search ~= nil, "search box built")
 
@@ -1179,6 +1217,9 @@ end
 assertf(NE.tex.HasAtlas("questlog-tab-side"), "side-tab body atlas registered")
 assertf(NE.tex.HasAtlas("icon_cooldownmanager"), "Spells tab glyph registered")
 assertf(NE.tex.HasAtlas("icon_trackedbuffs"), "Auras tab glyph registered")
+-- Registered by this module, not borrowed from the spellbook's asset file: the tab would otherwise be
+-- a transparent gap on any load order where that file had not run.
+assertf(NE.tex.HasAtlas("questlog-icon-setting"), "Settings tab glyph registered")
 
 print("\n=== CATEGORY GRIDS (Phase 4b-2) ===")
 local A = CDS.adapter
@@ -1769,6 +1810,190 @@ do
   assertf(not S.CanRevert(), "closing the panel clears the undo")
 
   M.ResetTracking()
+end
+
+print("\n=== SETTINGS TAB (Phase 4c) ===")
+do
+  local S = NE.cooldownviewersettings
+  local panel = S.panel or S.Build()
+
+  -- Laziness first, before anything opens the tab: ~60 frames a player who never opens it should not
+  -- pay for. Every earlier block has opened this panel, so a page built at panel-build time would
+  -- already exist here.
+  assertf(S.settingsColumn == nil, "the settings page is not built until its tab is opened")
+
+  S.ShowPanel()
+  assertf(#panel.tabButtons == 3, "the panel carries three side tabs (" .. #panel.tabButtons .. ")")
+
+  S.SetDisplayMode("settings")
+  assertf(S.GetDisplayMode() == "settings", "the settings tab selects")
+  local col = S.settingsColumn
+  assertf(col ~= nil, "…and builds the page on that first switch")
+  assertf(panel.scroll:GetScrollChild() == panel.settingsContent,
+          "…swapping the scroll child to the settings page")
+  assertf(panel.settingsContent:IsShown() and not panel.content:IsShown(),
+          "…and showing exactly one of the two bodies")
+
+  -- The chrome that belongs to the GRIDS goes away: the search box dims non-matching tiles and the cog
+  -- holds Show Unlearned. A search box that silently does nothing is worse than an absent one.
+  assertf(not panel.search:IsShown(), "the search box hides on the settings tab")
+  assertf(not panel.settingsCog:IsShown(), "…as does the cog")
+  -- Same for the footer: a layout captures spell lists, auras, trinket placement, alerts and sounds —
+  -- not viewer geometry — so leaving it under a page of icon sliders would imply it saves them.
+  assertf(not panel.layoutButton:IsShown() and not panel.revertButton:IsShown(),
+          "…and the layout footer, which does not cover viewer geometry")
+
+  -- Find a control by the section it lives in plus its own label. Scoping by section matters: "Icon
+  -- size" exists four times, once per viewer, and an unscoped search would silently always answer with
+  -- Essential's — so a test meaning to prove Buff Bars' slider works would prove nothing.
+  local function findRow(sectionTitle, labelText)
+    for _, e in ipairs(col.entries) do
+      local f = e.frame
+      local inSection = (not sectionTitle) or (e.section and e.section.title == sectionTitle)
+      if inSection and f.Label and f.Label:GetText() == labelText then return f, e end
+    end
+    return nil
+  end
+  local function findSection(title)
+    for _, s in ipairs(col.sections) do
+      if s.title == title then return s end
+    end
+    return nil
+  end
+
+  -- ── Sliders ──
+  local size = findRow("Essential Cooldowns", "Icon size")
+  assertf(size ~= nil, "Essential has an Icon size slider")
+  size.Slider:SetValue(150)
+  assertf(M.GetOpt("CooldownViewerEssential", "iconSize") == 150, "moving it writes the viewer's opt")
+  assertf(size.Value:GetText() == "150%", "…and the row shows the value with its unit")
+
+  -- SetObeyStepOnDrag is retail-only, so the step is applied on the way in. 137 is inside the 140 step.
+  size.Slider:SetValue(137)
+  assertf(M.GetOpt("CooldownViewerEssential", "iconSize") == 140, "a between-steps value snaps to a step")
+  assertf(size.Slider:GetValue() == 140, "…and the thumb re-seats on the snapped value")
+
+  -- A drag fires OnValueChanged continuously, and every write re-runs the viewer's RefreshLayout, which
+  -- relays out every icon. Only a change that crosses into the next step may write.
+  local writes = 0
+  local realSetOpt = M.SetOpt
+  M.SetOpt = function(...) writes = writes + 1; return realSetOpt(...) end
+  local onValue = size.Slider:GetScript("OnValueChanged")
+  onValue(size.Slider, 142)
+  onValue(size.Slider, 138)
+  assertf(writes == 0, "a drag that stays inside one step writes nothing (" .. writes .. ")")
+  onValue(size.Slider, 148)
+  assertf(writes == 1, "…and crossing into the next step writes exactly once (" .. writes .. ")")
+  M.SetOpt = realSetOpt
+
+  -- ── Checkboxes ──
+  local timer = findRow("Essential Cooldowns", "Show timer")
+  local was = M.GetOpt("CooldownViewerEssential", "showTimer") and true or false
+  -- Clicking the ROW, not the box: the label is the bigger target and has to work.
+  timer:GetScript("OnClick")(timer)
+  assertf((M.GetOpt("CooldownViewerEssential", "showTimer") and true or false) ~= was,
+          "clicking a checkbox row flips the setting")
+  assertf((timer.Check:GetChecked() and true or false) ~= was, "…and repaints the box")
+  -- The box's own path. UICheckButtonTemplate flips its state before OnClick runs on the real client;
+  -- the stub has no template, so the flip is done here to reproduce what the handler is handed.
+  timer.Check:SetChecked(was)
+  timer.Check:GetScript("OnClick")(timer.Check)
+  assertf((M.GetOpt("CooldownViewerEssential", "showTimer") and true or false) == was,
+          "…and clicking the box itself agrees with it")
+
+  -- ── Dropdowns ──
+  local vis = findRow("Essential Cooldowns", "Visibility")
+  local root = NE.menu.BuildRoot(vis.MenuGenerator)
+  assertf(#root.children == 3, "Visibility offers three choices")
+  -- ORDERED, not sorted: alphabetical would put Hidden second. "Always / In Combat / Hidden" is a
+  -- progression, which is the whole reason the kit takes an array where the options tab takes a map.
+  assertf(root.children[1].text == "Always" and root.children[2].text == "In Combat",
+          "…in the order written, not alphabetised")
+  root:Child("In Combat"):Invoke()
+  assertf(M.GetOpt("CooldownViewerEssential", "visibleSetting") == "incombat",
+          "choosing one writes the viewer's opt")
+  assertf(vis.Button:GetText() == "In Combat", "…and the button relabels to the choice")
+
+  -- ── Which controls each viewer gets ──
+  -- Hide When Inactive is only OFFERED where it does something: retail's Essential/Utility templates
+  -- do not set allowHideWhenInactive, so UpdateShownState ignores it there. The options tab used to ship
+  -- the control with a description explaining it was inert.
+  assertf(findRow("Essential Cooldowns", "Hide when inactive") == nil,
+          "Essential has no Hide when inactive control, because it would do nothing")
+  assertf(findRow("Buff Icons", "Hide when inactive") ~= nil, "…but Buff Icons does")
+  assertf(findRow("Buff Bars", "Bar width") ~= nil, "the bar-only settings appear on Buff Bars")
+  assertf(findRow("Buff Icons", "Bar width") == nil, "…and nowhere else")
+
+  -- ── Collapsible sections ──
+  local track = findSection("Buff tracking")
+  local auto  = findRow("Buff tracking", "Auto-track short buffs")
+  assertf(track ~= nil and auto ~= nil, "the Buff tracking section exists")
+  assertf(not track.expanded and not auto:IsShown(), "…collapsed, with its rows hidden")
+  local shortH = panel.settingsContent:GetHeight()
+  track.header:GetScript("OnClick")(track.header)
+  assertf(track.expanded and auto:IsShown(), "clicking the header expands it")
+  assertf(panel.settingsContent:GetHeight() > shortH, "…and the scroll child grows to match")
+
+  -- ── The page is not the only writer ──
+  -- A layout apply, a reset, or DragonUI's master toggle can all move a value underneath this page. A
+  -- control that only ever wrote would drift, and a stale checkbox reads exactly like a setting that
+  -- failed to apply.
+  M.SetOpt("CooldownViewerEssential", "iconSize", 90)
+  S.RefreshSettingsPage()
+  assertf(size.Slider:GetValue() == 90 and size.Value:GetText() == "90%",
+          "a change made elsewhere shows up on the next page refresh")
+
+  -- ── The settings tab leaves the grids alone ──
+  -- The panel refreshes on SPELL_UPDATE_ICON / GET_ITEM_INFO_RECEIVED / UNIT_INVENTORY_CHANGED while
+  -- shown. Without the mode guard, each of those would deactivate every category behind a page the
+  -- player is not looking at, and MODE_ORDER has no "settings" entry to re-activate them from.
+  S.SetDisplayMode("spells")
+  local ess = S._categories.essential
+  assertf(ess ~= nil and ess._active, "the spells tab populates its categories")
+  S.SetDisplayMode("settings")
+  S.RefreshLayout()
+  assertf(ess._active, "RefreshLayout on the settings tab does not tear the grids down")
+
+  -- ── Switching back restores everything ──
+  S.SetDisplayMode("spells")
+  assertf(panel.scroll:GetScrollChild() == panel.content, "the spells tab swaps the grid body back in")
+  assertf(panel.search:IsShown() and panel.settingsCog:IsShown() and panel.layoutButton:IsShown(),
+          "…and brings the grid chrome back")
+
+  -- ── The DragonUI options section is now two controls ──
+  local rec = { toggles = {}, buttons = {}, sliders = 0, drops = 0, headings = 0 }
+  local C = {}
+  function C:AddSpacer() end
+  function C:AddHeading() rec.headings = rec.headings + 1 end
+  function C:AddDescription() end
+  function C:AddToggle(_, o) rec.toggles[#rec.toggles + 1] = o end
+  function C:AddButton(_, o) rec.buttons[#rec.buttons + 1] = o end
+  -- Recorded rather than omitted: a builder that still reached for these would error out and take the
+  -- whole run with it, which says less than a count does.
+  function C:AddSlider() rec.sliders = rec.sliders + 1 end
+  function C:AddDropdown() rec.drops = rec.drops + 1 end
+
+  NE.optionSections[1].build({}, C)
+  assertf(#rec.toggles == 1, "the DragonUI section renders one toggle (" .. #rec.toggles .. ")")
+  assertf(#rec.buttons == 1, "…and one button (" .. #rec.buttons .. ")")
+  assertf(rec.sliders == 0 and rec.drops == 0,
+          "…and no viewer settings at all (" .. rec.sliders .. " sliders, " .. rec.drops .. " dropdowns)")
+
+  assertf(rec.toggles[1].getFunc() == M.IsEnabled(), "its toggle reads the master enable")
+  rec.toggles[1].setFunc(false)
+  assertf(M.IsEnabled() == false, "…and writes it")
+  assertf(not M.viewers.essential:IsShown(), "…which hides the viewers immediately, no reload")
+  rec.toggles[1].setFunc(true)
+
+  S.HidePanel()
+  rec.buttons[1].callback()
+  assertf(panel:IsShown() and S.GetDisplayMode() == "settings",
+          "its button opens /cdm on the Settings tab")
+
+  -- Leave the store as we found it.
+  for _, id in pairs(M.FRAME_ID) do M.ResetOpts(id) end
+  S.SetDisplayMode("spells")
+  S.HidePanel()
 end
 
 print("\n=== UNIT-EVENT FILTER ===")

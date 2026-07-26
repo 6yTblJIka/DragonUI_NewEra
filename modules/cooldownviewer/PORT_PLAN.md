@@ -3,12 +3,11 @@
 Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/` (Classic 1.15 /
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
-**Status:** Phases 0-4a, 4b-1 through 4b-5, and 5a (on-use trinkets) implemented — the whole of §G.5
-except the deliberate cuts. Offline harnesses pass (`qa/offline/`, 335 boot assertions). Phases 1-3
-and the 4b-1 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three
-faults found and fixed, §G.7.1/§G.7.2). Remaining: the consumable half of the equip port (§G.9 —
-blocked on a generator pass, not on effort) and the third settings tab (§G.10 — scoped, awaiting an
-owner call on whether the DragonUI options section shrinks).
+**Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab) and 5a (on-use trinkets)
+implemented — the whole of §G.5 except the deliberate cuts. Offline harnesses pass (`qa/offline/`,
+382 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working in-game; 4b-2 and
+4b-3 are confirmed in-game (three faults found and fixed, §G.7.1/§G.7.2). Remaining: the consumable
+half of the equip port (§G.9 — blocked on a generator pass, not on effort).
 
 ---
 
@@ -605,8 +604,8 @@ bucketed potion list cannot be generated from client data. §G.9 scopes the rout
 | **4b-4** | Drag reorder. **DONE** | Items can be dragged between categories and reordered |
 | **4b-5** | Presets / import / export, and the snapshot pair that makes Revert real (§G.11). **DONE** | Layouts save, load, import and export; Revert undoes an apply |
 | **5a** | On-use trinket discovery + the Trinkets source pool (§G.9). **DONE** | An equipped on-use trinket appears in `/cdm`, drags into Essential, and shows on the bar |
+| **4c** | Third `/cdm` tab hosting every viewer setting; the DragonUI section shrinks to an enable toggle plus an Open button (§G.10 scope, §G.12 notes). **DONE** | Every setting is editable from `/cdm`, and no stored value is rendered in two windows |
 | **5b** | Consumables, via a generated Spell.dbc effect table (§G.9) | Blocked on the generator pass, not on effort |
-| **5c** | Third `/cdm` tab hosting the viewer settings (§G.10) | Scoped; needs an owner call on the options section |
 
 4b-3 is the milestone that matters; 4b-4 and 4b-5 are polish. Rough size: ~1,400 lines adapted from
 the source plus ~200 of new shim, against 2,139 in the original — the difference being the Group
@@ -938,6 +937,9 @@ DragonUI's options panel is where a user goes to turn the module *off*, and it i
 The second is retail's shape and the better end state. It is also the one that changes behaviour a
 user may already rely on, so it is an owner's call rather than an implementation detail.
 
+**RESOLVED (owner): the second.** The options section keeps the master enable toggle and an "Open
+Cooldown Manager" button; everything else moved to the tab. Implementation notes in §G.12.
+
 **Estimated size:** ~40 lines of panel wiring, ~180 lines for the control page (reusing the same
 slider/checkbox helpers `Register.lua` already builds for the options section), plus harness
 coverage that the tab switches modes and that a write from the tab is visible to the options
@@ -1010,3 +1012,101 @@ path.
 Both are the Â§G.7.2 lesson again: a guard whose test passes with the guard removed is telling you
 something, and it is usually that the guard or the test is wrong.
 
+## G.12. 4c notes (the Settings tab)
+
+§G.10 scoped this; the owner picked the second option, so the DragonUI options section is now an
+enable toggle and an "Open Cooldown Manager" button, and every viewer setting lives on a third `/cdm`
+tab. Two new files: `SettingsControls.lua` (the widget kit) and `SettingsOptions.lua` (the page).
+
+**Option (a) as scoped: a second scroll child.** `panel.settingsContent` is a sibling of
+`panel.content`, and `SetDisplayMode` swaps which one the ScrollFrame holds. The category grids own
+`panel.content` end to end — `RefreshLayout` rebuilds it from the adapter on every call — so a page of
+controls could not have shared it without an adapter category whose "list of spellIDs" contract it
+cannot satisfy.
+
+`CDS.RefreshLayout` gained a settings-mode early return, and that guard is load-bearing rather than an
+optimisation. The panel refreshes on `SPELL_UPDATE_ICON`, `GET_ITEM_INFO_RECEIVED` and
+`UNIT_INVENTORY_CHANGED` whenever it is shown; `MODE_ORDER` has no `settings` entry, so without the
+return each of those events would walk the deactivate loop, switch every category off, and find
+nothing to switch back on — leaving the grids empty behind a page the player is not looking at, to be
+discovered on the next tab switch.
+
+### Why a widget kit at all
+
+DragonUI's `Controls:AddToggle` / `AddSlider` / `AddDropdown` are AceGUI widgets that call
+`parent:AddChild(...)` and lay themselves out only inside an AceGUI container. Our body is a plain
+Frame in a plain ScrollFrame, and DragonUI is read-only (CONTRACTS §0), so the choice was a kit or an
+AceGUI container inside our panel. The kit is ~330 lines over the client's own
+`UICheckButtonTemplate` and `OptionsSliderTemplate`, and it keeps the page looking like the rest of
+the window rather than like the options tab embedded in it.
+
+**Three downport points inside the kit:**
+
+1. **No `WowStyle1DropdownTemplate`** — same absence the footer works around (§G.11). A dropdown is a
+   button labelled with the current value, opening a radio menu through `core/Menu.lua`. It also takes
+   an ORDERED array where the options tab takes a `value -> label` map: AceGUI sorts a map for you, and
+   a radio menu has to choose. "Always / In Combat / Hidden" is a progression; alphabetised, Hidden
+   lands in the middle.
+
+2. **`SetObeyStepOnDrag` does not exist here**, and `SetValueStep` alone only governs the arrow keys,
+   so a drag delivers continuous values. The kit snaps on the way in — the same thing Blizzard's own
+   option sliders do in their `OnValueChanged`.
+
+3. **The write gate on that same handler.** A drag fires `OnValueChanged` on every mouse move, and
+   every write runs `M.SetOpt`, which re-runs the viewer's `RefreshLayout` and relays out every icon.
+   Only a value that crosses into the next step may write. Verified by removing it: the "stays inside
+   one step" assertion goes from 0 writes to 2.
+
+### What is NOT on the page
+
+**Frame position.** Still the movers (`/dui edit`), §B1's decision unchanged. It is the one setting
+that is not a value in this store.
+
+**Hide When Inactive on Essential and Utility.** Retail's templates for those two do not set
+`allowHideWhenInactive`, so `UpdateShownState` ignores the setting and they always show every known
+cooldown. The options tab shipped the control anyway with a description explaining that it did
+nothing. The page offers it only where `GetOpt(frameID, "allowHideWhenInactive")` is true: a control
+that has to explain its own inertness is worse than an absent one.
+
+**The master enable.** It stays in DragonUI's options and appears nowhere here. That panel is where a
+player goes to turn a module off, and nobody looks inside a window for the way to make that window's
+frames stop existing.
+
+### Duplication: values versus actions
+
+The rule the §G.10 decision enforces is that no stored VALUE has two editors. A setting with two
+editors is consistent only while both rebuild on show, and the first time one does not, the player is
+reading a stale control and cannot tell that from a setting that failed to apply. Hence exactly one
+home for each of the ten per-viewer settings, the two bar-only ones, and buff auto-tracking.
+
+The two resets are deliberately in two places — the cog menu and the page's Reset section. They are
+ACTIONS routed to the same `StaticPopup`s, with no stored state to fall out of sync: the cog is at
+hand while working the lists, and a player looking for a reset looks under Settings. "Show Unlearned"
+stays in the cog alone, because it filters the grids rather than configuring a viewer, which is also
+why the cog and the search box both hide on this tab.
+
+### Art
+
+The tab glyph is the client's own `questlog-icon-setting` at 18px, not a third glyph from the CDM
+sheet. That sheet's spare is `icon_buffreorder` — "reorder group buffs" — which would be a lie here,
+and reusing the cog ties the tab to the cog beside the search box, which is what a player already
+reads as "options for this window". `SettingsAssets.lua` now registers that rect itself rather than
+depending on `modules/spellbook/Assets.lua` having loaded; the harness asserts it resolves, because an
+unregistered atlas is a transparent gap rather than an error.
+
+### Harness
+
+47 new/changed assertions (382 total). Five guards were confirmed by removal: the slider write gate,
+the step snap, the settings-mode return in `RefreshLayout`, the `allowHideWhenInactive` gate, and the
+chrome hiding. Two stub notes:
+
+- `frameMeta:SetValue` now fires `OnValueChanged` on a real change, as the client does. The sliders
+  re-seat their own thumb from inside that handler and re-read their getter on every page refresh, so
+  a stub that swallowed those calls could not tell a working re-entrancy guard from a missing one.
+- `SetObeyStepOnDrag` is deliberately still absent from the stub. Adding it would hide the reason the
+  kit snaps values itself.
+
+The control finder in the test scopes by section title as well as label, and that is not tidiness:
+"Icon size" exists four times, once per viewer, so an unscoped search always answers with Essential's
+row — and a test meaning to prove Buff Bars' slider works would have proved nothing. Same failure
+shape as §G.7.2 and the 5a pooled-tile test.
