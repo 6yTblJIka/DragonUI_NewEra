@@ -215,25 +215,71 @@ local PANDEMIC_MIN_OVER   = 4      -- a picker tile is small enough to round the
 local PANDEMIC_PULSE_MIN  = 0.45   -- retail cascades; we breathe. See the header.
 local PANDEMIC_PULSE_HALF = 0.75   -- seconds per half-cycle, so a 1.5s loop
 
--- Anchored to the ICON, not the tile, so the ring is concentric with what it is ringing — the same
--- choice the buff glow makes, and for the same reason: on a viewer tile the icon is inset inside the
--- gold frame, so the tile's rect is not the icon's. Picker tiles carry .Icon too.
+-- WHAT THE OPENING HAS TO LAND ON IS THE **VISIBLE** ICON, AND THOSE ARE NOT THE SAME RECT.
 --
--- Re-anchored at every SHOW rather than once at build. The icon takes its size from anchors the
--- client has not resolved when the tile is built, so a build-time measurement reads 0 and would
--- freeze the ring at the minimum forever (§H.2.9 learned this on the bar caps). Showing an alert is
--- a state transition, not a per-frame cost.
-local function anchorPandemicRing(ov)
-  local host = ov._host
-  if not host then return end
+-- A framed viewer tile and a bare picker tile disagree about where the icon ends:
+--
+--   picker tile   no frame art, so the visible icon IS the .Icon rect.
+--   viewer tile   the gold IconOverlay's opening sits M.IconAperture INSIDE the tile — 6.8px on a
+--                 50px Essential — and covers the icon's outer edge. The .Icon rect is 46px; the
+--                 icon you can SEE is ~36px. Anchoring to .Icon therefore parks the ring's bright
+--                 edge ~5px out, in the middle of the gold band, with gold showing between icon and
+--                 ring. That is the "sits too far away from the icon edge" report.
+--
+-- .Icon is wrong for a framed tile in a second way too: it moves with the icon-inset slider, while
+-- the frame does not — so the visible edge does not move and a ring tied to .Icon would drift off it.
+--
+-- Deriving the aperture instead makes both cases one formula, and it lands almost exactly on the
+-- tile rect for a framed tile (offsets under a pixel on Essential and Utility alike). That is not a
+-- coincidence and it is worth recording: retail anchors this ring with SetAllPoints(item) precisely
+-- because 43/61 = 70.5% of the tile is where a frame of these proportions opens. Retail's anchor was
+-- right for retail's tile; it was wrong here only for the UNFRAMED picker tile, which is exactly
+-- where the first report came from.
+--
+-- ox/oy come from the IconOverlay's own anchor rather than a recorded copy — that is the source of
+-- truth for where the frame sits, and it cannot drift out of sync with it.
+local function pandemicRect(item)
+  local art = item.IconOverlay
+  if art and art.GetPoint and M.IconAperture then
+    local _, rel, _, x, y = art:GetPoint(1)          -- TOPLEFT, item, TOPLEFT, -ox, oy
+    local w = (item.GetWidth and item:GetWidth()) or 0
+    local h = (item.GetHeight and item:GetHeight()) or 0
+    if rel and x and y and w > 0 and h > 0 then
+      return item, M.IconAperture(w, -x), M.IconAperture(h, y), w, h
+    end
+  end
+  local host = item.Icon or item
   local w = (host.GetWidth and host:GetWidth()) or 0
-  local over = math.floor(w * PANDEMIC_BLEED + 0.5)
-  if over < PANDEMIC_MIN_OVER then over = PANDEMIC_MIN_OVER end
-  if over == ov._over then return end
-  ov._over = over
+  local h = (host.GetHeight and host:GetHeight()) or w
+  return host, 0, 0, w, h
+end
+
+-- Re-anchored at every SHOW rather than once at build. The rects come from anchors the client has
+-- not resolved when the tile is built, so a build-time measurement reads 0 and would freeze the ring
+-- at the minimum forever (§H.2.9 learned this on the bar caps). Showing an alert is a state
+-- transition, not a per-frame cost.
+local function anchorPandemicRing(ov)
+  local item = ov._item
+  if not item then return end
+  local host, apX, apY, w, h = pandemicRect(item)
+
+  -- Inset of the ring's own rect from the host, per axis. The opening must equal the visible icon,
+  -- so the frame extends PANDEMIC_BLEED of that beyond it; the aperture then pulls it back in.
+  local function edge(ap, size)
+    local visible = size - 2 * ap
+    if visible <= 0 then return -PANDEMIC_MIN_OVER end
+    local v = ap - visible * PANDEMIC_BLEED
+    if size <= 0 then return -PANDEMIC_MIN_OVER end
+    return math.floor(v + 0.5)
+  end
+  local ex = (w > 0) and edge(apX, w) or -PANDEMIC_MIN_OVER
+  local ey = (h > 0) and edge(apY, h) or -PANDEMIC_MIN_OVER
+
+  if host == ov._hostCache and ex == ov._ex and ey == ov._ey then return end
+  ov._hostCache, ov._ex, ov._ey = host, ex, ey
   ov:ClearAllPoints()
-  ov:SetPoint("TOPLEFT",     host, "TOPLEFT",     -over,  over)
-  ov:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT",  over, -over)
+  ov:SetPoint("TOPLEFT",     host, "TOPLEFT",      ex, -ey)
+  ov:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -ex,  ey)
 end
 
 local function buildPandemicRing(item)
@@ -244,7 +290,7 @@ local function buildPandemicRing(item)
             or (item.GetFrameLevel and item:GetFrameLevel())
             or 1
   local ov = CreateFrame("Frame", nil, item)
-  ov._host = item.Icon or item
+  ov._item = item
   ov:SetFrameLevel(base + 4)
   anchorPandemicRing(ov)
   ov:Hide()

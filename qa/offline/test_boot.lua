@@ -1405,30 +1405,44 @@ if dp then
   -- side are glow that belongs OUTSIDE — anchored at SetAllPoints (retail's own anchor) those 9 eat
   -- into the icon, which is what the owner saw and reported.
   --
-  -- The stub resolves no anchors, so the icon has no width until given one. In game it is sized by
-  -- AnchorMaskedIcon long before an alert can fire — 46 is a default 50px tile less its 2px inset.
-  -- The ring re-measures on SHOW precisely so a width that resolves late still lands.
-  assertf(ov._over == 4, "an unmeasurable icon falls back to the minimum overhang, not to zero")
-  dp.Icon:SetWidth(46)
-  M.alerts.ClearFX(dp)
-  nextFrame(); tick()
-  assertf(ringUp(), "ring re-shown after the icon resolved its width")
-
+  -- THE INVARIANT, stated once and checked on both tile shapes: the ring's 43-of-61 OPENING lands
+  -- on the VISIBLE icon's edge. Everything else about the anchor is derived from that.
+  --
   -- Read defensively. A regression to SetAllPoints records a single "ALL" point with no offsets, so
-  -- a bare `ox < 0` would compare nil and ABORT the harness instead of failing this assertion by
-  -- name — a caught regression that looks like a truncated run is barely a catch at all.
-  local p1, rel1, _, ox, oy = ov:GetPoint(1)
-  local p2, _, _, bx, by    = ov:GetPoint(2)
-  assertf(rel1 == (dp.Icon or dp), "the ring anchors to the ICON, so it is concentric with it")
-  local offs = ox and oy and bx and by
-  assertf(offs and p1 == "TOPLEFT" and p2 == "BOTTOMRIGHT"
-          and ox < 0 and oy > 0 and bx > 0 and by < 0,
-          ("…and overhangs it on all four sides (%s,%s / %s,%s)")
-            :format(tostring(ox), tostring(oy), tostring(bx), tostring(by)))
-  local iconW = (dp.Icon or dp):GetWidth()
-  assertf(offs and math.abs(-ox - math.floor(iconW * (9 / 43) + 0.5)) < 0.001,
-          ("…by the art's own 9/43 bleed, not a taste number (%s for a %dpx icon)")
-            :format(tostring(ox and -ox), iconW))
+  -- a bare comparison would hit nil and ABORT the harness instead of failing by name — a caught
+  -- regression that looks like a truncated run is barely a catch at all.
+  local function openingEdge(o, host, size)
+    local p1, rel1, _, ex = o:GetPoint(1)
+    local p2, _, _, bx    = o:GetPoint(2)
+    if not (p1 == "TOPLEFT" and p2 == "BOTTOMRIGHT" and rel1 == host and ex and bx) then return nil end
+    -- The ring's rect spans [ex, size-ex]; its opening is the middle 43/61 of that.
+    return ex + (size - 2 * ex) * (9 / 61)
+  end
+
+  -- FRAMED viewer tile. The gold IconOverlay opens M.IconAperture inside the tile, and THAT is the
+  -- icon you can see — not the .Icon rect, which the frame overlaps. Anchoring to .Icon parked the
+  -- ring's bright edge out in the gold band with a visible gap, which is what was reported.
+  local _, _, _, ax = dp.IconOverlay:GetPoint(1)
+  local apX  = M.IconAperture(dp:GetWidth(), -ax)
+  local edge = openingEdge(ov, dp, dp:GetWidth())
+  assertf(edge ~= nil,
+          "a framed tile rings the TILE with a two-point rect -- not .Icon, and not SetAllPoints")
+  assertf(edge and math.abs(edge - apX) <= 1,
+          ("the ring's opening lands on the FRAME's aperture, not the .Icon rect (%.2f vs %.2f)")
+            :format(edge or -1, apX))
+  assertf(math.abs(apX - M.IconInset(dp:GetWidth())) > 3,
+          ("…and those two differ enough here to tell apart (%.2f vs inset %d)")
+            :format(apX, M.IconInset(dp:GetWidth())))
+
+  -- The frame does not move with the icon-inset slider, so the visible edge does not either — and
+  -- neither may the ring. Tying it to .Icon would have dragged it off the frame's opening.
+  local before = { ov:GetPoint(1) }
+  M.SetIconInsetExtra(3)
+  M.alerts.ClearFX(dp); nextFrame(); tick()
+  local after = { ov:GetPoint(1) }
+  assertf(before[4] == after[4] and before[5] == after[5],
+          "the icon-inset slider moves the icon but not the ring, because the frame does not move")
+  M.SetIconInsetExtra(0)
 
   -- UNTINTED, deliberately: the art already carries the pandemic colour, and vertex colour
   -- multiplies, so applying TINT.refresh would darken it rather than colour it.
@@ -1528,6 +1542,24 @@ do
   local ok = pcall(AL.Preview, bare, 4, "refresh")
   assertf(ok and bare._pandemicRing and bare._pandemicRing:IsShown(),
           "…on a frame with no Cooldown to level against (the settings tiles)")
+
+  -- UNFRAMED picker tile: no IconOverlay, so the visible icon IS the .Icon rect and the ring falls
+  -- back to overhanging it by the art's 9/43. This shape was already correct when the framed one was
+  -- not, so it is the half that must not regress while fixing the other.
+  local pick = CreateFrame("Frame")
+  pick:SetSize(36, 36)
+  pick.Icon = pick:CreateTexture(nil, "ARTWORK")
+  pick.Icon:SetSize(36, 36)
+  AL.Preview(pick, 4, "refresh")
+  local po = pick._pandemicRing
+  local pp, prel, _, pex = po:GetPoint(1)
+  assertf(prel == pick.Icon and pp == "TOPLEFT",
+          "an unframed tile rings the .Icon rect, since that is all the icon there is")
+  assertf(pex == -math.floor(36 * (9 / 43) + 0.5),
+          ("…overhanging it by the art's 9/43 bleed (%s)"):format(tostring(pex)))
+  -- Same invariant as the framed case: the opening lands on the visible icon's edge, here 0.
+  assertf(math.abs(pex + (36 - 2 * pex) * (9 / 61)) <= 1,
+          "…so its opening still lands on the icon's edge, by the same rule")
 end
 AL.ClearFX(mb)
 
