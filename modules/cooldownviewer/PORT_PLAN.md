@@ -1923,12 +1923,22 @@ had been. Owner's verdict, and correct. **I optimised for the property I could a
 that mattered**, and shipped it without rendering it first, having twice that same session established
 that rendering the art was the thing that settled these questions.
 
-**Where it stands:** back on `UI-ActionButton-Border`, drawn behind the icon, anchored to the icon's
-rect so it is concentric. The unevenness is a known, unfixed trade-off with a documented cause — the
-frame shadow suppresses the halo where they overlap, so **frame strength and glow evenness pull against
-each other**. Two knobs exist if it needs settling: `M.BUFF_GLOW_OVERSIZE` (push the halo's bright ring
-clear of the shadow band) and Frame strength (lighten what is doing the eating). Neither is exposed as
-a glow setting, deliberately — the next move on this is the owner's call, not another guess.
+**Where it stands, after the owner asked the obvious question I had talked myself out of:** on
+`UI-ActionButton-Border`, anchored to the icon's rect, drawn at **OVERLAY sublevel 7** — on top of the
+frame's shadow and its stacked copies.
+
+It spent two passes on BACKGROUND because of a claim I made and never checked. When the halo was
+first reported as appearing "inside the frame", I concluded the texture must be a FILLED square glow
+that washes light across the icon, and moved it behind so the opaque icon would mask its middle. It is
+not filled. It is a **ring with a transparent centre** — which the repo's own notes say in three
+places, and which four other modules rely on by drawing this exact texture straight over an item icon;
+`modules/professions/Crafting.lua:463` uses this precise layer and sublevel. The real cause of "inside
+the frame" was the ring landing too far in, which is a SIZE question, and the oversize constant already
+existed for it.
+
+Having put it behind the shadow, I then diagnosed the shadow suppressing it as an inherent trade-off
+between frame strength and glow evenness, and proposed knobs for balancing two things that never
+needed balancing. The trade-off was manufactured by the previous mistake.
 
 Kept from the reverted work: the harness now records frame levels. "This draws above that" was
 unassertable, the same way `CreateTexture`'s dropped LAYER argument made "this draws behind that"

@@ -281,12 +281,14 @@ end
 -- on every 3.3.5a client, it is pale rather than black, and it is built to be tinted.
 M.BUFF_GLOW_TEXTURE = "Interface\\Buttons\\UI-ActionButton-Border"
 
--- Oversize, as a fraction of the tile edge; 35% is the figure the three call sites above converged
--- on. The ring is not hollow — it is a filled square glow, brightest near its edge — so at the tile's
--- own rect it washes light straight across the icon art ("icon glow effect inside frame"). The fix
--- is the DRAW LAYER, not this number: Viewers.lua puts the region on BACKGROUND, where the opaque
--- icon masks the interior and only the halo past the icon survives. This then just controls how far
--- that halo reaches.
+-- Oversize, as a fraction of the tile edge; 35% is the figure the call sites above converged on, and
+-- for the reason documented there: the texture keeps its glow INSET within a transparent margin, so
+-- at the tile's own rect the visible ring falls inside the icon rather than on its edge.
+--
+-- That is what "icon glow effect inside frame" was — the ring landing too far in. I read it as a
+-- FILLED texture veiling the art and moved the region behind the icon for two passes, where the frame
+-- shadow then suppressed it. It draws on top now (Viewers.lua), which is how every other use of this
+-- texture in the addon draws it.
 M.BUFF_GLOW_OVERSIZE = 0.35
 M.BUFF_GLOW_MIN_OVER = 6
 

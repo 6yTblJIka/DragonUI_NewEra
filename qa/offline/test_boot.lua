@@ -1653,11 +1653,17 @@ do
     ("…and oversized past the tile by %dpx (got %s,%s)"):format(over, tostring(gx), tostring(gy)))
   local ox = select(4, mb.IconOverlay:GetPoint(1))
   assertf(over > math.abs(ox), "…which is wider than the frame art's own overhang")
-  -- BEHIND the icon, which is what keeps a filled glow texture off the icon art. Drawn over the tile
-  -- it veiled the icon instead of haloing it; on BACKGROUND the opaque icon does the masking that
-  -- this client cannot do with a MaskTexture.
-  local layer = glow:GetDrawLayer()
-  assertf(layer == "BACKGROUND", "…drawn behind the icon, so it haloes rather than veils")
+  -- ON TOP, above the frame's shadow and its stacked copies. It sat on BACKGROUND for two passes on
+  -- the belief that this texture is a filled glow that would veil the icon — inferred from a symptom,
+  -- never checked, and wrong: it is a ring with a transparent middle, drawn straight over item icons
+  -- in four other places in this addon (modules/professions/Crafting.lua:463 uses this exact layer
+  -- and sublevel). Behind the shadow, the shadow ate it.
+  local layer, sub = glow:GetDrawLayer()
+  assertf(layer == "OVERLAY" and (sub or 0) >= 7,
+    ("…drawn above the frame art, not behind it (%s %s)"):format(tostring(layer), tostring(sub)))
+  local _, stackSub = mb.IconOverlayStack[1]:GetDrawLayer()
+  assertf((sub or 0) > (stackSub or 0),
+    "…and above the stacked copies specifically, which are what was suppressing it")
   local r, g, b = glow:GetVertexColor()
   assertf(r > g and g > b, "…in gold, the colour retail gives the swipe it cannot set here")
 

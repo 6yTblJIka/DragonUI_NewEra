@@ -59,24 +59,24 @@ local function createItem(parent, category)
   M.BuildFrameStack(item, ox, oy)
 
   -- DOWNPORT (§H.2 8c): retail marks a spell whose own buff is up by tinting its swipe gold, and
-  -- SetSwipeColor is WoD+. The substitute is a static gold halo on the tile. Its rect is OVERSIZED
-  -- rather than matched to the frame or the icon — the glow texture carries a wide transparent
-  -- margin of its own, so a tight rect hides the ring inside the icon. See M.BuffGlowInset.
-  -- BACKGROUND, under the icon. The ring texture is a filled square glow, brightest around its edge
-  -- but not empty in the middle, so drawn OVER the tile it washes light across the icon art itself —
-  -- reported as "icon glow effect inside frame". Putting it behind means the opaque icon masks its
-  -- interior for free and only the halo that reaches past the icon is ever visible. That also makes
-  -- the exact oversize forgiving: too small now shows less halo, instead of veiling the icon.
+  -- SetSwipeColor is WoD+. The substitute is a gold halo, oversized because the glow texture keeps
+  -- its ring inset within a wide transparent margin (see M.BuffGlowInset).
   --
-  -- Anchored to the ICON, not the tile. The tile is the larger rect, so a halo hung off it sat wide
-  -- of the thing it was meant to be lighting — "improve the alignment of the icon to the gold
-  -- background". Anchoring to the icon's own region makes the two concentric by construction, and
-  -- means the halo follows the inset slider without being told about it.
-  item.BuffGlow = item:CreateTexture(nil, "BACKGROUND")
+  -- OVERLAY sublevel 7 — ON TOP, above the frame's shadow and its stacked copies. It spent two passes
+  -- on BACKGROUND on my reasoning that the texture was a filled square glow that would wash light
+  -- across the icon if drawn over it. That was inferred from a symptom and never checked, and it is
+  -- wrong: this is a RING with a transparent middle, which is why the same texture is drawn straight
+  -- over item icons in four other places in this addon — modules/professions/Crafting.lua:463 uses
+  -- exactly this layer and sublevel. Behind the shadow it was being suppressed by it; in front of it
+  -- there is nothing left to eat it.
+  --
+  -- Anchored to the ICON, not the tile, so the two are concentric by construction and the halo
+  -- follows the inset slider without being told about it.
+  item.BuffGlow = item:CreateTexture(nil, "OVERLAY")
   local go = M.BuffGlowInset(spec.size)
   item.BuffGlow:SetPoint("TOPLEFT", item.Icon, "TOPLEFT", -go, go)
   item.BuffGlow:SetPoint("BOTTOMRIGHT", item.Icon, "BOTTOMRIGHT", go, -go)
-  item.BuffGlow:SetDrawLayer("BACKGROUND", 0)
+  item.BuffGlow:SetDrawLayer("OVERLAY", 7)
   item.BuffGlow:Hide()
 
   -- DOWNPORT: the three regions below are `setAllPoints` on the TILE upstream, and are anchored to the
