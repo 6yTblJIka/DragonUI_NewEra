@@ -67,10 +67,15 @@ local function createItem(parent, category)
   -- reported as "icon glow effect inside frame". Putting it behind means the opaque icon masks its
   -- interior for free and only the halo that reaches past the icon is ever visible. That also makes
   -- the exact oversize forgiving: too small now shows less halo, instead of veiling the icon.
+  --
+  -- Anchored to the ICON, not the tile. The tile is the larger rect, so a halo hung off it sat wide
+  -- of the thing it was meant to be lighting — "improve the alignment of the icon to the gold
+  -- background". Anchoring to the icon's own region makes the two concentric by construction, and
+  -- means the halo follows the inset slider without being told about it.
   item.BuffGlow = item:CreateTexture(nil, "BACKGROUND")
   local go = M.BuffGlowInset(spec.size)
-  item.BuffGlow:SetPoint("TOPLEFT", item, "TOPLEFT", -go, go)
-  item.BuffGlow:SetPoint("BOTTOMRIGHT", item, "BOTTOMRIGHT", go, -go)
+  item.BuffGlow:SetPoint("TOPLEFT", item.Icon, "TOPLEFT", -go, go)
+  item.BuffGlow:SetPoint("BOTTOMRIGHT", item.Icon, "BOTTOMRIGHT", go, -go)
   item.BuffGlow:SetDrawLayer("BACKGROUND", 0)
   item.BuffGlow:Hide()
 

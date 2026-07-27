@@ -5,7 +5,7 @@ TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global conventio
 
 **Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets), 6 (loose
 ends) and 7 (the tracked-aura catalog) implemented — the whole of both phasing tables except the
-deliberate cuts. Offline harnesses pass (`qa/offline/`, 572 boot assertions). Phases 1-3 and the 4b-1
+deliberate cuts. Offline harnesses pass (`qa/offline/`, 573 boot assertions). Phases 1-3 and the 4b-1
 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
 fixed, §G.7.1/§G.7.2).
 
@@ -1868,6 +1868,37 @@ One guard here is deliberately NOT load-bearing: the panel's own `InvalidateCura
 subscription runs first and already clears it — but "first" holds only while those two register in
 their current order, and a refresh reading a stale cache is the exact failure this callback exists to
 prevent. Noted in place rather than dressed up as verified.
+
+### H.2.6 Halo alignment, and cut corners tried and rejected
+
+"Is there any way to improve the alignment of the icon to the gold background?"
+
+The halo was anchored to the TILE, which is the larger rect, so it sat wide of the icon it was meant
+to be lighting. It now anchors to the **icon's own region**, which makes the two concentric by
+construction and means it follows the inset slider without being told about it.
+
+**Cut corners: attempted, and reverted at the owner's call.** "Can we make the corners not square? The
+spellbook successfully does this." The spellbook does — and not by masking. §C2 still holds
+(`CreateMaskTexture` is dead; `modules/spellbook/Spellbook.lua:160` says so outright). It covers the
+corners with something **opaque**: its frame is solid metal with cut corners drawn over the icon's
+edge, so the square underneath never shows.
+
+That also explains why the previous pass's frame-strength work could not finish this. Our frame is a
+translucent shadow, 42% at its darkest; stacking makes the corners *darker* and cannot make them
+*absent*. No see-through texture hides a corner.
+
+Building it confirmed the mechanism works — the square talent-node socket (`talents-node-square-gray`,
+alpha 0 at the corner texel, 255 along the mid-edge) turns the tile into a clean octagon. Sizing had
+one real decision, since its band is 13 texels of 80, 16.3% of the edge: flush with the icon costs
+that much of the art around the rim, while growing it so its opening clears the art overhangs the
+*tile* by the same amount and makes neighbouring icons collide. Flush was the better of the two, and
+is what the spellbook itself does.
+
+**Rejected on look** — the spellbook's socket is a heavier, greyer frame than the Cooldown Manager's
+own art, and next to the CDM shadow it reads as a different UI. Reverted whole; the halo change was
+kept. What this leaves on the table is that cut corners ARE achievable here — the blocker is art that
+suits these tiles, not the technique. If retail's own CDM sheet turns out to carry an opaque frame
+cell, that is the piece to look for.
 
 ### 8d. Bar theming
 

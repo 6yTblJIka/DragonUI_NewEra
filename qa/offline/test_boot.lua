@@ -1608,6 +1608,14 @@ do
       "the tile carries spare copies of the frame art")
   end
 
+  -- The buff halo hangs off the ICON, not the tile. Off the tile it sat wide of the thing it was
+  -- lighting — "improve the alignment of the icon to the gold background" — and it would not have
+  -- followed the inset slider either.
+  do
+    local rel = select(2, mb.BuffGlow:GetPoint(1))
+    assertf(rel == mb.Icon, "the buff halo is anchored to the icon, so the two are concentric")
+  end
+
   -- The flipbook's frame grid has to divide its strip evenly, or the ready-flash sprite samples
   -- across frame boundaries. 94/2 and 517/11 are both 47.
   local e = NE.tex._atlasEntry("UI-HUD-ActionBar-GCD-Flipbook")
