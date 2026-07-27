@@ -1572,7 +1572,7 @@ do
       -- settings where the frame has visibly gone: at +4% the Essential tile still overlaps the band,
       -- and that is the state that came back from the game as "the border is missing". Coverage is
       -- the measure that separates them — 93% at the shipped default, 42% at +4%.
-      local atDefault = size * (M.ICON_MASK_INSET + M.ICON_INSET_EXTRA / 100)
+      local atDefault = M.IconInset(size)   -- what actually ships, snapping included
       local covered = (band - atDefault) / (band - core)
       if covered > 1 then covered = 1 end
       assertf(covered >= 0.70,
@@ -1589,9 +1589,29 @@ do
 
   -- Fractional, not flat. A flat pixel budget generous enough for a 50px tile pushes a 30px one
   -- through its own opening — the first draft did exactly that and failed here at 3.41 against 3.28.
-  local wide = M.IconInset(50) / 50
-  local narrow = M.IconInset(30) / 30
-  assertf(math.abs(wide - narrow) < 1e-9, "the inset is a fraction of the tile, not a flat pixel count")
+  -- Asserted as "tracks the fraction to within half a pixel" rather than "equals it", because the
+  -- result is now SNAPPED (see below); an exact-equality check here would forbid the snapping.
+  for _, size in ipairs({ 50, 40, 30 }) do
+    local want = size * (M.ICON_MASK_INSET + M.ICON_INSET_EXTRA / 100)
+    assertf(math.abs(M.IconInset(size) - want) <= 0.5,
+      ("the inset tracks the tile's fraction at %d (%.2f vs %.2f)"):format(size, M.IconInset(size), want))
+  end
+
+  -- WHOLE PIXELS. A fractional inset resolves independently on each edge — 2.34 from the left, 47.66
+  -- from the right — so the two margins can land a pixel apart against a frame anchored on integers.
+  -- Reported as a sliver of icon escaping on one side only, and as the cooldown sweep covering the
+  -- glow on the right but not the left: the sweep shares the icon's rect, so it inherits the split.
+  for _, size in ipairs({ 50, 40, 30 }) do
+    local v = M.IconInset(size)
+    assertf(v == math.floor(v), ("the inset is a whole pixel at %d (got %s)"):format(size, tostring(v)))
+  end
+  -- And every region that shares the icon's rect inherits that, which is the point of the shared
+  -- helper: if the icon is on whole pixels the sweep is too, by construction.
+  for _, r in ipairs({ { "sweep", mb.Cooldown }, { "out-of-range", mb.OutOfRange },
+                       { "flash", mb.CooldownFlash } }) do
+    local x = select(4, r[2]:GetPoint(1))
+    assertf(x == math.floor(x), ("…and so is the " .. r[1] .. " (%s)"):format(tostring(x)))
+  end
 
   -- And it has to reach tiles that already exist, or the slider does nothing until the next login.
   do

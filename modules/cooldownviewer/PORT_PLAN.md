@@ -5,7 +5,7 @@ TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global conventio
 
 **Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets), 6 (loose
 ends) and 7 (the tracked-aura catalog) implemented — the whole of both phasing tables except the
-deliberate cuts. Offline harnesses pass (`qa/offline/`, 573 boot assertions). Phases 1-3 and the 4b-1
+deliberate cuts. Offline harnesses pass (`qa/offline/`, 582 boot assertions). Phases 1-3 and the 4b-1
 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
 fixed, §G.7.1/§G.7.2).
 
@@ -1943,6 +1943,37 @@ needed balancing. The trade-off was manufactured by the previous mistake.
 Kept from the reverted work: the harness now records frame levels. "This draws above that" was
 unassertable, the same way `CreateTexture`'s dropped LAYER argument made "this draws behind that"
 unassertable. Three stub parameters accepted and quietly forgotten have each now hidden something real.
+
+### H.2.7 A sliver on one side: the inset was landing on a half pixel
+
+Reported as icon art escaping to the left and right of the frame, and — the more diagnostic half —
+"with the cooldown swipe the right hand side is great and the swipe covers the glow correctly. However
+the left hand side the swipe doesn't cover the glow." Guessed at the time to be mask fallout. It is
+not; it is arithmetic, and it is fixable.
+
+The derived inset is fractional: `50 x 3/64 = 2.34375`. Anchored at that, the icon's left edge sits at
+2.34 and its right edge at `50 - 2.34 = 47.66`, and the renderer resolves each to a whole pixel
+**independently** — 2 on one side, 48 on the other. The two margins end up a pixel apart, against a
+frame whose own anchors (+-9 / +-8) are integers. One side shows a sliver of icon and the other does
+not.
+
+The swipe follows exactly because it is *supposed* to: §H.2.1 pinned it to the icon's rect through the
+shared helper, so it inherits the same split. Half a pixel is the entire difference between "covers
+the glow" and "doesn't", which is why that was the clearest symptom of the two.
+
+`M.IconInset` now snaps to whole pixels. Not "whole pixels at the current UI scale" — iconSize is
+applied with `SetScale`, so a tile can sit at a fractional scale regardless, and chasing that needs the
+effective scale at anchor time plus a re-anchor on every scale change. At scale 1, where this was
+reported, integer offsets land on integer pixels on both edges.
+
+Two harness changes fall out. The "inset is a fraction of the tile, not flat pixels" assertion — which
+exists because a flat budget pushes a 30px tile through its own opening — would forbid snapping if
+left as exact equality, so it now asserts the inset tracks the fraction to within half a pixel. And a
+new one asserts the result is integral, on the tile AND on every region that shares its rect, which is
+the property that actually fixes the artefact.
+
+Retail's mask is not what we lost here. A mask clips an icon that was already anchored on whole
+pixels; it does not centre anything. What we lost was the snapping, and that we could always have had.
 
 ### 8d. Bar theming
 

@@ -957,8 +957,26 @@ function M.SetIconInsetExtra(v)
   M.ReanchorIcons()
 end
 
+-- SNAPPED TO WHOLE PIXELS, and this is not tidiness — it is the fix for a real, asymmetric artefact.
+--
+-- The derived inset is fractional: 50 x 3/64 = 2.34375 on an Essential tile. Anchored at that, the
+-- icon's left edge lands at 2.34 and its right edge at 50 - 2.34 = 47.66, and the renderer resolves
+-- each to a whole pixel independently — 2 on one side, 48 on the other. The two margins then differ
+-- by a pixel, against a frame whose own anchors (+-9/+-8) are integers. That is what shows as a
+-- sliver of icon art escaping on one side and not the other, and as the cooldown sweep covering the
+-- glow on the right but not the left: the sweep shares the icon's rect exactly, so it inherits the
+-- same split, and half a pixel is the whole difference between "covers" and "doesn't".
+--
+-- It reads like a mask artefact and it is not. Retail's mask does not centre anything; it clips an
+-- icon that was already anchored on whole pixels. Snapping here is what we lost, not the rounding.
+--
+-- Deliberately whole pixels rather than "whole pixels at the current UI scale": iconSize is applied
+-- with SetScale, so a tile can sit at a fractional scale anyway, and chasing that would need the
+-- effective scale at anchor time and a re-anchor on every scale change. At scale 1 — the default, and
+-- where this was reported — integer offsets land on integer pixels on both sides.
 function M.IconInset(size)
-  return (size or 0) * (M.ICON_MASK_INSET + M.GetIconInsetExtra() / 100)
+  local px = (size or 0) * (M.ICON_MASK_INSET + M.GetIconInsetExtra() / 100)
+  return math.floor(px + 0.5)
 end
 
 -- The frame's opening, in tile pixels, on the axis whose outward overhang is `o`. The ceiling for any
