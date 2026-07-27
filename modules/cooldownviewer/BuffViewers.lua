@@ -99,9 +99,9 @@ local function createBuffBarItem(parent)
   bar:SetPoint("RIGHT", item, "RIGHT", 0, 0)
   bar:SetMinMaxValues(0, 1)
   bar:SetValue(0)
-  bar.BarBG = bar:CreateTexture(nil, "BACKGROUND")
-  bar.BarBG:SetPoint("TOPLEFT", bar, "TOPLEFT", -2, 2)
-  bar.BarBG:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 4, -7)
+  -- Retail's -2/+2, +4/-7 anchors live inside BuildBarBG: the group owns its own rect because the
+  -- cap widths are derived from it.
+  bar.BarBG = M.BuildBarBG(bar)
   bar.Pip = bar:CreateTexture(nil, "OVERLAY")
   bar.Name = bar:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
   bar.Name:SetPoint("TOPLEFT", bar, "TOPLEFT", 5, 0)

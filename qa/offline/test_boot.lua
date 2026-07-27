@@ -205,7 +205,14 @@ function frameMeta:RegisterEvent(e) self._events[e] = true end
 function frameMeta:UnregisterEvent(e) self._events[e] = nil end
 function frameMeta:SetScript(s, fn) self._scripts[s] = fn end
 function frameMeta:GetScript(s) return self._scripts[s] end
-function frameMeta:HookScript(s, fn) self._scripts[s] = fn end
+-- CHAINS, as the client does. Replacing meant the LAST hook on a script silently won: the BuffBar
+-- rows hook OnSizeChanged twice — once for the fill overlay's texcoord, once for the Bar-BG cap
+-- widths — and under a replacing stub only one of them was ever exercised.
+function frameMeta:HookScript(s, fn)
+  local prev = self._scripts[s]
+  if not prev then self._scripts[s] = fn; return end
+  self._scripts[s] = function(...) prev(...) ; fn(...) end
+end
 -- The LAYER argument is kept. Discarding it meant GetDrawLayer only ever answered for regions that
 -- had also been through SetDrawLayer, so a region created on the wrong layer was unassertable — which
 -- is how a mutation test on the buff glow's layer came back green with the glow back over the icon.
@@ -954,6 +961,81 @@ local expectRemaining = bBar.items[1]._auraExpiration - GetTime()
 assertf(math.abs((bBar.items[1].Bar._value or 0) - expectRemaining) < 0.001,
         ("bar value tracks remaining (%.2f)"):format(bBar.items[1].Bar._value or -1))
 assertf(bBar.items[1].Bar._max == 15, "bar max = full duration 15")
+
+-- ── Bar-BG horizontal 3-slice (§H.2.9) ──────────────────────────────────────────────────────────
+do
+  local bar = bBar.items[1].Bar
+  local bg  = bar.BarBG
+  assertf(bg ~= nil and bg.Left and bg.Middle and bg.Right, "Bar-BG is a three-piece slice")
+
+  -- The client sizes this bar from its LEFT/RIGHT anchors; the stub does not resolve anchors, so
+  -- give it the width it has in game (220 row - 30 icon - 2 gap). Doing so also drives the
+  -- OnSizeChanged path, which is where every re-measure below comes from.
+  assertf(bg.Middle:GetTexCoord() ~= nil,
+          "an unresolved (zero) width still slices, rather than collapsing to one stretch")
+  bar:SetWidth(188)
+
+  -- NOT a frame. A child frame draws above every layer of its parent, so a Frame-based group would
+  -- put the background over the fill, the pip and the name — the §H.2.8 rule, restated where it can
+  -- fail again.
+  assertf(bg.GetFrameLevel == nil, "…held as a plain table, not a child frame of the bar")
+  assertf(bg.Left._layer == "BACKGROUND" and bg.Middle._layer == "BACKGROUND"
+          and bg.Right._layer == "BACKGROUND", "…with all three pieces on BACKGROUND")
+
+  local entry = NE.tex._atlasEntry("UI-HUD-CoolDownManager-Bar-BG")
+  local function coords(p) local l, r = p:GetTexCoord(); return l, r end
+  local l1, r1 = coords(bg.Left)
+  local l2, r2 = coords(bg.Middle)
+  local l3, r3 = coords(bg.Right)
+
+  -- The three sub-rects must TILE the cell: no gap (a seam of missing art) and no overlap (the edge
+  -- lines drawn twice). Slicing is only correct if the pieces reassemble the source exactly.
+  assertf(math.abs(l1 - entry.left) < 1e-6, "left cap starts at the cell's left edge")
+  assertf(math.abs(r1 - l2) < 1e-6, "…middle starts exactly where the left cap ends")
+  assertf(math.abs(r2 - l3) < 1e-6, "…right cap starts exactly where the middle ends")
+  assertf(math.abs(r3 - entry.right) < 1e-6, "…and the right cap ends at the cell's right edge")
+
+  -- The cut points are the ones the art dictates: cols 0-7 and 121-131 (§H.2.9).
+  local u = function(x) return entry.left + (entry.right - entry.left) * (x / 132) end
+  assertf(math.abs(r1 - u(8)) < 1e-6, "left cut at col 8, where the flat interior begins")
+  assertf(math.abs(l3 - u(121)) < 1e-6, "right cut at col 121, where the shadow begins")
+
+  -- THE POINT OF THE WHOLE EXERCISE: widening the bar must not widen the caps. Their width tracks
+  -- the region's HEIGHT, which is constant, so the flat middle absorbs every extra pixel. Before the
+  -- slice a 132px cell was stretched bodily and the 1px edge lines smeared with it — 1.47x at the
+  -- 100% bar width and 3.1x at the 200% end of the slider.
+  local capL0, capR0 = bg.Left:GetWidth(), bg.Right:GetWidth()
+  local expectScale = (bar:GetHeight() + 2 + 7) / 19
+  assertf(math.abs(capL0 - 8 * expectScale) < 1e-6,
+          ("left cap sized off the region height, not its width (%.2f)"):format(capL0))
+  assertf(math.abs(capR0 - 11 * expectScale) < 1e-6,
+          ("right cap likewise (%.2f)"):format(capR0))
+
+  -- Blank the middle's texcoord first. "The caps did not change" is satisfied by doing nothing at
+  -- all, so on its own it passes whenever the resize hook is dropped entirely — which is exactly
+  -- what a replacing HookScript used to do to it. This makes the re-apply itself observable.
+  local w0 = bar:GetWidth()
+  bg.Middle._coords = nil
+  bar:SetWidth(w0 * 2)
+  assertf(bg.Middle:GetTexCoord() ~= nil, "resizing the bar re-applies the slice")
+  assertf(math.abs(bg.Left:GetWidth() - capL0) < 1e-6
+          and math.abs(bg.Right:GetWidth() - capR0) < 1e-6,
+          "…and doubling it leaves both caps at their original width")
+  assertf(select(2, bg.Left:GetTexCoord()) == r1 and bg.Middle:IsShown(),
+          "…with the cuts unmoved")
+
+  -- Both OnSizeChanged hooks on this bar must still run: the fill overlay's and the cap widths'.
+  -- Under a stub that replaced hooks instead of chaining, only the last one installed ever fired.
+  assertf(bar._neOverlay ~= nil and bar._neOverlay:GetWidth() > 0,
+          "the fill overlay tracked the same resize (both OnSizeChanged hooks fired)")
+
+  -- A bar too narrow for two caps falls back to one stretched piece rather than overlapping them.
+  bar:SetWidth(10)
+  assertf(not bg.Middle:IsShown() and not bg.Right:IsShown(),
+          "a bar narrower than its own caps falls back to a single stretch")
+  bar:SetWidth(w0)
+  assertf(bg.Middle:IsShown() and bg.Right:IsShown(), "…and recovers when there is room again")
+end
 
 -- Auto-track destination routing.
 settle(function() M.SetAutoTrackDest("icon") end)

@@ -184,10 +184,9 @@ function BarItem:OnLoad()
       NE.tex.SetAtlasOnStatusBar(self.Bar, "UI-HUD-CoolDownManager-Bar")
     end
     self.Bar:SetStatusBarColor(1.0, 0.5, 0.25)   -- retail's BuffBar orange
-    if set then
-      if self.Bar.BarBG then set(self.Bar.BarBG, "UI-HUD-CoolDownManager-Bar-BG", false) end
-      if self.Bar.Pip   then set(self.Bar.Pip,   "UI-HUD-CoolDownManager-Bar-Pip", true) end
-    end
+    -- BarBG is a 3-slice group, not a texture — it textures its own pieces in BuildBarBG (§H.2.9).
+    if self.Bar.BarBG and M.ApplyBarBGAtlas then M.ApplyBarBGAtlas(self.Bar.BarBG) end
+    if set and self.Bar.Pip then set(self.Bar.Pip, "UI-HUD-CoolDownManager-Bar-Pip", true) end
     -- Pip rides the fill texture's right edge so it slides left as the bar depletes.
     if self.Bar.Pip and self.Bar.GetStatusBarTexture then
       local fillTex = self.Bar:GetStatusBarTexture()

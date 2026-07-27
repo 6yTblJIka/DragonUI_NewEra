@@ -1051,6 +1051,139 @@ function M.ReanchorIcons()
   end
 end
 
+-- ── BuffBar background: a horizontal 3-slice ────────────────────────────────────────────────────
+--
+-- Bar-BG is 132x19 and gets anchored to a region 6px wider than the bar (retail's own -2/+4), so at
+-- the 100% bar width it stretches 1.47x horizontally and at the 200% end of the width slider it
+-- stretches 3.1x. Its interior survives that — cols 8..120 are dead uniform, black at alpha 173 —
+-- but the two 1px light edge lines at x=1 and x=126 do not: they smear to 3px and the bar loses its
+-- edge. Reading the cell's columns gives the cut points, and they are unambiguous:
+--
+--   x=0..7    alpha 96, 253, 235, 220, 188, 179, 174, 173 — the left cap, with its edge line at x=1
+--   x=8..120  alpha 173 flat, luminance 0 — uniform, safe to stretch by any factor
+--   x=121..131 alpha 179..253 (edge line at x=126) then 172, 90, 35, 11, 5 — cap plus drop shadow
+--
+-- The right cap is wider than the left because the art carries a shadow down and to the right; that
+-- asymmetry is also why the anchors are -2/+2 and +4/-7 rather than symmetric.
+--
+-- HORIZONTAL ONLY. There is no flat band vertically — rows 3..11 run 209, 185, 165, 153, 153, 160,
+-- 173, 194, 228, a continuous bevel — so the vertical axis has nothing to slice and every piece
+-- stretches down the same 1.47x it always has. A nine-slice here would be inventing a seam.
+M.BARBG_NATIVE_W  = 132
+M.BARBG_NATIVE_H  = 19
+M.BARBG_CAP_LEFT  = 8
+M.BARBG_CAP_RIGHT = 11
+
+-- The region's inset from the bar, retail's own numbers (CooldownViewer.xml:307-311). Asymmetric
+-- because the shadow falls down and to the right.
+M.BARBG_PAD_L, M.BARBG_PAD_T = -2,  2
+M.BARBG_PAD_R, M.BARBG_PAD_B =  4, -7
+
+-- THREE TEXTURES ON THE BAR, not a child frame holding them. A child frame draws above EVERY layer
+-- of its parent, so a Frame-based group would put the background over the fill, the pip and the
+-- name — the same rule that hid the buff glow under the cooldown sweep in §H.2.8. Textures on the
+-- bar itself sit at BACKGROUND and stay there.
+--
+-- Caps scale with the region's HEIGHT, not its width. The vertical stretch is a constant 28/19
+-- whatever the bar width, so scaling the caps by it keeps the corner bevel uniformly scaled instead
+-- of squashing it into an ellipse — the flat middle absorbs all the extra width, which is the whole
+-- point of slicing.
+local function barBGCapScale(bg)
+  local bar = bg and bg.bar
+  local h = bar and bar:GetHeight() or 0
+  if h <= 0 then return 1 end
+  return (h + M.BARBG_PAD_T - M.BARBG_PAD_B) / M.BARBG_NATIVE_H
+end
+
+local function barBGWidth(bg)
+  local bar = bg and bg.bar
+  local w = bar and bar:GetWidth() or 0
+  return w - M.BARBG_PAD_L + M.BARBG_PAD_R
+end
+
+-- The registry entry, or nil if 8a's registration ever goes missing (in which case the caller
+-- leaves the pieces untextured rather than drawing three copies of the whole sheet).
+local function barBGEntry()
+  return NE.tex and NE.tex._atlasEntry and NE.tex._atlasEntry("UI-HUD-CoolDownManager-Bar-BG")
+end
+
+function M.ApplyBarBGAtlas(bg)
+  if not (bg and bg.Left and bg.Middle and bg.Right and bg.bar) then return false end
+  local rect = barBGEntry()
+  if not rect then return false end
+  local bar = bg.bar
+
+  local u = function(x) return rect.left + (rect.right - rect.left) * (x / M.BARBG_NATIVE_W) end
+  local l, r = M.BARBG_CAP_LEFT, M.BARBG_NATIVE_W - M.BARBG_CAP_RIGHT
+
+  local scale = barBGCapScale(bg)
+  local leftW, rightW = M.BARBG_CAP_LEFT * scale, M.BARBG_CAP_RIGHT * scale
+
+  bg.Left:ClearAllPoints()
+  bg.Left:SetPoint("TOPLEFT",    bar, "TOPLEFT",    M.BARBG_PAD_L, M.BARBG_PAD_T)
+  bg.Left:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", M.BARBG_PAD_L, M.BARBG_PAD_B)
+
+  -- A bar narrow enough that the caps would overlap has no middle to speak of; fall back to the
+  -- plain single stretch rather than drawing the two caps over each other.
+  --
+  -- A width of ZERO is not that case. The bar takes its width from its anchors, which the client has
+  -- not resolved when the row is built, so the first call here reads 0 — and treating that as "too
+  -- narrow" would collapse every row to a single stretch and leave it there until something happened
+  -- to resize it. Unresolved is not narrow; slice, and let the first real OnSizeChanged re-measure.
+  --
+  -- The test is the BAR's own width, not the padded region's: the padding is +6, so an unresolved
+  -- bar still reports a 6px region and would sail past a `regionW > 0` guard into the fallback.
+  local barW = bar:GetWidth() or 0
+  if barW > 0 and leftW + rightW >= barBGWidth(bg) then
+    bg.Left:SetPoint("TOPRIGHT",    bar, "TOPRIGHT",    M.BARBG_PAD_R, M.BARBG_PAD_T)
+    bg.Left:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", M.BARBG_PAD_R, M.BARBG_PAD_B)
+    bg.Left:SetTexCoord(rect.left, rect.right, rect.top, rect.bottom)
+    bg.Middle:Hide(); bg.Right:Hide()
+    return true
+  end
+
+  bg.Left:SetWidth(leftW)
+  bg.Left:SetTexCoord(u(0), u(l), rect.top, rect.bottom)
+
+  bg.Right:ClearAllPoints()
+  bg.Right:SetPoint("TOPRIGHT",    bar, "TOPRIGHT",    M.BARBG_PAD_R, M.BARBG_PAD_T)
+  bg.Right:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", M.BARBG_PAD_R, M.BARBG_PAD_B)
+  bg.Right:SetWidth(rightW)
+  bg.Right:SetTexCoord(u(r), u(M.BARBG_NATIVE_W), rect.top, rect.bottom)
+
+  bg.Middle:ClearAllPoints()
+  bg.Middle:SetPoint("TOPLEFT",     bg.Left,  "TOPRIGHT",   0, 0)
+  bg.Middle:SetPoint("BOTTOMRIGHT", bg.Right, "BOTTOMLEFT", 0, 0)
+  bg.Middle:SetTexCoord(u(l), u(r), rect.top, rect.bottom)
+
+  bg.Middle:Show(); bg.Right:Show()
+  return true
+end
+
+-- Build the three pieces on the bar. Returns a plain table, not a frame — see above. It carries the
+-- same key the single texture did, so AuraItemMixins keeps addressing it as `bar.BarBG`.
+function M.BuildBarBG(bar)
+  if not bar then return end
+  local bg = { bar = bar }
+
+  -- Prefer the shipped BLP over the raw FDID, the same order entrySource uses in core/Texture.lua.
+  local rect   = barBGEntry()
+  local source = rect and ((NE.tex.Local and NE.tex.Local(rect.file)) or rect.file)
+  local function piece()
+    local t = bar:CreateTexture(nil, "BACKGROUND")
+    if source then t:SetTexture(source) end
+    return t
+  end
+
+  bg.Left, bg.Middle, bg.Right = piece(), piece(), piece()
+
+  M.ApplyBarBGAtlas(bg)
+  -- The width slider re-sizes the row long after construction, and the caps are sized off the bar.
+  -- HookScript chains, so this coexists with the fill overlay's own OnSizeChanged hook.
+  bar:HookScript("OnSizeChanged", function() M.ApplyBarBGAtlas(bg) end)
+  return bg
+end
+
 function ItemMixin:OnEnter()
   if self.tooltipsShown == false then return end
   if self._equipSlot then

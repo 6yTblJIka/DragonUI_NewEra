@@ -5,12 +5,11 @@ TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global conventio
 
 **Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets), 6 (loose
 ends) and 7 (the tracked-aura catalog) implemented — the whole of both phasing tables except the
-deliberate cuts. Offline harnesses pass (`qa/offline/`, 581 boot assertions). Phases 1-3 and the 4b-1
+deliberate cuts. Offline harnesses pass (`qa/offline/`, 599 boot assertions). Phases 1-3 and the 4b-1
 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
 fixed, §G.7.1/§G.7.2).
 
-**Open work is §8b, 8d, 8e and §H.3** (planned, not built): the cooldown swipe (8b), bar theming (8d)
-and the pandemic ring (8e); then **Phase 9**, the audit against Wowhead's current guide, which after 8c
+**Open work is §8b, 8e and §H.3** (planned, not built): the cooldown swipe (8b) and the pandemic ring (8e); then **Phase 9**, the audit against Wowhead's current guide, which after 8c
 has no remaining feature gap (§H.3). **8a is DONE** (§H.2.1): six atlases the viewers had been setting
 by name were registered nowhere, so every one rendered as an invisible texture — which is why the icons
 looked like bare spellbook icons. **8c is DONE** (§H.2.2): a spell whose own buff is up now lights its
@@ -2014,6 +2013,59 @@ The bar rows are functional: icon, name, depleting fill. Against retail they wan
 spark, and the name/timer typography and alignment checked side by side. Lowest-confidence item here,
 because it is the one that needs a screenshot comparison rather than a code reading — scope it after
 8a, when the icons are right and the bars are the remaining mismatch.
+
+### H.2.9 What 8d actually took
+
+**Three of the four questions closed by looking, and the fourth was a real defect.** The owner's
+screenshots (edit mode with looping previews, and a live Power Word: Shield mid-depletion) answered:
+the fill IS orange, so `SetStatusBarColor` reaches the visible overlay through the `hooksecurefunc`
+in `SetAtlasOnStatusBar` — worth confirming, because the engine's own bar texture is deliberately
+alpha-0 and a missed hook would render a plain grey bar with nothing else looking wrong. The pip
+reads as a spark, not the oversized blob its 10x46 cell suggested (the art is only ~6x30 inside it).
+Typography and alignment match upstream's XML, which our Lua transcribes literally.
+
+**The defect was `Bar-BG` stretching bodily.** Decoding the cell settles where it slices:
+
+| cols | content |
+|---|---|
+| 0-7 | alpha 96, 253, 235, 220, 188, 179, 174, 173 — left cap, edge line at x=1 |
+| 8-120 | alpha 173 flat, luminance 0 — uniform, safe to stretch by any factor |
+| 121-131 | alpha 179..253 (edge line at x=126) then 172, 90, 35, 11, 5 — cap plus drop shadow |
+
+The right cap is wider because the art's shadow falls down and to the right, which is also why
+retail's anchors are `-2/+2, +4/-7` rather than symmetric. Stretched whole, the two 1px edge lines
+smear: 1.47x at the 100% bar width, **3.1x at the 200% end of the width slider**. That last figure is
+what the owner's screenshot was actually showing, since they had widened the bars for legibility.
+
+**Horizontal only.** Vertically there is no flat band to slice — rows 3-11 run 209, 185, 165, 153,
+153, 160, 173, 194, 228, a continuous bevel — so every piece stretches down the same constant 28/19
+it always has. A nine-slice here would be inventing a seam. Cap widths therefore scale with the
+region's HEIGHT, so widening the bar moves the extra pixels into the middle and leaves the corner
+bevel uniformly scaled instead of squashed into an ellipse.
+
+**`BarBG` is three textures on the bar, held in a plain table — not a child frame.** A child frame
+draws above every layer of its parent (§H.2.8), so a `Frame`-based group would have put the
+background over the fill, the pip and the name. The same rule, one phase later, in a place it could
+have bitten again.
+
+Two things the harness taught us:
+
+* **A zero width is "not laid out yet", not "too narrow for caps".** The bar takes its width from its
+  anchors, unresolved when the row is built, so the first call reads 0. Conflating the two collapsed
+  every row to a single stretch until something happened to resize it. The guard also has to test the
+  BAR's width rather than the padded region's — padding is +6, so an unresolved bar still reports a
+  6px region and sails past a `regionW > 0` check.
+* **`HookScript` in the stub replaced instead of chaining**, so the last hook on a script silently
+  won — and these rows hook `OnSizeChanged` twice, once for the fill's texcoord and once for the cap
+  widths. Fixed. It mattered: under the replacing stub the cap-width assertion passed **vacuously**,
+  because nothing re-ran at all and "the caps did not change" is satisfied by doing nothing. The
+  assertion now blanks the middle's texcoord first, so the re-apply is itself observable.
+
+What 8d did NOT need: a retail comparison shot. Upstream's XML is vendored at
+`ReferenceAddons/NewEra/CooldownViewer/CooldownViewer.xml` and our geometry matches it line for line,
+so any mismatch had to be in the texture treatment rather than the numbers.
+
+`/necdm` now reports the stretch factor the middle is carrying and the cap widths it is holding off.
 
 ### 8e. The pandemic ring
 

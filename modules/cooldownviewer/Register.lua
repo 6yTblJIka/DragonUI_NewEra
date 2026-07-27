@@ -236,6 +236,20 @@ SlashCmdList["NECDM"] = function()
   say(("buff glow: %s, texture %s, lit on %d of %d shown tiles"):format(
     M.IsBuffGlowEnabled() and "ON" or "off (Settings > Buffed spells)",
     tostring(M.BUFF_GLOW_TEXTURE), lit, withSpell))
+
+  -- Phase 8d. The 3-slice is invisible when it works and a soft edge when it does not, which is a
+  -- hard thing to eyeball at the 100% bar width. Report the stretch factor the middle is carrying:
+  -- that is the number the slice exists to keep off the caps.
+  local bar = M.viewers and M.viewers.buffBar and M.viewers.buffBar.items
+              and M.viewers.buffBar.items[1] and M.viewers.buffBar.items[1].Bar
+  local bg = bar and bar.BarBG
+  if bg and bg.Left then
+    local w = (bar:GetWidth() or 0) - M.BARBG_PAD_L + M.BARBG_PAD_R
+    say(("bar frame: %s, region %.0fpx wide vs %dpx art (%.2fx), caps %.1f/%.1f held"):format(
+      bg.Middle and bg.Middle:IsShown() and "3-slice" or "single stretch (bar too narrow)",
+      w, M.BARBG_NATIVE_W, w / M.BARBG_NATIVE_W,
+      bg.Left:GetWidth() or 0, bg.Right and bg.Right:GetWidth() or 0))
+  end
 end
 
 local bootFrame = CreateFrame("Frame")
