@@ -5,11 +5,11 @@ TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global conventio
 
 **Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets), 6 (loose
 ends) and 7 (the tracked-aura catalog) implemented — the whole of both phasing tables except the
-deliberate cuts. Offline harnesses pass (`qa/offline/`, 599 boot assertions). Phases 1-3 and the 4b-1
+deliberate cuts. Offline harnesses pass (`qa/offline/`, 618 boot assertions). Phases 1-3 and the 4b-1
 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
 fixed, §G.7.1/§G.7.2).
 
-**Open work is §8b, 8e and §H.3** (planned, not built): the cooldown swipe (8b) and the pandemic ring (8e); then **Phase 9**, the audit against Wowhead's current guide, which after 8c
+**Open work is §8b and §H.3** (planned, not built): the cooldown swipe (8b); then **Phase 9**, the audit against Wowhead's current guide, which after 8c
 has no remaining feature gap (§H.3). **8a is DONE** (§H.2.1): six atlases the viewers had been setting
 by name were registered nowhere, so every one rendered as an invisible texture — which is why the icons
 looked like bare spellbook icons. **8c is DONE** (§H.2.2): a spell whose own buff is up now lights its
@@ -2075,6 +2075,53 @@ which 8a ships anyway. The two clip masks (7552325, 7553101) are unusable — §
 be polyfilled — so the ring needs the unmasked art plus a crop, the same substitution the icons use for
 their rounded corners.
 
+### H.2.10 What 8e actually took
+
+**The premise above was wrong, and decoding the cells is what showed it.** "The ring needs the unmasked
+art plus a crop" assumed everything in retail's pandemic FX depends on the two clip masks §C2 rules
+out. It does not. `UI-CooldownManager-PandemicBorder` is **already a hollow rounded-square ring**:
+alpha 0 through the centre, material in two bands at cols 2-8 and 52-58 of 61, real RGB at full alpha
+(peak 255,48,48). It needs no mask, no crop and no substitute. It is finished art, on a sheet 8a
+already ships, and it ported as one atlas registration plus a texture.
+
+This is the fourth time this phase that reading a texture's metadata instead of its pixels produced a
+wrong plan — after the six unregistered atlases (8a), the black additive glow (8c) and the
+shadow-vs-border frame (§H.2.5). The correction cost about ten minutes with `blp.js`.
+
+**What genuinely needed the masks was the CASCADE, and it is the half that did not port.**
+`PandemicFX-Icon01/02/03` are FILLED 128x128 quads (centre alpha 61/81/24), not rings — retail clips
+them to the ring shape and *then* scales them 0.25 → 1.5. Unmasked they are square smears across the
+icon and its neighbours, so those three atlases are deliberately **not** registered. `Animation:SetTarget`
+is independently absent too, so the template's one-group-drives-three-textures structure has no
+equivalent regardless.
+
+**Substitution: the ring pulses.** One texture on one frame, so the animation acts on the region that
+owns the group — which is exactly what this client's animation model does — and no mask is involved at
+any point. Same signal as the cascade, real art, no faked clip.
+
+Details worth keeping:
+
+* **A fourth FX, not a special case.** `AL.FX` already drives the settings submenu by generation, so
+  adding `{ id = 4, name = "Pandemic Border" }` gave it a menu entry, a preview and idempotent
+  start/stop for free. `refresh` defaults to it via `AL.DefaultFX`; the three LibCustomGlow renderers
+  stay selectable.
+* **Untinted, alone among the FX.** The other three renderers are colourless and take meaning from
+  `TINT`. This art already carries the colour, and vertex colour multiplies — TINT.refresh's
+  (1, 0.5, 0.1) over a ring that is (1, 0.19, 0.19) lands on (1, 0.09, 0.02), a muddier red than the
+  artist chose, arrived at by tinting something that needed no tint.
+* **Levelled above the cooldown sweep**, for the reason §H.2.8 cost four passes to find: the sweep is a
+  child frame, so it outranks every draw layer of the item and a ring on any layer would sit under it.
+* **Alpha animations are DELTAS on this client.** ClassicAPI's `SetFromAlpha`/`SetToAlpha` are a
+  polyfill over native `SetChange` (WidgetAPI.lua:414-436) and only emit it once both halves are set —
+  hence from-then-to on each animation, and hence `startPandemic` setting alpha to 1 before `Play`.
+* The **bar** ring (`pandemicborderbar`, 32x32, nine-slice 15/15/15/15) is registered nowhere: the
+  alert ticker walks only the icon viewers, so nothing could read it. Upstream's own bar path is
+  dormant for the same reason, by its own comment.
+
+The harness gained an AnimationGroup stub, without which the builder's feature gate would have skipped
+the pulse and the ring would have tested green while sitting static. Three mutations verified
+negatively: never playing the pulse, levelling the ring at the sweep's level, and tinting it.
+
 ### Verification
 
 Screenshots, into `screenshots/`, per the repo's existing practice: an Essential row on cooldown, a
@@ -2136,10 +2183,16 @@ tracking. 7a-7c are contained (one registry, one adapter branch, one empty state
 registrations turning bare icons into Cooldown Manager tiles. **Then 8c** (the glow, small and it
 closes the last guide feature), **8b** (the swipe, needs measuring), **8d/8e** (screenshot work).
 
-8a and 8c are done. What is left in §H.2 is **8b**, and it is the one item here that could make things
-worse rather than better: ClassicAPI's radial swipe builds five frames and a rotating animation per
-cooldown and hijacks `SetAlpha`. It wants measuring on a full Essential row before it is trusted, and
-it wants doing after an in-game look at 8c rather than stacked on top of it unverified.
+8a, 8c, 8d (§H.2.9) and 8e (§H.2.10) are done. Both of the "screenshot work" items turned out to have
+one real defect each behind a pile of things that were already correct, and in both cases the defect
+was found by decoding the art rather than by looking at a screenshot: `Bar-BG` stretching its 1px edge
+lines up to 3.1x, and 8e's premise that the pandemic ring needed a mask substitute when the art is
+already a hollow ring.
+
+What is left in §H.2 is **8b**, and it is the one item here that could make things worse rather than
+better: ClassicAPI's radial swipe builds five frames and a rotating animation per cooldown and hijacks
+`SetAlpha`. It wants measuring on a full Essential row before it is trusted, and it wants doing after
+an in-game look at 8c rather than stacked on top of it unverified.
 
 **Phase 9** is bookkeeping absorbed by the two above, apart from the "Not Displayed" rename, which is
 a one-line owner preference.

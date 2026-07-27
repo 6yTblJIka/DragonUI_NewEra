@@ -216,6 +216,33 @@ end
 -- The LAYER argument is kept. Discarding it meant GetDrawLayer only ever answered for regions that
 -- had also been through SetDrawLayer, so a region created on the wrong layer was unassertable — which
 -- is how a mutation test on the buff glow's layer came back green with the glow back over the icon.
+-- AnimationGroups, recorded rather than simulated. The pandemic ring's pulse is a real feature with
+-- a real failure mode (built, never played), and without this the builder's feature gate would just
+-- skip it and the ring would test green while sitting static. Alpha carries SetFromAlpha/SetToAlpha
+-- because ClassicAPI polyfills that pair on this client; the raw SetChange fallback is not stubbed,
+-- so a change that started depending on it would show up here rather than only in game.
+function frameMeta:CreateAnimationGroup()
+  local ag = { _anims = {}, _playing = false }
+  function ag:SetLooping(m) self._loop = m end
+  function ag:GetLooping() return self._loop end
+  function ag:Play() self._playing = true end
+  function ag:Stop() self._playing = false end
+  function ag:IsPlaying() return self._playing end
+  function ag:CreateAnimation(kind)
+    local a = { _kind = kind }
+    function a:SetDuration(d)   self._dur = d end
+    function a:SetOrder(o)      self._order = o end
+    function a:SetSmoothing(s)  self._smooth = s end
+    function a:SetStartDelay(d) self._delay = d end
+    function a:SetFromAlpha(v)  self._from = v end
+    function a:SetToAlpha(v)    self._to = v end
+    self._anims[#self._anims + 1] = a
+    return a
+  end
+  self._animGroups = self._animGroups or {}
+  self._animGroups[#self._animGroups + 1] = ag
+  return ag
+end
 function frameMeta:CreateTexture(_, layer) local t = newRegion("Texture", layer); self._regions[#self._regions+1] = t; return t end
 function frameMeta:CreateFontString() local t = newRegion("FontString"); self._regions[#self._regions+1] = t; return t end
 function frameMeta:SetCooldown(s, d) self._cdStart, self._cdDur = s, d end
@@ -1348,17 +1375,69 @@ AL.SetWindow(2944, 0.30)
 local dp = itemFor("Devouring Plague")
 assertf(dp ~= nil, "Devouring Plague tile present for the refresh test")
 if dp then
+  -- `refresh` now renders the REAL pandemic ring (§H.2.10), not a tinted LibCustomGlow. The ring is
+  -- our own frame, so GLOWS stays empty for it — asserting on GLOWS alone would read the correct
+  -- behaviour as "the alert stopped working".
+  local ringUp = function() return dp._pandemicRing and dp._pandemicRing:IsShown() end
+
   BUFFS.player[1] = { name = "Devouring Plague", rank = "Rank 1", icon = "i", duration = 24, expiration = GetTime() + 20 }
   nextFrame(); tick()
-  assertf(GLOWS[dp] == nil, "no refresh glow at 20s of 24s remaining")
+  assertf(not ringUp(), "no pandemic ring at 20s of 24s remaining")
   BUFFS.player[1].expiration = GetTime() + 5
   nextFrame(); tick()
-  assertf(GLOWS[dp] ~= nil, "refresh glow inside the last 30% (5s of 24s)")
-  local colour = GLOWS[dp] and GLOWS[dp].color
-  assertf(colour and colour[1] == 1.00 and colour[2] == 0.50, "…tinted pandemic-orange, not the usable yellow")
+  assertf(ringUp(), "pandemic ring inside the last 30% (5s of 24s)")
+  assertf(GLOWS[dp] == nil, "…and it is the ring, not a LibCustomGlow standing in for it")
+
+  local ov = dp._pandemicRing
+  assertf(AL.GetFX(2944) == 4, "refresh defaults to the ring; the other alert types keep the ants")
+  assertf(AL.DefaultFX("usable") == 1 and AL.DefaultFX("available") == 1, "…only refresh")
+
+  -- The art is registered and set. 8a's whole lesson: an unregistered atlas renders as an invisible
+  -- texture and logs nothing, so "the ring showed" is not the same as "the ring is visible".
+  assertf(NE.tex.HasAtlas("UI-CooldownManager-PandemicBorder"), "the ring atlas is registered")
+  local e = NE.tex._atlasEntry("UI-CooldownManager-PandemicBorder")
+  assertf(math.abs((e.right - e.left) * 512 - 61) < 0.01
+          and math.abs((e.bottom - e.top) * 1024 - 61) < 0.01,
+          "…and its rect multiplies out to 61x61 on the sheet we actually ship")
+  assertf(ov.Ring:GetTexture() ~= nil, "…and the ring texture resolved to a file")
+
+  -- UNTINTED, deliberately: the art already carries the pandemic colour, and vertex colour
+  -- multiplies, so applying TINT.refresh would darken it rather than colour it.
+  local r, g, b = ov.Ring:GetVertexColor()
+  assertf(r == 1 and g == 1 and b == 1, "the ring is left untinted, not multiplied by TINT.refresh")
+
+  -- Above the cooldown sweep. The sweep is a child frame, so it outranks every draw layer of the
+  -- item (§H.2.8) — a ring on any layer would be under it, which is the bug that took four passes
+  -- to find for the buff glow. Not relearning it here.
+  assertf(ov:GetFrameLevel() > dp.Cooldown:GetFrameLevel(),
+          ("ring levelled above the cooldown sweep (%d > %d)")
+            :format(ov:GetFrameLevel(), dp.Cooldown:GetFrameLevel()))
+
+  -- The pulse: built, looping, and actually PLAYING. Built-but-never-played is a silent failure —
+  -- the ring still shows, just static — so playing is asserted separately from existing.
+  assertf(ov.anim ~= nil, "the ring carries a pulse animation")
+  assertf(ov.anim:GetLooping() == "REPEAT", "…set to loop")
+  assertf(ov.anim:IsPlaying(), "…and playing while the alert is up")
+  assertf(#ov.anim._anims == 2, "…as a down/up pair, not a one-way fade")
+  local down = ov.anim._anims[1]
+  assertf(down._from == 1 and down._to and down._to < 1,
+          "…driven through SetFromAlpha/SetToAlpha in that order (ClassicAPI lowers it to SetChange)")
+
   BUFFS.player[1] = nil
   nextFrame(); tick()
-  assertf(GLOWS[dp] == nil, "refresh glow clears when the aura falls off")
+  assertf(not ringUp(), "pandemic ring clears when the aura falls off")
+  assertf(not ov.anim:IsPlaying(), "…and stops its pulse rather than animating a hidden frame")
+  assertf(ov:GetAlpha() == 1,
+          "…leaving alpha at 1, so the next show does not start from wherever the pulse stopped")
+
+  -- A recycled tile must not inherit the previous spell's ring. The 5Hz ticker would clear it, but
+  -- not before up to 200ms of the wrong spell wearing it.
+  BUFFS.player[1] = { name = "Devouring Plague", rank = "Rank 1", icon = "i", duration = 24, expiration = GetTime() + 5 }
+  nextFrame(); tick()
+  assertf(ringUp(), "ring back up for the recycle check")
+  M.alerts.ClearFX(dp)
+  assertf(not ringUp(), "ClearFX drops the ring, which is what tile recycling calls")
+  BUFFS.player[1] = nil
 end
 AL.SetType(2944, nil)
 
@@ -1406,6 +1485,21 @@ AL.Preview(mb, 1, "refresh")
 previewColour = GLOWS[mb] and GLOWS[mb].color
 assertf(previewColour and previewColour[1] == 1.00 and previewColour[2] == 0.50,
         "…and refresh previews pandemic-orange")
+
+-- The ring previews too. This is the path the settings menu actually takes when the player picks
+-- "Pandemic Border" from the FX submenu, and it runs against a SETTINGS TILE — a frame with no
+-- .Cooldown to level against, which the builder has to survive rather than error on.
+AL.ClearFX(mb)
+AL.Preview(mb, 4, "refresh")
+assertf(mb._pandemicRing and mb._pandemicRing:IsShown(), "picking the ring in the menu previews it")
+AL.ClearFX(mb)
+assertf(not mb._pandemicRing:IsShown(), "…and switching away from it clears the ring")
+do
+  local bare = CreateFrame("Frame")
+  local ok = pcall(AL.Preview, bare, 4, "refresh")
+  assertf(ok and bare._pandemicRing and bare._pandemicRing:IsShown(),
+          "…on a frame with no Cooldown to level against (the settings tiles)")
+end
 AL.ClearFX(mb)
 
 -- The global escape hatch in the options tab.

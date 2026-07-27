@@ -237,6 +237,30 @@ SlashCmdList["NECDM"] = function()
     M.IsBuffGlowEnabled() and "ON" or "off (Settings > Buffed spells)",
     tostring(M.BUFF_GLOW_TEXTURE), lit, withSpell))
 
+  -- Phase 8e. The pandemic ring has the same "three ways to be invisible" problem the buff glow had:
+  -- no spell carries a refresh alert, none is inside its window, or the atlas failed to register.
+  -- Report which, plus whether the pulse is actually running — a built-but-never-played group is a
+  -- silent failure, because the ring still shows, just static.
+  local AL = M.alerts
+  if AL then
+    local assigned, lit, pulsing = 0, 0, 0
+    for _, cat in ipairs({ "essential", "utility" }) do
+      local v = M.viewers and M.viewers[cat]
+      for _, it in ipairs((v and v.items) or {}) do
+        local sid = it.GetSettingsKey and it:GetSettingsKey() or it.spellID
+        if sid and AL.GetType(sid) == "refresh" then assigned = assigned + 1 end
+        local ov = it._pandemicRing
+        if ov and ov:IsShown() then
+          lit = lit + 1
+          if ov.anim and ov.anim.IsPlaying and ov.anim:IsPlaying() then pulsing = pulsing + 1 end
+        end
+      end
+    end
+    say(("pandemic ring: art %s, %d spell(s) set to Refresh, %d ring(s) up, %d pulsing"):format(
+      (NE.tex and NE.tex.HasAtlas and NE.tex.HasAtlas("UI-CooldownManager-PandemicBorder"))
+        and "registered" or "MISSING", assigned, lit, pulsing))
+  end
+
   -- Phase 8d. The 3-slice is invisible when it works and a soft edge when it does not, which is a
   -- hard thing to eyeball at the 100% bar width. Report the stretch factor the middle is carrying:
   -- that is the number the slice exists to keep off the caps.

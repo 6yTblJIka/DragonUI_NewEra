@@ -77,4 +77,26 @@ NE.tex.RegisterAtlases({
   ["UI-HUD-CoolDownManager-Bar"]         = { file = 6704514, left = 0.347656, right = 0.832031, top = 0.171875, bottom = 0.250000, width = 124, height = 10 },
   ["UI-HUD-CoolDownManager-Bar-BG"]      = { file = 6704514, left = 0.347656, right = 0.863281, top = 0.007812, bottom = 0.156250, width = 132, height = 19 },
   ["UI-HUD-CoolDownManager-Bar-Pip"]     = { file = 6704514, left = 0.347656, right = 0.386719, top = 0.265625, bottom = 0.625000, width = 10,  height = 46 },
+
+  -- The pandemic ring (§H.2 8e), on the same sheet as the out-of-range shadow.
+  --
+  -- ONE atlas, not six. The plan expected this phase to need "the unmasked art plus a crop", on the
+  -- assumption that everything in retail's pandemic FX depends on the two clip masks §C2 rules out.
+  -- Decoding the cells says otherwise: PandemicBorder is ALREADY a hollow rounded-square ring — its
+  -- centre is alpha 0, its material sits in two bands at cols 2-8 and 52-58 of 61, and it carries
+  -- real RGB at full alpha (peak 255,48,48). It needs no mask and no crop; it is finished art.
+  --
+  -- What genuinely needed the masks was the CASCADE: PandemicFX-Icon01/02/03 are 128x128 FILLED
+  -- glows (centre alpha 61/81/24), square quads that retail clips to the ring shape before scaling
+  -- them 0.25 -> 1.5. Unmasked they are square smears across the icon and its neighbours — worse
+  -- than nothing, which is why they are NOT registered here. Alerts.lua substitutes an alpha pulse
+  -- on the ring itself, which needs neither a mask nor Animation:SetTarget.
+  --
+  -- Same verification as above, against the real 512x1024 BLP:
+  --   border  (0.466797-0.347656)*512 = 61.0   (0.060547-0.000977)*1024 = 61.0
+  -- The bar ring `ui-cooldownmanager-pandemicborderbar` (6685874, 0.470703/0.533203/0.000977/
+  -- 0.032227, 32x32, nine-slice l/t/r/b=15) is deliberately unregistered: the alert ticker walks
+  -- only the icon viewers, so nothing could read it. Upstream's own bar path is dormant for the
+  -- same reason.
+  ["UI-CooldownManager-PandemicBorder"]  = { file = 6685874, left = 0.347656, right = 0.466797, top = 0.000977, bottom = 0.060547, width = 61,  height = 61 },
 })

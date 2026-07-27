@@ -409,6 +409,9 @@ function BaseViewerMixin:RebuildInner()
     -- The glow is driven from RefreshCooldown, which returns early without a spellID — so a recycled
     -- tile would keep the previous spell's gold border the next time it is shown.
     if it.SetBuffGlow then it:SetBuffGlow(false) end
+    -- Same for an alert FX, and for the same reason. The 5Hz ticker does clear a retired tile on its
+    -- next pass, but "next pass" is up to 200ms of the old spell's pandemic ring on the new one.
+    if M.alerts and M.alerts.ClearFX then M.alerts.ClearFX(it) end
     it:Hide()
   end
 
