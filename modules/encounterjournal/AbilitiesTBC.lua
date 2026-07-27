@@ -574,6 +574,10 @@ local ABIL = {
     { title = "Animal Aspects", flags = 32, spell = 0,
       body = "As his health falls, Zul'jin invokes the spirits of the bear, eagle, lynx and dragonhawk, completely changing his abilities with each new phase." },
   },
+  [192] = { -- Amani Chests
+    { title = "Save the Hostages", flags = 32, spell = 25236,
+      body = "Zul'Aman provides a unique challenge in which players are put on an optional mission to defeat the four Loa bosses in Zul'Aman: Akil'zon (Eagle), Nalorakk (Bear), Jan'alai (Dragonhawk), and Halazzi (Lynx), within 45 minutes of starting the event. You only get one chance at this event; if you fail it, there are no other attempts until the raid lockout resets. The reward for doing so is that when you free a hostage from each boss, it grants you a chest with loot each time you do so" },
+  },
   
 }
 
