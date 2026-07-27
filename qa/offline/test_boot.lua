@@ -1520,6 +1520,67 @@ COOLDOWNS[10947] = nil; mb:RefreshCooldown()
 AL.SetType(8092, nil); AL.ClearFX(mb)
 TARGET_HP = 100
 
+-- ── Alerts on TRACKED BUFFS ─────────────────────────────────────────────────────────────────────
+-- The ticker walked essential and utility only, so an alert on a tracked buff stored, lit the badge,
+-- previewed on the settings tile — and then never fired in play. Reported from the game as "the FX
+-- on tracked buffs doesn't work".
+--
+-- Driven through the REAL ticker script, because the ticker's VIEWER LIST is the thing under test.
+-- Calling evalItem directly here would have passed just as happily against the broken build, which
+-- is the same vacuous shape as asserting a tooltip from a pcall that returned true.
+do
+  local realAuto = M.IsAutoTrackBuffs()
+  M.SetAutoTrackBuffs(true)
+  BUFFS.player = { { name = "Power Infusion", rank = "", icon = "Interface\\Icons\\PI", count = 0,
+                     duration = 15, expiration = GetTime() + 11, spellID = 10060 } }
+  auraTick("player")
+
+  local function auraItemFor(viewer, name)
+    for _, it in ipairs(viewer.items or {}) do
+      if it.spellName == name and it:IsShown() then return it end
+    end
+    return nil
+  end
+  local pi    = auraItemFor(bIcon, "Power Infusion")
+  local piBar = auraItemFor(bBar,  "Power Infusion")
+  assertf(pi ~= nil, "a tracked buff tile to alert on")
+  assertf(pi and pi.ConsumeReadyTransition == nil,
+          "…and it has NO ready transition, which is why `available` is not offered for one")
+
+  AL.SetType(10060, "refresh")
+  AL.SetWindow(10060, 0.30)
+  local ringOn = function(it) return (it and it._pandemicRing and it._pandemicRing:IsShown()) or false end
+
+  nextFrame(); tick()
+  assertf(not ringOn(pi), "no ring on a tracked buff at 11s of 15s")
+
+  BUFFS.player[1].expiration = GetTime() + 3
+  auraTick("player"); tick()
+  assertf(ringOn(pi),
+          "REFRESH fires on a tracked buff inside the last 30% — the ticker reaches the aura viewers")
+  assertf(ringOn(piBar), "…on the BAR viewer too, not only the icon one")
+
+  -- Still edge-correct, not merely on: a buff that is topped back up must drop the ring.
+  BUFFS.player[1].expiration = GetTime() + 14
+  auraTick("player"); tick()
+  assertf(not ringOn(pi), "…and clears again when the buff is refreshed back to full")
+
+  -- The buff falling off has to take the ring with it. Aura tiles are POOLED and reassigned far more
+  -- often than spell tiles — every auto-track rescan can hand this frame a different aura — so a ring
+  -- left on a hidden tile reappears wearing the next buff's icon.
+  BUFFS.player[1].expiration = GetTime() + 3
+  auraTick("player"); tick()
+  assertf(ringOn(pi), "ring back up for the drop check")
+  BUFFS.player = {}
+  auraTick("player"); tick()
+  assertf(not ringOn(pi), "…and it goes with the buff when that falls off, not onto the next tenant")
+
+  AL.SetType(10060, nil)
+  AL.ClearFX(pi); AL.ClearFX(piBar)
+  auraTick("player")
+  M.SetAutoTrackBuffs(realAuto)
+end
+
 -- A one-shot flash must survive the very next tick, or the settings PREVIEW is invisible.
 AL.ClearFX(mb)
 AL.Preview(mb, 1)
@@ -2382,6 +2443,55 @@ do
   AL.SetType(sid, "available")
   StaticPopupDialogs["NE_CDM_RESET_ALERTS"].OnAccept()
   assertf(AL.GetType(sid) == nil, "…and confirming clears them")
+
+  -- ── an AURA row offers only the triggers that can fire on it ─────────────────────────────────
+  -- Two of the four are driven by a cooldown finishing, and a tracked buff has no cooldown behind
+  -- it. Offering them was not cosmetic: Available's own tooltip promised "Works for every spell" on
+  -- a row that holds no spell, and a ready sound assigned there lit the badge forever with nothing
+  -- able to play it.
+  local realAuto = M.IsAutoTrackBuffs()
+  M.ResetTracking()
+  M.ResetAlerts()
+  M.SetAutoTrackBuffs(false)   -- with auto-track ON a candidate row lands under Tracked Buffs
+  M.NoteSeenAura(900456, "Menu Test Aura", "Interface\\Icons\\MTA", 20)
+  S.OpenTo("auras")
+  local auraGrid, auraTile = S._categories.hiddenAura, nil
+  for i = 1, (auraGrid and auraGrid._count or 0) do
+    if auraGrid.items[i].spellName == "Menu Test Aura" then auraTile = auraGrid.items[i] end
+  end
+  assertf(auraTile ~= nil and A2.Meta(auraTile._catID).mode == "auras", "an aura row to open the menu on")
+
+  local auraRoot  = NE.menu.BuildRoot(S.ItemMenuGenerator(auraTile, "PRIEST"))
+  local auraAlert = auraRoot:Child("Alert")
+  assertf(auraAlert ~= nil, "an aura row still gets an Alert submenu")
+  assertf(auraAlert:Child("Available") == nil, "…without Available, which needs a cooldown to finish")
+  assertf(auraAlert:Child("Refresh") ~= nil and auraAlert:Child("Usable") ~= nil,
+          "…but keeping the two that can fire on an aura")
+  assertf(auraAlert:Child("None") ~= nil,
+          "…and None, so a layout that stored Available before the gate can still be cleared")
+  assertf(auraAlert:Child("Refresh").tipText:find("no aura", 1, true) == nil,
+          "Refresh drops the cooldown-with-no-aura caveat here — the row IS the aura")
+  assertf(auraRoot:Child("Ready Sound") == nil, "no Ready Sound submenu on a row with no cooldown")
+  assertf(auraRoot:Child("Clear Ready Sound") == nil, "…and nothing to clear when none was stored")
+
+  -- The escape hatch, for a kit stored before the gate existed. Without it the badge is permanent
+  -- and the only cure is the cog's global Clear All Alerts.
+  M.SetReadySoundKit(auraTile.spellID, 316401)
+  local auraRoot2 = NE.menu.BuildRoot(S.ItemMenuGenerator(auraTile, "PRIEST"))
+  local clearRow  = auraRoot2:Child("Clear Ready Sound")
+  assertf(clearRow ~= nil, "a stored ready sound on an aura row is reachable to clear")
+  clearRow:Invoke()
+  assertf(M.GetReadySoundKit(auraTile.spellID) == nil, "…and invoking it clears the kit")
+  assertf(not auraTile.AlertBG:IsShown(), "…and the badge with it")
+
+  -- Unchanged for spells, asserted here rather than assumed: the gate keys off the row's MODE, and a
+  -- gate that fired everywhere would read as "fixed" while quietly removing two features.
+  S.OpenTo("essential")
+  local spellTile = S._categories.essential.items[1]
+  local spellRoot = NE.menu.BuildRoot(S.ItemMenuGenerator(spellTile, "PRIEST"))
+  assertf(spellRoot:Child("Alert"):Child("Available") ~= nil, "a SPELL row still offers Available")
+  assertf(spellRoot:Child("Ready Sound") ~= nil, "…and its full Ready Sound catalogue")
+  M.SetAutoTrackBuffs(realAuto)
 
   M.ResetTracking()
   M.ResetAlerts()

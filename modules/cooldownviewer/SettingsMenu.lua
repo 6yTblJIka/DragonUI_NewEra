@@ -100,10 +100,41 @@ local function addMoveEntries(root, item, class)
   end
 end
 
+-- Is this row an AURA row — Tracked Buffs, Tracked Bars, or Not Displayed on the Auras tab?
+--
+-- It decides which of the four triggers this file is allowed to offer. Two of them are driven by a
+-- COOLDOWN finishing (ItemMixin:ConsumeReadyTransition), and an aura item does not define it: there
+-- is no cooldown behind a tracked buff to finish. Offering them anyway is what produced the "the FX
+-- on tracked buffs doesn't work" report — an alert that stores, badges and previews, and then has no
+-- event that could ever fire it.
+local function isAuraRow(item)
+  local meta = item and item._catID and Adapter.Meta and Adapter.Meta(item._catID)
+  return (meta and meta.mode == "auras") and true or false
+end
+
 -- One submenu per sound category, a radio per sound, plus None. Selecting previews the cue —
 -- retail's "Play Sample" — because a sound you cannot hear before committing is not a choice.
+--
+-- Not offered on an aura row: the cue plays from FireReadyAlerts, on the cooldown -> ready edge.
+-- A stored kit is still clearable there (see the aura branch), because a setting you can reach only
+-- to regret is worse than one you were never shown.
 local function addSoundEntries(root, item)
   if not (item.spellID and M.SOUND_DATA and M.SOUND_CATEGORY_ORDER and M.SetReadySoundKit) then return end
+
+  if isAuraRow(item) then
+    -- Only when something is actually stored — otherwise the row simply has no sound section. This
+    -- exists for layouts saved BEFORE the gate, where a kit could be assigned to a buff and then sat
+    -- there lighting the badge with nothing behind it and no per-item way to take it off.
+    if M.GetReadySoundKit(item.spellID) == nil then return end
+    root:CreateDivider()
+    root:CreateButton("Clear Ready Sound", function()
+      M.SetReadySoundKit(item.spellID, nil)
+      applyAlertBadge(item)
+    end):SetTooltip("Clear Ready Sound",
+      "A ready sound plays when a COOLDOWN finishes.|nA tracked buff has none, so this one can|nnever play. Clearing it also clears the badge.")
+    return
+  end
+
   root:CreateDivider()
   local soundRoot = root:CreateButton("Ready Sound")
 
@@ -167,13 +198,27 @@ local function addAlertEntries(root, item)
 
   alertRoot:CreateRadio("None", function() return AL.GetType(item.spellID) == nil end, pick(nil))
 
-  alertRoot:CreateRadio("Available", function() return isType("available") end, pick("available"))
-    :SetTooltip("Available", "Flashes once, the moment the cooldown finishes.|nWorks for every spell.")
+  -- Available is the cooldown -> ready edge, so it is a SPELL trigger only. Its own tooltip used to
+  -- promise "Works for every spell", which is true and was being read on rows that hold no spell.
+  -- None stays above it, so a layout that stored `available` on a buff before this gate can still be
+  -- set back to None or moved onto Refresh.
+  if not isAuraRow(item) then
+    alertRoot:CreateRadio("Available", function() return isType("available") end, pick("available"))
+      :SetTooltip("Available", "Flashes once, the moment the cooldown finishes.|nWorks for every spell.")
+  end
 
   -- Refresh is the one event that genuinely cannot fire for some spells, so it says what it needs.
   local pct = math.floor((AL.GetWindow(item.spellID) or 0.3) * 100 + 0.5)
-  local refreshText = ("Glows during the last %d%% of this spell's own|nbuff or debuff."):format(pct)
-    .. "|n|nA cooldown that applies no aura — Shadowfiend,|nPsychic Scream — can never trigger it."
+  local refreshText
+  if isAuraRow(item) then
+    -- The caveat below is about a COOLDOWN that applies no aura, which cannot be the case here: the
+    -- row is the aura. This is the one trigger a tracked buff is built for, and saying so is the
+    -- point — it is also the one that was silently doing nothing until the ticker learned to look.
+    refreshText = ("Glows during the last %d%% of this buff's|nremaining time."):format(pct)
+  else
+    refreshText = ("Glows during the last %d%% of this spell's own|nbuff or debuff."):format(pct)
+      .. "|n|nA cooldown that applies no aura — Shadowfiend,|nPsychic Scream — can never trigger it."
+  end
   refreshText = refreshText .. (auraSeen(item.spellName)
     and "|n|n|cff40ff40Its aura is active now, so this will work.|r"
     or  "|n|n|cffffd200No aura of this name is up right now.|r")

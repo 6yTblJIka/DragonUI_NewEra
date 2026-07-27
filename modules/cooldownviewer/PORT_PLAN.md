@@ -2303,6 +2303,39 @@ Five mutations, each failing by name: the picker reverted to the unnamed helper,
 reverted, the fallback fired regardless of `NumLines`, the fallback emptied, and the client never
 asked.
 
+### H.3.2. In-game fault: alerts never fired on tracked buffs
+
+Reported as "the FX on tracked buffs doesn't work". It was not the FX — it was the ticker's viewer
+list. `Alerts.lua` walked `viewers.essential` and `viewers.utility` only, justified in a comment as
+"the aura viewers have no ready transition and no curated usable state".
+
+Both halves of that are true and neither was a reason to skip them. `available` is edge-triggered off
+`ConsumeReadyTransition`, which aura items do not define, so `checkReadyTransition` returns at its
+first guard and costs one lookup. `usable` reads `IsUsableSpell`, which answers for a self-buff's own
+spell exactly as it does for a cooldown. What the omission actually cost was **`refresh`** — the one
+alert whose trigger *is* an aura decaying, and therefore the most useful of the three on a tracked
+buff. It could be assigned from the menu, it lit the badge, it previewed on the settings tile, and
+then it never fired in play.
+
+**The asymmetry that hid it:** `AL.Stop` and `M.ResetAlerts` have always cleared FX across all four
+viewers via `M.ForEachViewer`. Only the code that *set* it was narrower, so the teardown looked
+complete. The ticker now uses `ForEachViewer` too, which is also why it cannot go stale against
+`M.viewers` a second time.
+
+**Two triggers were being offered where they cannot fire**, which is the same defect one layer up.
+`Available`'s own tooltip promised "Works for every spell" on rows that hold no spell, and a ready
+sound assigned to a buff lit the badge permanently with nothing able to play it — `FireReadyAlerts`
+is a cooldown-edge path. `SettingsMenu.lua` now gates both on the row's category `mode`. `None` still
+sits above `Available`, so a layout that stored it before the gate is still clearable; a stored ready
+sound gets a single `Clear Ready Sound` entry rather than vanishing with the submenu, because a
+setting you can reach only to regret is worse than one you were never shown. `Refresh` also drops its
+"a cooldown that applies no aura can never trigger it" caveat on aura rows — there, the row *is* the
+aura.
+
+Four mutations, each failing by name: the ticker reverted to the two spell viewers (three
+assertions), the `Available` gate removed, the ready-sound gate removed, and `isAuraRow` forced true
+to prove the gate does not fire on spell rows.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

@@ -54,8 +54,8 @@
 --
 -- `available` is edge-triggered off the item's ConsumeReadyTransition. `refresh` and `usable` need
 -- polling: aura time decay, target health and usability transitions do not all raise events on
--- 3.3.5a. One shared 0.2s ticker walks the Essential and Utility items, and does nothing at all
--- unless at least one alert or one ready sound is assigned — the default setup costs a table lookup.
+-- 3.3.5a. One shared 0.2s ticker walks EVERY viewer's items, and does nothing at all unless at least
+-- one alert or one ready sound is assigned — the default setup costs a table lookup.
 --
 -- Every live evaluation is pcall-isolated: a bad read must never raise, least of all in combat.
 
@@ -559,8 +559,20 @@ local function checkReadyTransition(item)
 end
 
 -- ── Ticker ──────────────────────────────────────────────────────────────────────────────────────
--- Only the spell viewers carry cooldown items; the aura viewers have no ready transition and no
--- curated usable state.
+-- ALL FOUR viewers, not just the two spell ones.
+--
+-- This used to walk essential and utility only, justified as "the aura viewers have no ready
+-- transition and no curated usable state". Both halves of that are true, and neither was a reason to
+-- skip them. `available` is edge-triggered off ConsumeReadyTransition, which aura items do not
+-- define, so checkReadyTransition returns at its first guard and costs one lookup. `usable` reads
+-- IsUsableSpell, which answers for a self-buff's own spell exactly as it does for a cooldown.
+--
+-- What the omission actually cost was `refresh` — the one alert whose trigger IS an aura decaying,
+-- and therefore the most useful of the three on a TRACKED BUFF. It could be assigned from the menu,
+-- it lit the badge, it previewed on the settings tile, and then it never fired in play.
+--
+-- AL.Stop and M.ResetAlerts have always cleared FX across all four viewers; only the code that SET
+-- it was narrower. That asymmetry is what let this sit unnoticed — the teardown looked complete.
 local function runViewer(viewer)
   if not (viewer and viewer.IsShown and viewer:IsShown() and viewer.items) then return end
   for _, item in ipairs(viewer.items) do
@@ -577,10 +589,10 @@ ticker:SetScript("OnUpdate", function(self, delta)
   if self.elapsed < TICK then return end
   self.elapsed = 0
   if not (AL.HasAny() or (M.HasAnyReadySound and M.HasAnyReadySound())) then return end
-  local viewers = M.viewers
-  if not viewers then return end
-  runViewer(viewers.essential)
-  runViewer(viewers.utility)
+  -- ForEachViewer rather than a hand-written list, so this cannot go stale against M.viewers again —
+  -- and so it matches AL.Stop and M.ResetAlerts, which have always used it.
+  if not M.ForEachViewer then return end
+  M.ForEachViewer(runViewer)
 end)
 
 -- Started by Register.lua once the viewers exist.
