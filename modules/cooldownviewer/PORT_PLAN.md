@@ -5,7 +5,7 @@ TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global conventio
 
 **Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets), 6 (loose
 ends) and 7 (the tracked-aura catalog) implemented — the whole of both phasing tables except the
-deliberate cuts. Offline harnesses pass (`qa/offline/`, 582 boot assertions). Phases 1-3 and the 4b-1
+deliberate cuts. Offline harnesses pass (`qa/offline/`, 573 boot assertions). Phases 1-3 and the 4b-1
 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
 fixed, §G.7.1/§G.7.2).
 
@@ -1900,47 +1900,39 @@ kept. What this leaves on the table is that cut corners ARE achievable here — 
 suits these tiles, not the technique. If retail's own CDM sheet turns out to carry an opaque frame
 cell, that is the piece to look for.
 
-### H.2.6 The glow, third version: draw the edge instead of aiming a glow at it
+### H.2.6 Two rejected passes at the glow, and where it actually stands
 
-"The glow doesn't align to the top or right hand sides."
+**Cut corners — built, reverted.** The spellbook makes square icons stop looking square without a
+mask (§C2 holds; `CreateMaskTexture` is dead) by covering the corners with something OPAQUE. That is
+also why frame strength could not finish the job: our frame is translucent, so stacking makes corners
+darker and never absent. The square talent-node socket does work, and flush with the icon is the right
+sizing — growing it so its band clears the art overhangs the tile by 16% and collides neighbouring
+icons. Rejected on look: it reads as a different UI beside the CDM art. The blocker is art that suits
+these tiles, not the technique.
 
-Anchoring was not the problem, and that is the lesson. Both previous versions were anchored
-symmetrically — equal and opposite offsets on TOPLEFT and BOTTOMRIGHT — so the RECT was always
-centred. What was not centred was what you could SEE, because a soft glow's visible extent is
-wherever its own falloff happens to survive whatever is drawn over it, and here that is the frame
-shadow at 66% black across the entire border band. What escaped was a gold edge on the two sides
-where the shadow had faded most. Reported, reasonably, as an alignment fault.
+**The flat edge ring — built, reverted.** Reported as "the glow doesn't align to the top or right hand
+sides". The diagnosis was right and worth keeping: both glow versions were anchored symmetrically, so
+the RECT was always centred; what was not centred was what you could SEE, because a soft glow's
+visible extent is wherever its falloff survives whatever is drawn over it — here the frame shadow at
+66% black across the whole border band. What escaped was a gold edge on the two sides where the shadow
+had faded most.
 
-The three versions, and what each one taught:
+The fix I built — four flat strips on the icon's rect, above the shadow and above the sweep — solved
+the alignment completely and looked considerably worse: a hand-drawn rectangle where Blizzard's art
+had been. Owner's verdict, and correct. **I optimised for the property I could assert over the one
+that mattered**, and shipped it without rendering it first, having twice that same session established
+that rendering the art was the thing that settled these questions.
 
-1. **A gold additive copy of the frame art.** Emitted nothing: the art is pure black, and ADD emits
-   `src.rgb × alpha` (§H.2.2).
-2. **The stock soft glow behind the icon.** Emitted light, could not be aimed. Drawn over the tile it
-   veiled the icon; drawn behind it, the shadow ate the ring.
-3. **Four flat strips on the icon's own rect**, in a child frame above the shadow *and* above the
-   cooldown sweep. No middle, so it cannot veil the icon. No falloff, so what is drawn is what is
-   seen. A child frame outranks every layer of its parent, so nothing suppresses it.
+**Where it stands:** back on `UI-ActionButton-Border`, drawn behind the icon, anchored to the icon's
+rect so it is concentric. The unevenness is a known, unfixed trade-off with a documented cause — the
+frame shadow suppresses the halo where they overlap, so **frame strength and glow evenness pull against
+each other**. Two knobs exist if it needs settling: `M.BUFF_GLOW_OVERSIZE` (push the halo's bright ring
+clear of the shadow band) and Frame strength (lighten what is doing the eating). Neither is exposed as
+a glow setting, deliberately — the next move on this is the owner's call, not another guess.
 
-Alignment stopped being an outcome of blending and became an anchor, which is also the difference
-between an assertion that can check it and one that cannot. The harness now checks all four strips
-exist, that the ring sits on the icon's rect symmetrically, and that it is levelled above the sweep —
-a buffed spell is usually also on cooldown, and the swipe covering half the ring is one more way to
-look "not aligned".
-
-Top and bottom run the full width plus the corners and the sides fill between them, so each corner is
-covered exactly once. Under ADD, overlap would read as four bright dots.
-
-Stub fidelity again: `SetFrameLevel` was discarding its argument, so "this draws above that" was
-unassertable — the same gap `CreateTexture`'s dropped layer argument left two passes ago. Third time
-a stub that quietly accepted and forgot a parameter hid something real.
-
-**Also this pass, and reverted:** cut corners. The spellbook makes square icons stop looking square
-without a mask — §C2 holds, `CreateMaskTexture` is dead — by covering the corners with something
-OPAQUE. That is why frame strength could not finish the job: our frame is translucent, so stacking
-makes corners darker and never absent. The square talent-node socket does work, and flush with the
-icon is the right sizing (growing it so its band clears the art overhangs the tile by 16% and collides
-neighbouring icons). Rejected on look — it reads as a different UI next to the CDM art. The blocker is
-art that suits these tiles, not the technique.
+Kept from the reverted work: the harness now records frame levels. "This draws above that" was
+unassertable, the same way `CreateTexture`'s dropped LAYER argument made "this draws behind that"
+unassertable. Three stub parameters accepted and quietly forgotten have each now hidden something real.
 
 ### 8d. Bar theming
 

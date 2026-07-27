@@ -235,7 +235,7 @@ SlashCmdList["NECDM"] = function()
   end
   say(("buff glow: %s, texture %s, lit on %d of %d shown tiles"):format(
     M.IsBuffGlowEnabled() and "ON" or "off (Settings > Buffed spells)",
-    tostring(M.BUFF_GLOW_SOLID), lit, withSpell))
+    tostring(M.BUFF_GLOW_TEXTURE), lit, withSpell))
 end
 
 local bootFrame = CreateFrame("Frame")
