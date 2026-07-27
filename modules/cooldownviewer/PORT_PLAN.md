@@ -9,7 +9,7 @@ deliberate cuts. Offline harnesses pass (`qa/offline/`, 625 boot assertions). Ph
 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
 fixed, §G.7.1/§G.7.2).
 
-**Open work is §8b and §H.3** (planned, not built): the cooldown swipe (8b); then **Phase 9**, the audit against Wowhead's current guide, which after 8c
+**Open work is §H.3** (planned, not built): **Phase 9**, the audit against Wowhead's current guide, which after 8c
 has no remaining feature gap (§H.3). **8a is DONE** (§H.2.1): six atlases the viewers had been setting
 by name were registered nowhere, so every one rendered as an invisible texture — which is why the icons
 looked like bare spellbook icons. **8c is DONE** (§H.2.2): a spell whose own buff is up now lights its
@@ -1613,6 +1613,56 @@ It is not free: the rig builds five frames and a rotating animation per cooldown
 `SetAlpha` on the Cooldown frame. Wire it behind a setting, default on, measured on a full Essential
 row before it is trusted — §C3's caution was about the wrong thing but it was not baseless.
 
+### H.2.11 The 8b measurement — **DO NOT ADOPT** (investigated, declined)
+
+The plan above set the gate: *measured before it is trusted*. Measured. It should not be wired, and
+"default on" would have been actively wrong. Five findings, in descending order of how decisive:
+
+**1. It deletes the countdown numbers.** `CooldownCaptureShow` calls `SetCooldownAlpha(Self, 0)` on
+the Cooldown frame to hide the native sweep it is replacing (`Util/Cooldown.lua:210`). Our countdown
+FontString is created ON that frame (`core/CooldownNumbers.lua:151-156`, deliberately — "parented to
+the cooldown itself so it inherits the cooldown's show/hide and frame level"), and frame alpha is
+inherited by regions. So the timer reads alpha 0 for the entire cooldown, restored to 1 only in the
+bling branch as it ends. The number on the tile is the single most important thing a Cooldown Manager
+draws, and this rig turns it off for exactly the interval it matters.
+
+**2. Zero callers, anywhere.** `SetSwipeTexture` is invoked by nothing in the whole AddOns tree
+outside ClassicAPI's own definition of it. This is not a well-worn path with a known quirk; it is
+unexercised code, and we would be its first user on this client.
+
+**3. The cost is ten frames per Cooldown, not five.** `CooldownCapture` builds the Swipe (1), four
+quadrants that are a ScrollFrame *plus* an Anchor frame each (8), and the Wedge (1) — plus an
+AnimationGroup and a Rotation. With `DrawEdge` on, two more frames and another AnimationGroup. At our
+defaults (Essential 12, Utility 7, plus the BuffIcon pool) that is roughly 190-250 frames for a
+feature the client already draws natively.
+
+**4. It fights the icon inset.** `Swipe:SetParent(Self:GetParent())` then `Swipe:SetAllPoints(Attach)`
+anchors the sweep to the TILE, not to the Cooldown's icon-inset rect. That reintroduces precisely the
+artefact §H.2.7 removed — a sweep sitting proud of the icon, betraying the larger footprint.
+Workaroundable by re-anchoring `cd._Swipe` after capture, but that is reaching into ClassicAPI's
+internals to undo its own layout.
+
+**5. And the headline capability is not what it looks like.** `SetSwipeTexture(path, ...)` forces
+`SetVertexColor(0, 0, 0, .65)` on all five textures and discards the r/g/b/a you passed
+(`Util/WidgetAPI.lua:1128-1136`). Retail's swipe art therefore comes through as a black 65%
+silhouette — which is what the native 3.3.5a sweep already is. We also do not ship 6731092, and
+Assets.lua deliberately did not ("shipping art ahead of the code that uses it").
+
+**What the rig genuinely adds is one thing: `SetSwipeTexture("", r, g, b, a)`, a solid COLOURED
+sweep.** That is the capability §C3 and 8c wanted and could not have, because `SetSwipeColor` is
+WoD+. But 8c already shipped a substitute for it — the static gold halo (§H.2.2) — and the owner has
+it in game and approved it. So the one real gain is a second solution to a solved problem, bought
+with ~200 frames, a hijacked `SetAlpha`, an unexercised code path and the loss of the timers unless
+two pieces of shared code are reworked first.
+
+**Decision: keep the native sweep.** §C3's original answer — "accept the engine's built-in sweep" —
+was right, for a better reason than it knew.
+
+If the gold *swipe* is ever wanted over the gold *halo*, the shape of that work is recorded here so
+it does not need re-deriving: reparent `_neText` off the Cooldown frame, re-anchor `cd._Swipe` to the
+Cooldown's own rect, enable capture only on tiles whose aura is up, and leave every other tile on the
+native sweep. It would be opt-in and default off.
+
 ### 8c. The glow on a buffed spell — **DONE**
 
 The guide's second headline feature: "Tracks combat buffs and puts glow effects around buffed spells."
@@ -2209,10 +2259,9 @@ was found by decoding the art rather than by looking at a screenshot: `Bar-BG` s
 lines up to 3.1x, and 8e's premise that the pandemic ring needed a mask substitute when the art is
 already a hollow ring.
 
-What is left in §H.2 is **8b**, and it is the one item here that could make things worse rather than
-better: ClassicAPI's radial swipe builds five frames and a rotating animation per cooldown and hijacks
-`SetAlpha`. It wants measuring on a full Essential row before it is trusted, and it wants doing after
-an in-game look at 8c rather than stacked on top of it unverified.
+§H.2 is closed. **8b was measured and declined** (§H.2.11): it was indeed the one item that could make
+things worse, and it would have — `CooldownCaptureShow` zeroes the Cooldown frame's alpha, which takes
+our countdown numbers with it, for ~200 frames' cost and a capability 8c already substitutes for.
 
 **Phase 9** is bookkeeping absorbed by the two above, apart from the "Not Displayed" rename, which is
 a one-line owner preference.
