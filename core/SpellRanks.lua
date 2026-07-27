@@ -156,6 +156,12 @@ local watcher = CreateFrame("Frame")
 watcher:RegisterEvent("PLAYER_LOGIN")
 watcher:RegisterEvent("SPELLS_CHANGED")
 watcher:RegisterEvent("LEARNED_SPELL_IN_TAB")
+-- Dual spec swaps the whole book. SPELLS_CHANGED does fire for it, but its ORDER against
+-- ACTIVE_TALENT_GROUP_CHANGED is not guaranteed, and consumers that refresh on the talent event were
+-- reading this table before it had caught up — a Holy talent stayed listed after switching to
+-- Discipline until something unrelated refreshed. Registering both makes the rebuild certain; the
+-- coalescing below means the extra event costs nothing when they arrive together.
+watcher:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
 watcher:SetScript("OnEvent", function()
   -- Coalesce: SPELLS_CHANGED can burst during login and talent swaps, and a full book walk is
   -- ~200 GetSpellLink string matches. One rebuild per frame is plenty.

@@ -87,9 +87,28 @@ local function build()
   f:SetScript("OnEvent", function(self, event)
     if event == "CHARACTER_POINTS_CHANGED" or event == "ACTIVE_TALENT_GROUP_CHANGED" then
       if M.InvalidateTalentCache then M.InvalidateTalentCache() end
+      -- The learn gate reads the curated set, and which of those spells the player KNOWS has just
+      -- changed with the spec.
+      if M.InvalidateCuratedCache then M.InvalidateCuratedCache() end
     end
     if self:IsShown() then CDS.RefreshLayout() end
   end)
+
+  -- …and again once the spellbook table has actually caught up. Refreshing on the talent event alone
+  -- is too early: core/SpellRanks.lua rebuilds on a deferred timer, so this window re-rendered from
+  -- the OLD book and then had no reason to look again. That is the reported "switched from Holy to
+  -- Disc and can still see Circle of Healing — it only disappears when I try to move it": moving a
+  -- tile refreshes the layout, by which time the table is right. The viewers already subscribe here
+  -- (Register.lua); the panel never did.
+  if NE.spellbook and NE.spellbook.OnRebuilt then
+    NE.spellbook.OnRebuilt(function()
+      -- Redundant today — Register.lua's subscription runs first and already clears this — and kept
+      -- anyway, because "first" is only true while these two register in their current order. A
+      -- refresh that reads a stale cache is the failure mode this whole callback exists to fix.
+      if M.InvalidateCuratedCache then M.InvalidateCuratedCache() end
+      if f:IsShown() then CDS.RefreshLayout() end
+    end)
+  end
 
   -- On OnHide, not in HidePanel: the close button and ESC both call Hide() directly. A drag in
   -- flight owns a cursor icon parented to UIParent and a dimmed, locked source tile, and closing

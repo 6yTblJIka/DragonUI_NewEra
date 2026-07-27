@@ -101,6 +101,9 @@ local function boot()
   if NE.spellbook and NE.spellbook.OnRebuilt then
     NE.spellbook.OnRebuilt(function()
       M.InvalidateCuratedCache()
+      -- The talent gate too: a spec swap changes which catalog rows are offered, and this is the
+      -- point at which the client has finished telling us what changed.
+      if M.InvalidateTalentCache then M.InvalidateTalentCache() end
       M.RefreshActiveViewer()
     end)
   end

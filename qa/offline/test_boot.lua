@@ -1087,6 +1087,37 @@ assertf(M.IsTrackable(47788, "PRIEST") == true, "talent-granted ability passes w
 GetSpellLink = realLink
 settle(function() NE.spellbook.BuildRankTable() end)
 
+-- 5. THE SPEC-SWAP ORDERING. The reported fault: switching Holy -> Discipline left a Holy talent
+--    listed in the picker until the player happened to drag something. Nothing here is stale data in
+--    the usual sense — it is an ORDER problem. ACTIVE_TALENT_GROUP_CHANGED fires, consumers refresh,
+--    and core/SpellRanks.lua has not rebuilt yet because its rebuild is deferred by a frame. Anything
+--    that refreshed on the talent event alone therefore re-rendered from the OLD book, and then had
+--    no reason to look again.
+do
+  SPELLS[34861] = { "Circle of Healing", "Rank 1" }
+  BOOK[#BOOK + 1] = 34861
+  _G.__SLOT_IDS = BOOK
+  settle(function() NE.spellbook.BuildRankTable() end)
+  assertf(M.IsTrackable(34861, "PRIEST") == true, "Holy talent is trackable while it is known")
+
+  -- Swap spec: the book loses the spell, and the talent event lands FIRST.
+  BOOK[#BOOK] = nil
+  _G.__SLOT_IDS = BOOK
+  fireEvent("ACTIVE_TALENT_GROUP_CHANGED")
+  assertf(M.IsTrackable(34861, "PRIEST") == true,
+    "immediately after the talent event the book has not caught up — this is the stale window")
+
+  -- The rebuild is what closes it, and it has to be reachable from the talent event alone. Draining
+  -- the deferred timers is exactly what the client does on the next frame.
+  drain()
+  assertf(NE.spellbook.IsSpellNameKnown("Circle of Healing") == false,
+    "the spellbook table rebuilds off the talent event, without waiting for SPELLS_CHANGED")
+  assertf(M.IsTrackable(34861, "PRIEST") == false,
+    "…so the gate drops the other spec's talent with no interaction from the player")
+
+  SPELLS[34861] = nil
+end
+
 print("\n=== CUSTOM-LIST SHADOWING ===")
 -- The reported fault: every WotLK-seeded ability stayed hidden even though the learn-gate passed
 -- for it. Cause was a stale CUSTOM list frozen into SavedVariables by a read-only query, which
@@ -1832,6 +1863,33 @@ assertf(grids.essential ~= nil and grids.hiddenSpell ~= nil, "spell category fra
 assertf(grids.essential._count == #ess, "Essential grid holds every entry (" .. grids.essential._count .. ")")
 assertf(grids.essential.items[1] ~= nil and grids.essential.items[1].spellID ~= nil, "tiles bound to spells")
 assertf(sp.content:GetHeight() > 1, "scroll child sized to the stacked sections (" .. sp.content:GetHeight() .. ")")
+
+-- The OPEN WINDOW has to follow a spec swap on its own. The viewers subscribe to the spellbook
+-- rebuild (Register.lua) and this window did not, so it re-rendered once on the talent event — from
+-- the book as it was before the swap — and then had no reason to look again. Reported as "switched
+-- from Holy to Disc and can still see Circle of Healing; it only disappears when I try to move it",
+-- moving a tile being one of the few things that refreshes the layout.
+do
+  local before = grids.essential._count
+  SPELLS[34861] = { "Circle of Healing", "Rank 1" }
+  M.SetSpellEnabled("essential", 34861, true)
+  BOOK[#BOOK + 1] = 34861
+  _G.__SLOT_IDS = BOOK
+  settle(function() NE.spellbook.BuildRankTable() end)
+  CDS.RefreshLayout()
+  assertf(grids.essential._count == before + 1, "a known Holy talent is listed in the open picker")
+
+  BOOK[#BOOK] = nil                 -- the swap takes it out of the book
+  _G.__SLOT_IDS = BOOK
+  fireEvent("ACTIVE_TALENT_GROUP_CHANGED")
+  drain()                           -- the deferred rebuild, i.e. the client's next frame
+  assertf(grids.essential._count == before,
+    "…and the open window drops it with no interaction (" .. grids.essential._count .. ")")
+
+  M.SetSpellEnabled("essential", 34861, false)
+  SPELLS[34861] = nil
+  CDS.RefreshLayout()
+end
 
 -- Collapsing must resize, or the scrollbar range goes stale.
 local tallExpanded = grids.essential:GetHeight()

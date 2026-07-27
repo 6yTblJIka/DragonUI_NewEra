@@ -5,7 +5,7 @@ TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global conventio
 
 **Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets), 6 (loose
 ends) and 7 (the tracked-aura catalog) implemented — the whole of both phasing tables except the
-deliberate cuts. Offline harnesses pass (`qa/offline/`, 566 boot assertions). Phases 1-3 and the 4b-1
+deliberate cuts. Offline harnesses pass (`qa/offline/`, 572 boot assertions). Phases 1-3 and the 4b-1
 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
 fixed, §G.7.1/§G.7.2).
 
@@ -1830,6 +1830,44 @@ This is the third distinct fault in this port traceable to reading a texture's *
 its *pixels* — after the six unregistered atlases (§H.2.1) and the black additive glow (§H.2.2). All
 three were invisible to every assertion that checked wiring. Rendering the cell to a PNG and looking
 at it took two minutes and would have pre-empted all three.
+
+### H.2.5 The spec swap is an ORDER problem, not a staleness one
+
+"Switched from Holy to Disc and can still see Circle of Healing. It only disappears when I try to
+move it." The previous pass had already added `ACTIVE_TALENT_GROUP_CHANGED` handling, and it was
+working — the fault is that it runs too EARLY.
+
+`core/SpellRanks.lua` owns the learn gate's source of truth, and rebuilds its table on a **deferred**
+timer (`C_Timer.After(0)`), because SPELLS_CHANGED bursts during login and talent swaps and a full
+book walk is ~200 string matches. So the sequence on a dual-spec swap was:
+
+1. `ACTIVE_TALENT_GROUP_CHANGED` fires; consumers refresh **from the old book**
+2. `SPELLS_CHANGED` fires; a rebuild is queued for the next frame
+3. next frame: the table catches up, and `SB._onRebuilt` fires
+
+The viewers subscribe at step 3 (`Register.lua`), so they self-corrected. **The picker never
+subscribed** — it refreshed at step 1 and then had no reason to look again. Dragging a tile refreshes
+the layout, which is why interacting with it "fixed" it.
+
+Three changes, and the ordering one is the real fix:
+
+- `SpellRanks` now also rebuilds on `ACTIVE_TALENT_GROUP_CHANGED`. SPELLS_CHANGED does fire for a
+  swap, but its order against the talent event is not guaranteed, and consumers refreshing on the
+  talent event were reading a table that had not been told yet. The coalescing already there means
+  the extra registration costs nothing when both arrive together.
+- The settings panel subscribes to `OnRebuilt`, like the viewers do.
+- The viewers' subscription also drops the talent-gate cache, which it should have been doing.
+
+The test worth keeping is the one that models the ORDER rather than the outcome: fire the talent
+event, assert the gate still passes (that is the stale window, and it is correct at that instant),
+then drain the deferred timers and assert it flips — with no interaction. Written as "after a swap
+the spell is gone" it would have passed against the broken build, because the harness drains timers
+between most steps anyway.
+
+One guard here is deliberately NOT load-bearing: the panel's own `InvalidateCuratedCache`. Register's
+subscription runs first and already clears it — but "first" holds only while those two register in
+their current order, and a refresh reading a stale cache is the exact failure this callback exists to
+prevent. Noted in place rather than dressed up as verified.
 
 ### 8d. Bar theming
 
