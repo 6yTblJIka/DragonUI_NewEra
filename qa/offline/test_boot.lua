@@ -459,8 +459,7 @@ NumberFontNormalLarge = {}
 NumberFontNormal = {}
 NumberFontNormalSmall = {}
 GameTooltip = CreateFrame("Frame", "GameTooltip")
-function GameTooltip:SetOwner() end
-function GameTooltip:SetHyperlink() end
+function GameTooltip:SetOwner() self.lines = {} end
 function GameTooltip:SetInventoryItem() end
 function GameTooltip:SetItemByID() end
 -- Record the lines so a test can assert what a tooltip actually said, not just that it opened.
@@ -468,7 +467,22 @@ GameTooltip.lines = {}
 function GameTooltip:ClearLines() self.lines = {} end
 function GameTooltip:SetText(t) self.lines = { t } end
 function GameTooltip:AddLine(t) self.lines[#self.lines + 1] = t end
-function GameTooltip:SetSpellByID(id) self.lines = { "spell " .. tostring(id) } end
+function GameTooltip:NumLines() return #self.lines end
+
+-- NO SetSpellByID. 3.3.5a's GameTooltip does not have one and !!!ClassicAPI does not add it (it
+-- adds SetItemByID and stops there), so every spell tooltip in the addon goes through the hyperlink
+-- path — and a stub that offered SetSpellByID would test a branch no player ever reaches.
+--
+-- SetHyperlink models the hazard that matters: on an id this client cannot resolve it does NOT
+-- error, it succeeds and draws nothing. A pcall returning true is therefore no evidence of a
+-- tooltip, which is exactly how aura rows ended up nameless.
+-- A real spell tooltip is a title AND a body. Modelled, because the name alone cannot tell the
+-- client's tooltip apart from a one-line fallback — and a test that cannot tell them apart passes
+-- just as happily when the fallback has eaten every tooltip in the addon.
+function GameTooltip:SetHyperlink(link)
+  local id = tonumber(tostring(link):match("spell:(%d+)") or "")
+  if id and SPELLS[id] then self.lines = { SPELLS[id][1], "client tooltip body" } end
+end
 
 -- Deferred callbacks, run at a drain point — but only once their delay has actually elapsed on the
 -- stub clock. Honouring the delay matters: the cooldown-expiry refresh schedules itself for the end
@@ -3067,6 +3081,67 @@ do
   assertf(shownItems(bIcon7) == 0, "…while staying out of the viewer, which is what hidden means")
   assertf(namesOf(A7.GetItems("hiddenAura", "PRIEST"))["vampiric embrace"] ~= nil,
           "…so the row that could unhide it is still there")
+
+  -- ── The row has to be identifiable on hover ──────────────────────────────────────────────────
+  -- An aura id this client cannot hyperlink leaves SetHyperlink succeeding and the tooltip EMPTY.
+  -- On a 38px grid tile with no label of its own that is a row the player cannot name at all, which
+  -- is what Not Displayed looked like once it filled with catalog rows. 900123 is deliberately
+  -- absent from the stub's spellbook, so nothing but the fallback can put a name up.
+  local realAuto = M.IsAutoTrackBuffs()
+  M.ResetTracking()
+  M.SetAutoTrackBuffs(false)   -- candidates land under Not Displayed: the shipped default
+  M.NoteSeenAura(900123, "Unlinkable Aura", "Interface\\Icons\\UA", 20)
+  S.OpenTo("auras")            -- the grids only hold the ACTIVE mode's rows
+  local hidGrid = S._categories.hiddenAura
+  local auraTile
+  for i = 1, (hidGrid and hidGrid._count or 0) do
+    if hidGrid.items[i].spellName == "Unlinkable Aura" then auraTile = hidGrid.items[i] end
+  end
+  assertf(auraTile ~= nil, "the unlinkable aura has a tile under Not Displayed")
+  -- Through the tile's own OnEnter, not the helper: the bug was in what the hover path passed.
+  GameTooltip:ClearLines()
+  auraTile:GetScript("OnEnter")(auraTile)
+  assertf(GameTooltip:NumLines() > 0, "hovering it produces a tooltip at all")
+  assertf(GameTooltip.lines[1] == "Unlinkable Aura", "…titled with the name the registry stored")
+
+  -- …and a resolvable id still gets the CLIENT's tooltip, not the fallback. Without this the fix
+  -- could be "always use our own name", which would throw away every spell tooltip in the picker.
+  local spellTile
+  local essGrid = S._categories.essential
+  for i = 1, (essGrid and essGrid._count or 0) do
+    if essGrid.items[i].spellID and SPELLS[essGrid.items[i].spellID] then spellTile = essGrid.items[i] end
+  end
+  assertf(spellTile ~= nil, "…and a linkable spell tile to compare against")
+  GameTooltip:ClearLines()
+  spellTile:GetScript("OnEnter")(spellTile)
+  -- The BODY, not the title: the fallback would reproduce the title exactly, so only the body can
+  -- tell "the client answered" apart from "we wrote the name ourselves".
+  assertf(GameTooltip.lines[2] == "client tooltip body",
+          "a linkable spell still shows the client's own tooltip, body and all")
+  -- …and the fallback did not ALSO fire. Counted rather than measured against the total, because
+  -- the alert badge adds lines of its own: a name appearing twice is the specific defect.
+  local titleCount = 0
+  for _, ln in ipairs(GameTooltip.lines) do
+    if ln == SPELLS[spellTile.spellID][1] then titleCount = titleCount + 1 end
+  end
+  assertf(titleCount == 1, "…with the name once, not doubled by a fallback that fired anyway")
+
+  -- The same hazard on the VIEWER, which is the surface that matters in a fight: a tracked buff
+  -- whose id will not hyperlink must still name itself on hover.
+  M.SetAuraAssignment("PRIEST", 900123, "icon", "Unlinkable Aura")
+  BUFFS.player = {
+    { name = "Unlinkable Aura", rank = "", icon = "Interface\\Icons\\UA", count = 0,
+      duration = 20, expiration = NOW + 18, spellID = 900123 },
+  }
+  auraTick("player")
+  local liveTile = bIcon7.items[1]
+  assertf(liveTile and liveTile.spellID == 900123, "the aura is on a live buff-icon tile")
+  GameTooltip:ClearLines()
+  liveTile:OnEnter()
+  assertf(GameTooltip.lines[1] == "Unlinkable Aura", "…and hovering it there names it too")
+  BUFFS.player = {}
+  auraTick("player")
+  M.SetAutoTrackBuffs(realAuto)
 
   -- The cap, oldest evicted first.
   M.ResetTracking()

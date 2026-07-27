@@ -120,8 +120,11 @@ local function itemOnEnter(self)
     GameTooltip:SetItemByID(self._iconItemID)
   elseif self._iconItemID and GameTooltip.SetHyperlink then
     GameTooltip:SetHyperlink("item:" .. self._iconItemID)
-  elseif M.TooltipSetSpell then
-    M.TooltipSetSpell(GameTooltip, self.spellID)
+  elseif M.TooltipSetSpellNamed then
+    -- NAMED, because this is the surface where the failure hurts most: a 38px grid tile has no
+    -- label of its own, so a tooltip the client could not fill leaves the row unidentifiable. Most
+    -- of the catalog's aura ids cannot be hyperlinked on 3.3.5a.
+    M.TooltipSetSpellNamed(GameTooltip, self.spellID, self.spellName)
   end
   if self._unlearned then
     -- For an aura the gate is a talent, not a level, so say which one. "Not yet learned" on a proc

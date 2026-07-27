@@ -154,7 +154,9 @@ function AuraItem:OnEnter()
   if not self.spellID then return end
   if self.tooltipsShown == false then return end
   GameTooltip:SetOwner(self, "ANCHOR_TOP")
-  if M.TooltipSetSpell(GameTooltip, self.spellID) then GameTooltip:Show() end
+  -- Named: an aura id this client cannot hyperlink would otherwise show an EMPTY tooltip. See
+  -- M.TooltipSetSpellNamed in ItemMixins.lua.
+  if M.TooltipSetSpellNamed(GameTooltip, self.spellID, self.spellName) then GameTooltip:Show() end
 end
 
 function AuraItem:OnLeave() GameTooltip:Hide() end
@@ -363,7 +365,7 @@ function BarItem:OnEnter()
   if not self.spellID then return end
   if self.tooltipsShown == false then return end
   GameTooltip:SetOwner(self, "ANCHOR_TOP")
-  if M.TooltipSetSpell(GameTooltip, self.spellID) then GameTooltip:Show() end
+  if M.TooltipSetSpellNamed(GameTooltip, self.spellID, self.spellName) then GameTooltip:Show() end
 end
 
 function BarItem:OnLeave() GameTooltip:Hide() end

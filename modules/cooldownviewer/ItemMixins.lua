@@ -835,6 +835,29 @@ local function tooltipSetSpell(tip, spellID)
 end
 M.TooltipSetSpell = tooltipSetSpell   -- reused by the aura item mixins (AuraItemMixins.lua)
 
+-- The same thing, with the row's own name as a floor.
+--
+-- `SetHyperlink` on an id this client cannot resolve does not error — it SUCCEEDS and leaves the
+-- tooltip empty, so the pcall above returning true is not evidence that anything was drawn. Aura
+-- rows hit that constantly: the catalog stores rank-1 ids straight from Spell.dbc and plenty of
+-- aura-only ids have no linkable spell behind them. The result is a tile whose tooltip reads
+-- "Lasts 30 sec" under no name at all, which on a 38px icon grid leaves nothing to identify it by.
+--
+-- The caller always knows a name — the catalog and the seen registry both store one, precisely
+-- because GetSpellInfo cannot be relied on here — so it becomes the title when the client has
+-- nothing. NumLines is the test rather than the pcall's word for it, and ClearLines is what makes
+-- that number mean "this hover", not "whatever was up last".
+function M.TooltipSetSpellNamed(tip, spellID, name)
+  if tip.ClearLines then tip:ClearLines() end
+  if spellID then tooltipSetSpell(tip, spellID) end
+  if tip.NumLines and tip:NumLines() > 0 then return true end
+  if name and name ~= "" then
+    tip:AddLine(name, 1, 1, 1)
+    return true
+  end
+  return false
+end
+
 -- Shared icon-crop helper: what stands in for the removed rounded MaskTexture.
 function M.CropIcon(tex)
   if not tex then return end
@@ -1204,7 +1227,7 @@ function ItemMixin:OnEnter()
   end
   if not self.spellID then return end
   GameTooltip:SetOwner(self, "ANCHOR_TOP")
-  if tooltipSetSpell(GameTooltip, self.spellID) then GameTooltip:Show() end
+  if M.TooltipSetSpellNamed(GameTooltip, self.spellID, self.spellName) then GameTooltip:Show() end
 end
 
 function ItemMixin:OnLeave()

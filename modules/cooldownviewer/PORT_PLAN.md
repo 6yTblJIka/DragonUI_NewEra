@@ -6,7 +6,7 @@ TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global conventio
 **Status: the port is complete.** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use
 trinkets), 6 (loose ends), 7 (the tracked-aura catalog), 8 (the art) and 9 (the guide audit) are
 implemented — the whole of both phasing tables except the deliberate cuts. Offline harnesses pass
-(`qa/offline/`, 627 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working
+(`qa/offline/`, 635 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working
 in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and fixed, §G.7.1/§G.7.2).
 
 **Phase 8 is DONE** (§H.2), one item at a time: **8a** registered six atlases the viewers had been
@@ -2271,6 +2271,37 @@ code this phase actually shipped.
 - **Retail's curated per-spec buff list.** 7d is the closest we can get from client data, and the
   guide's comment thread is largely people complaining that the curated list omits their abilities —
   a generated catalog plus the seen registry is arguably a better answer than the thing being copied.
+
+### H.3.1. In-game fault: rows with no name on hover
+
+Found immediately after Phase 9, on the surface Phase 9 sent the owner to look at. Most rows under
+Not Displayed showed no name when hovered.
+
+`tooltipSetSpell` reports whether its `pcall` errored, and callers were reading that as "a tooltip
+was drawn". It is not. 3.3.5a has no `GameTooltip:SetSpellByID` and `!!!ClassicAPI` does not add one
+(it adds `SetItemByID` and stops), so every spell tooltip goes through `SetHyperlink` — and
+`SetHyperlink` on an id the client cannot resolve **succeeds and draws nothing**. Aura rows hit that
+constantly, because the generated catalog stores rank-1 ids straight from `Spell.dbc` and plenty of
+aura-only ids have no linkable spell behind them. The tile then showed "Lasts 30 sec" and "Tracked
+automatically" under no title at all, on a 38px grid icon that carries no label of its own.
+
+The name was never missing — the catalog and the seen registry both store one, precisely because
+`GetSpellInfo` cannot be relied on for aura ids. It simply was not used. `M.TooltipSetSpellNamed`
+adds it as a floor: `ClearLines`, ask the client, and if `NumLines()` is still 0, put the row's own
+name up as the title. All four hover paths route through it — the two viewer aura mixins, the spell
+tiles, and the picker.
+
+**The stub was hiding it.** `test_boot.lua` defined a `SetSpellByID` the client does not have, so the
+harness exercised a branch no player reaches, and its `SetHyperlink` was a bare no-op that could not
+model "succeeds, draws nothing". Both are fixed, and the stub now gives a resolvable spell a title
+**and a body** — without a body, "the client answered" and "we wrote the name ourselves" produce
+identical tooltips and the guard passes just as happily when the fallback has eaten every tooltip in
+the addon. That was caught by a mutation that failed to fail; it is the fourth vacuous assertion this
+phase and the same shape every time.
+
+Five mutations, each failing by name: the picker reverted to the unnamed helper, the viewer mixin
+reverted, the fallback fired regardless of `NumLines`, the fallback emptied, and the client never
+asked.
 
 ## H.4. Suggested order
 
