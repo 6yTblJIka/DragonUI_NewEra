@@ -194,10 +194,47 @@ end
 -- sublevels 0-2 and the cooldown sweep is itself a child frame (§H.2.8). Levelled above the sweep
 -- for the same reason the buff glow is — a ring the swipe eats half of is a ring nobody can read.
 --
--- Anchored to the item, as retail anchors it (SetAllPoints in CooldownPandemicFXTemplate). On our
--- tiles that puts the ring around the frame's inner opening, just outside the inset icon.
+-- OVERSIZED, and the amount comes from the art rather than from taste.
+--
+-- Retail's own anchor is SetAllPoints, and copying it put the ring INSIDE the icon — the owner's
+-- report, and correct. The cell is not a line with glow on both sides. Reading its mid-row alpha:
+--
+--   cols 0-8    5, 15, 30, 50, 75, 106, 141, 181, 255 — a hard edge at col 8, bleeding OUTWARD
+--   cols 9-51   0 — the opening
+--   cols 52-60  255 back down to 5 — the mirror
+--
+-- So the OPENING is what has to land on the icon, and it is 43 of the 61-pixel cell. The remaining
+-- 9 per side are glow that belongs outside the icon entirely. Anchored at SetAllPoints those 9 eat
+-- into the icon instead, which is exactly what "renders in the icon not around it" looks like.
+--
+-- 43 is not a coincidence: it is the size of UI-CooldownManager-OORshadow on the same sheet — the
+-- icon-sized cell in this art family. The overhang is therefore 9/43 of the icon, in the same shape
+-- as ICON_MASK_INSET's 3/64.
+local PANDEMIC_BLEED      = 9 / 43
+local PANDEMIC_MIN_OVER   = 4      -- a picker tile is small enough to round the bleed away entirely
 local PANDEMIC_PULSE_MIN  = 0.45   -- retail cascades; we breathe. See the header.
 local PANDEMIC_PULSE_HALF = 0.75   -- seconds per half-cycle, so a 1.5s loop
+
+-- Anchored to the ICON, not the tile, so the ring is concentric with what it is ringing — the same
+-- choice the buff glow makes, and for the same reason: on a viewer tile the icon is inset inside the
+-- gold frame, so the tile's rect is not the icon's. Picker tiles carry .Icon too.
+--
+-- Re-anchored at every SHOW rather than once at build. The icon takes its size from anchors the
+-- client has not resolved when the tile is built, so a build-time measurement reads 0 and would
+-- freeze the ring at the minimum forever (§H.2.9 learned this on the bar caps). Showing an alert is
+-- a state transition, not a per-frame cost.
+local function anchorPandemicRing(ov)
+  local host = ov._host
+  if not host then return end
+  local w = (host.GetWidth and host:GetWidth()) or 0
+  local over = math.floor(w * PANDEMIC_BLEED + 0.5)
+  if over < PANDEMIC_MIN_OVER then over = PANDEMIC_MIN_OVER end
+  if over == ov._over then return end
+  ov._over = over
+  ov:ClearAllPoints()
+  ov:SetPoint("TOPLEFT",     host, "TOPLEFT",     -over,  over)
+  ov:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT",  over, -over)
+end
 
 local function buildPandemicRing(item)
   if not (NE.tex and NE.tex.HasAtlas and NE.tex.HasAtlas("UI-CooldownManager-PandemicBorder")) then
@@ -207,8 +244,9 @@ local function buildPandemicRing(item)
             or (item.GetFrameLevel and item:GetFrameLevel())
             or 1
   local ov = CreateFrame("Frame", nil, item)
-  ov:SetAllPoints(item)
+  ov._host = item.Icon or item
   ov:SetFrameLevel(base + 4)
+  anchorPandemicRing(ov)
   ov:Hide()
 
   ov.Ring = ov:CreateTexture(nil, "OVERLAY")
@@ -260,6 +298,7 @@ local function startPandemic(item)
     item._pandemicRing = ov
   end
   if not ov then return false end
+  anchorPandemicRing(ov)   -- the icon may have resized (or first resolved) since the last show
   ov:SetAlpha(1)
   ov:Show()
   if ov.anim and ov.anim.Play then ov.anim:Play() end

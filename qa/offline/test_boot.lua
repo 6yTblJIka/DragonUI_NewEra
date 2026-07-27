@@ -1401,6 +1401,35 @@ if dp then
           "…and its rect multiplies out to 61x61 on the sheet we actually ship")
   assertf(ov.Ring:GetTexture() ~= nil, "…and the ring texture resolved to a file")
 
+  -- AROUND the icon, not inside it. The art's opening is 43 of its 61px cell and the other 9 per
+  -- side are glow that belongs OUTSIDE — anchored at SetAllPoints (retail's own anchor) those 9 eat
+  -- into the icon, which is what the owner saw and reported.
+  --
+  -- The stub resolves no anchors, so the icon has no width until given one. In game it is sized by
+  -- AnchorMaskedIcon long before an alert can fire — 46 is a default 50px tile less its 2px inset.
+  -- The ring re-measures on SHOW precisely so a width that resolves late still lands.
+  assertf(ov._over == 4, "an unmeasurable icon falls back to the minimum overhang, not to zero")
+  dp.Icon:SetWidth(46)
+  M.alerts.ClearFX(dp)
+  nextFrame(); tick()
+  assertf(ringUp(), "ring re-shown after the icon resolved its width")
+
+  -- Read defensively. A regression to SetAllPoints records a single "ALL" point with no offsets, so
+  -- a bare `ox < 0` would compare nil and ABORT the harness instead of failing this assertion by
+  -- name — a caught regression that looks like a truncated run is barely a catch at all.
+  local p1, rel1, _, ox, oy = ov:GetPoint(1)
+  local p2, _, _, bx, by    = ov:GetPoint(2)
+  assertf(rel1 == (dp.Icon or dp), "the ring anchors to the ICON, so it is concentric with it")
+  local offs = ox and oy and bx and by
+  assertf(offs and p1 == "TOPLEFT" and p2 == "BOTTOMRIGHT"
+          and ox < 0 and oy > 0 and bx > 0 and by < 0,
+          ("…and overhangs it on all four sides (%s,%s / %s,%s)")
+            :format(tostring(ox), tostring(oy), tostring(bx), tostring(by)))
+  local iconW = (dp.Icon or dp):GetWidth()
+  assertf(offs and math.abs(-ox - math.floor(iconW * (9 / 43) + 0.5)) < 0.001,
+          ("…by the art's own 9/43 bleed, not a taste number (%s for a %dpx icon)")
+            :format(tostring(ox and -ox), iconW))
+
   -- UNTINTED, deliberately: the art already carries the pandemic colour, and vertex colour
   -- multiplies, so applying TINT.refresh would darken it rather than colour it.
   local r, g, b = ov.Ring:GetVertexColor()

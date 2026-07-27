@@ -5,7 +5,7 @@ TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global conventio
 
 **Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets), 6 (loose
 ends) and 7 (the tracked-aura catalog) implemented — the whole of both phasing tables except the
-deliberate cuts. Offline harnesses pass (`qa/offline/`, 618 boot assertions). Phases 1-3 and the 4b-1
+deliberate cuts. Offline harnesses pass (`qa/offline/`, 623 boot assertions). Phases 1-3 and the 4b-1
 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
 fixed, §G.7.1/§G.7.2).
 
@@ -2109,6 +2109,14 @@ Details worth keeping:
   `TINT`. This art already carries the colour, and vertex colour multiplies — TINT.refresh's
   (1, 0.5, 0.1) over a ring that is (1, 0.19, 0.19) lands on (1, 0.09, 0.02), a muddier red than the
   artist chose, arrived at by tinting something that needed no tint.
+* **Oversized by 9/43 of the icon, anchored to the ICON.** Retail's own anchor is `SetAllPoints`, and
+  copying it put the ring inside the icon — reported from game, and correct. The cell is not a line
+  with glow either side: its mid-row alpha runs 5, 15, 30, 50, 75, 106, 141, 181, **255** across cols
+  0-8, then 0 through col 51, then mirrors. That is a hard edge at col 8 bleeding OUTWARD. So the
+  43-pixel OPENING is what must land on the icon and the 9 per side belong outside it; at
+  `SetAllPoints` those 9 eat into the icon instead. 43 is not a coincidence — it is the size of
+  `OORshadow` on the same sheet, the icon-sized cell of this art family. Re-anchored on every SHOW,
+  because the icon takes its width from anchors the client resolves late (the §H.2.9 lesson).
 * **Levelled above the cooldown sweep**, for the reason §H.2.8 cost four passes to find: the sweep is a
   child frame, so it outranks every draw layer of the item and a ring on any layer would sit under it.
 * **Alpha animations are DELTAS on this client.** ClassicAPI's `SetFromAlpha`/`SetToAlpha` are a
@@ -2119,8 +2127,11 @@ Details worth keeping:
   dormant for the same reason, by its own comment.
 
 The harness gained an AnimationGroup stub, without which the builder's feature gate would have skipped
-the pulse and the ring would have tested green while sitting static. Three mutations verified
-negatively: never playing the pulse, levelling the ring at the sweep's level, and tinting it.
+the pulse and the ring would have tested green while sitting static. Four mutations verified negatively:
+never playing the pulse, levelling the ring at the sweep's level, tinting it, and reverting the anchor
+to `SetAllPoints`. The last of those first ABORTED the harness rather than failing by name — `GetPoint`
+returns no offsets for an all-points anchor, so the comparison hit nil — which is barely a catch at
+all; the assertion now reads defensively and names the defect.
 
 ### Verification
 
