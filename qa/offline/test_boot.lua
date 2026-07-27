@@ -1488,11 +1488,15 @@ do
       assertf(p == "TOPLEFT" and math.abs((x or 0) - want) < 0.01 and math.abs((y or 0) + want) < 0.01,
         ("%s icon is inset by %.2fpx (got %s %s,%s)")
           :format(label, want, tostring(p), tostring(x), tostring(y)))
+      -- The icon's edge must sit at or OUTSIDE the band's dark core, on both axes. This assertion
+      -- used to demand the opposite — that the edge land INSIDE the band — and that is what drove
+      -- three rounds of shrinking the icon. An inner shadow shows only where there is icon beneath
+      -- it, so an edge inside the band means the darkest part of the frame is falling on nothing.
       for _, ax in ipairs({ { "horizontally", ox }, { "vertically", oy } }) do
-        local lo, hi = bandOn(size, ax[2])
-        assertf(want >= lo - 0.01 and want <= hi + 0.01,
-          ("…and the border line lands on its edge %s (%.2f within %.2f..%.2f)")
-            :format(ax[1], want, lo, hi))
+        local _, hi = bandOn(size, ax[2])
+        assertf(want < hi,
+          ("…and the frame's shadow still has icon under it %s (%.2f inside %.2f)")
+            :format(ax[1], want, hi))
       end
 
       -- Everything drawn OVER the icon shares its rect. Anchored to the tile instead, each one draws
@@ -1515,28 +1519,41 @@ do
     end
   end
 
-  -- The inset is a SETTING now, so the invariant cannot be "it equals a number". What must hold at
-  -- every legal value: the frame always covers the icon's edge (never proud of the band's outer
-  -- limit), and the icon never shrinks clean through the frame's opening. The aperture is measured
-  -- from the art, at art 20 of 86 — the first fully transparent texel inward of the border line.
+  -- The invariant, and it is the OPPOSITE of what the first three passes at this assumed. The frame
+  -- is an inner shadow with its dark core on a line at art x=14 of 86; a shadow only shows where
+  -- there is icon under it, so the icon's edge must stay AT OR OUTSIDE that core. Inset past it and
+  -- the frame does not tighten, it disappears — which is how the last pass ended with "it looks like
+  -- the icon border is missing".
+  local function coreOn(size, o)
+    local ext = size + 2 * o
+    return -o + 14 * ext / 86
+  end
   for _, v in ipairs({ { "essential", 50, 9, 8 }, { "utility", 30, 6, 5 }, { "buffIcon", 40, 8, 7 } }) do
     local label, size, ox, oy = v[1], v[2], v[3], v[4]
     for _, ax in ipairs({ { "horizontally", ox }, { "vertically", oy } }) do
-      local lo = select(1, bandOn(size, ax[2]))
-      local aperture = M.IconAperture(size, ax[2])
+      local core = coreOn(size, ax[2])
+      local band = select(2, bandOn(size, ax[2]))
+      -- HOW MUCH of the dark band has icon beneath it, not merely whether any does. "Some" passes at
+      -- settings where the frame has visibly gone: at +4% the Essential tile still overlaps the band,
+      -- and that is the state that came back from the game as "the border is missing". Coverage is
+      -- the measure that separates them — 93% at the shipped default, 42% at +4%.
+      local atDefault = size * (M.ICON_MASK_INSET + M.ICON_INSET_EXTRA / 100)
+      local covered = (band - atDefault) / (band - core)
+      if covered > 1 then covered = 1 end
+      assertf(covered >= 0.70,
+        ("%s keeps the frame's shadow on the icon %s by default (%d%% covered)")
+          :format(label, ax[1], math.floor(covered * 100)))
+      -- The ceiling is where the dark core would leave the icon entirely.
       local atMax = size * (M.ICON_MASK_INSET + M.ICON_INSET_EXTRA_MAX / 100)
-      assertf(atMax <= aperture + 0.01,
-        ("%s stays inside the frame's opening %s even at max inset (%.2f vs %.2f)")
-          :format(label, ax[1], atMax, aperture))
-      local atMin = size * M.ICON_MASK_INSET
-      assertf(atMin >= 0, label .. " min inset is non-negative " .. ax[1])
-      assertf(aperture > lo, label .. "'s opening is inside its border band " .. ax[1])
+      assertf(atMax < band,
+        ("%s still has frame on the icon %s at max inset (%.2f inside %.2f)")
+          :format(label, ax[1], atMax, band))
+      assertf(core < band, label .. "'s shadow core is inside its band " .. ax[1])
     end
   end
 
   -- Fractional, not flat. A flat pixel budget generous enough for a 50px tile pushes a 30px one
   -- through its own opening — the first draft did exactly that and failed here at 3.41 against 3.28.
-  -- Expressed as: the SAME setting must stay legal on the largest and smallest shapes at once.
   local wide = M.IconInset(50) / 50
   local narrow = M.IconInset(30) / 30
   assertf(math.abs(wide - narrow) < 1e-9, "the inset is a fraction of the tile, not a flat pixel count")
@@ -1550,6 +1567,14 @@ do
       :format(before, after))
     M.SetIconInsetExtra(M.ICON_INSET_EXTRA)
     assertf(math.abs(select(4, mb.Icon:GetPoint(1)) - before) < 1e-9, "…and back again")
+  end
+
+  -- ── frame strength ────────────────────────────────────────────────────────────────────────────
+  -- The art tops out at 42% black, which is a bevel rather than a border. SetAlpha only scales DOWN,
+  -- so the only way to deepen it is to draw it again: 1-(1-a)^N, so 42% -> 66% -> 80%.
+  do
+    assertf(mb.IconOverlayStack ~= nil and #mb.IconOverlayStack >= 1,
+      "the tile carries spare copies of the frame art")
   end
 
   -- The flipbook's frame grid has to divide its strip evenly, or the ready-flash sprite samples

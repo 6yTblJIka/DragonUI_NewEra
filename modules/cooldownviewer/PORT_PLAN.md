@@ -5,7 +5,7 @@ TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global conventio
 
 **Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets), 6 (loose
 ends) and 7 (the tracked-aura catalog) implemented — the whole of both phasing tables except the
-deliberate cuts. Offline harnesses pass (`qa/offline/`, 565 boot assertions). Phases 1-3 and the 4b-1
+deliberate cuts. Offline harnesses pass (`qa/offline/`, 566 boot assertions). Phases 1-3 and the 4b-1
 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
 fixed, §G.7.1/§G.7.2).
 
@@ -1783,6 +1783,53 @@ Eight guards confirmed load-bearing. Two mutations came back green first time an
 fault, not the guard's: the spec-swap test set its scene with `SetSpellEnabled`, which rebuilds the
 viewer itself, so the scene-setting was doing the work the event was meant to do; and the glow-layer
 test could not see `CreateTexture`'s argument at all. Both rewritten, both now load-bearing.
+
+### H.2.4 The frame is an inner shadow, and that inverts the icon fit
+
+"It looks like the icon border is missing?" — after a pass whose whole point was to make the icons fit
+their frames better. Rendering the overlay cell instead of measuring it in columns explains it, and
+overturns the rule three previous passes had been working to.
+
+```
+6704514 overlay cell, 86x86:  BLACK throughout, alpha only.
+  dark core on a line at art x=14, peak alpha 108/255 = 42%
+  soft falloff outward to x=0, fading inward to 0 at x=20
+  corner radius of the core ~4 art px
+```
+
+It is an **inner shadow**, not a frame in the sense of a drawn border. A shadow shows only where there
+is something beneath it to darken. So insetting the icon does not tighten the frame around it — it
+slides the icon out from under the shadow, and black-at-42%-over-the-world is nothing at all. Every
+round of "the icons are too large, inset them further" was quietly *deleting* the frame, and the last
+one crossed the line where the dark core sat entirely off the icon.
+
+|  | icon edge | dark core | band | covered |
+|---|---|---|---|---|
+| essential x, shipped default | 2.34 | 2.07 | 2.07 – 6.02 | 93% |
+| essential x, at +4% (last pass) | 4.34 | 2.07 | 2.07 – 6.02 | **42%** |
+| utility x, at +4% | 2.61 | 0.84 | 0.84 – 3.28 | **27%** |
+
+The harness had this exactly backwards. Its assertion was that the icon's edge must land INSIDE the
+border band — which is what drove the shrinking, and which is satisfied most comfortably by the
+settings that hide the frame. It now asserts the opposite and measures it as **coverage**: how much of
+the dark band has icon under it, ≥70% at the shipped default. "Some overlap" is not enough to
+distinguish the two states — at +4% the Essential tile still overlapped the band, and that is the
+state that was reported as missing.
+
+So the inset default went back to 0 — retail-faithful — and its ceiling dropped to +4%, where the
+shadow is weak but not gone.
+
+**Frame strength** is the actual answer to both "the border is missing" and "no rounded edges". The
+art tops out at 42% black, which reads as a bevel rather than a border, and its rounded corners are
+far too faint to stop a square icon announcing itself. `SetAlpha` only scales down, so the alpha
+cannot be raised — but the texture can be drawn more than once: stacking N copies gives 1-(1-a)^N, so
+42% becomes **66%** at two and **80%** at three. Same art, same rect, same corner radius, just deeper,
+and the corners deepen with it. Default 2, exposed as a 1-3 slider next to the inset.
+
+This is the third distinct fault in this port traceable to reading a texture's *metadata* instead of
+its *pixels* — after the six unregistered atlases (§H.2.1) and the black additive glow (§H.2.2). All
+three were invisible to every assertion that checked wiring. Rendering the cell to a PNG and looking
+at it took two minutes and would have pre-empted all three.
 
 ### 8d. Bar theming
 

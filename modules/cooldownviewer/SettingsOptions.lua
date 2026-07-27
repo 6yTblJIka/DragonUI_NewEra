@@ -223,10 +223,15 @@ local function build(parent)
   -- ── Icon fit. Retail masks its icons, which both insets and rounds them; §C2 records that
   -- MaskTexture has no polyfill on this client, so the inset is reproducible and the rounding is not.
   c:AddSection("Icon fit", false)
-  c:AddText("Icons are inset so the frame sits on their edge, the way the masked retail icons do. "
-    .. "Corners cannot be rounded on this client, and a square corner reads larger than its own edge "
-    .. "— raise this if the icons still look too big for their frames. At the maximum they clear the "
-    .. "frame's opening entirely, which is as close to rounded as this gets.")
+  c:AddText("The frame is a soft shadow that falls on the icon's outer edge, so it only shows where "
+    .. "there is icon underneath it. Strength draws it more than once to deepen it — that is also "
+    .. "what makes its rounded corners read, since the icons themselves cannot be rounded here. "
+    .. "Inset shrinks the icon, which slides the shadow off it, so raise that one sparingly.")
+  c:AddSlider({
+    label = "Frame strength", min = 1, max = M.FRAME_STRENGTH_MAX, step = 1,
+    get = function() return M.GetFrameStrength() end,
+    set = function(v) M.SetFrameStrength(v) end,
+  })
   c:AddSlider({
     label = "Icon inset", min = 0, max = M.ICON_INSET_EXTRA_MAX, step = 1, format = pct,
     get = function() return M.GetIconInsetExtra() end,

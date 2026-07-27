@@ -36,6 +36,10 @@ local function applyItemAtlases(item)
   local set = NE.tex and NE.tex.SetAtlas
   if not set then return end
   if item.IconOverlay then set(item.IconOverlay, "UI-HUD-CoolDownManager-IconOverlay", false) end
+  -- The stacked copies that deepen the frame. Same atlas, same rect — see Frame strength.
+  for _, t in ipairs(item.IconOverlayStack or {}) do
+    set(t, "UI-HUD-CoolDownManager-IconOverlay", false)
+  end
   if item.OutOfRange  then set(item.OutOfRange,  "UI-CooldownManager-OORshadow",       false) end
 
   -- The buff glow (see ItemMixin:SetBuffGlow). Deliberately NOT an atlas from the sheet above.
@@ -848,32 +852,31 @@ M.ICON_MASK_INSET = 3 / 64
 -- 2.74..6.58 on Essential). Second, our icon has square corners where retail's is rounded, so its
 -- edge reads harder against the same soft border.
 --
--- One flat pixel puts the icon's edge inside the border band on BOTH axes for all four tile shapes.
+-- FRACTIONAL, not flat pixels: the frame art scales with the tile, so a flat budget generous enough
+-- for a 50px Essential tile pushes a 30px Utility icon clean through its own opening.
 --
--- It is a SETTING rather than a constant, because "still a pixel too large" was reported three times
--- across three different values and there is no measurement that settles it — the mask inset is
--- faithful to retail, and retail's icon is ROUNDED, which ours cannot be (§C2: MaskTexture has no
--- polyfill on 3.3.5a). A square corner against a rounded aperture reads bigger than its own edge
--- does, by an amount that depends on the viewer's own eye. So: derived default, dial to taste.
+-- And it defaults to ZERO, which is the correction that matters, because the relationship runs the
+-- OPPOSITE way to how three rounds of this assumed. Rendering the overlay cell shows what it actually
+-- is: an INNER SHADOW, black, peaking at alpha 108/255 — 42% — with its dark core on a line at art
+-- x=14 of 86 and a corner radius of about 4 art px.
 --
--- FRACTIONAL, not flat pixels, and this is the correction that mattered. The frame art scales with
--- the tile, so its opening does too: decoding the overlay cell puts the aperture — the first fully
--- transparent texel inward of the border line — at art 20 of 86, which is
+-- An inner shadow has to fall ON something to be seen. Inset the icon and the shadow's core slides
+-- off it onto empty space, where black-at-42%-over-the-world is nothing at all. So every step of
+-- "make the icon smaller so it fits its frame" was quietly DELETING the frame, which is exactly how
+-- the last pass ended: at +4% the whole dark core sat off the icon, and the report came back as "it
+-- looks like the icon border is missing".
 --
---   essential (50px, -9/+8): item x 6.81, y 7.35        13.6% of the tile
---   buffIcon  (40px, -8/+7): item x 5.02, y 5.24        12.6%
---   utility   (30px, -6/+5): item x 3.77, y 4.30        12.6%
+--   essential (50px, -9/+8): shadow core at item x 2.07;  mask inset alone puts the icon edge at 2.34
+--   utility   (30px, -6/+5): core at 0.84;  mask inset 1.41
 --
--- A flat pixel budget that leaves an Essential icon comfortably framed pushes a Utility icon clean
--- through the opening — the first draft used flat pixels and the harness failed on exactly that, the
--- utility tile at 3.41 against an inner limit of 3.28. As a fraction the whole range travels.
+-- Retail's masked icon sits at 2.34 with the band running out to 6.02, so almost all of the shadow
+-- lands on the icon. That is the look, and 0 extra reproduces it. The slider still exists — "too
+-- large" was reported three times and a square corner does read bigger than a rounded one — but it
+-- now carries a real cost, and MAX is the point past which the dark core leaves the icon entirely.
 --
--- Inset all the way to the aperture and the icon stops overlapping the frame at all, so every square
--- corner sits inside the rounded opening: the closest this client gets to "rounded edges", at the
--- cost of a visibly smaller icon. Below it the frame overlaps the icon's edge, which is what retail
--- looks like. The slider covers both readings; MAX comes from the tightest shape above.
-M.ICON_INSET_EXTRA     = 4   -- percent of the tile edge, on top of the derived mask inset
-M.ICON_INSET_EXTRA_MAX = 7   -- 4.7% mask + 7% = 11.7%, inside the 12.6% aperture on every shape
+-- The rounding itself is answered by FRAME STRENGTH below, not by this.
+M.ICON_INSET_EXTRA     = 0   -- percent of the tile edge, on top of the derived mask inset
+M.ICON_INSET_EXTRA_MAX = 4   -- past this the shadow's core slides off the icon and the frame fades
 
 function M.GetIconInsetExtra()
   local cd = M._store and M._store(false)
@@ -882,6 +885,68 @@ function M.GetIconInsetExtra()
   if v < 0 then return 0 end
   if v > M.ICON_INSET_EXTRA_MAX then return M.ICON_INSET_EXTRA_MAX end
   return v
+end
+
+-- ── Frame strength ──────────────────────────────────────────────────────────────────────────────
+-- The other half of "the border is missing", and the half that answers "no rounded edges" too.
+--
+-- The frame art tops out at 42% black. On a bright icon over a dark world that is a soft bevel, not a
+-- border, and its rounded corners are far too faint to make a square icon read as a rounded one. We
+-- cannot raise a texture's alpha — SetAlpha only scales down — but we CAN draw it more than once:
+-- stacking N copies gives 1-(1-a)^N, so 42% becomes 66% at two and 80% at three. Same art, same rect,
+-- same corner radius, just deeper. The corners darken with it, which is what makes the square icon
+-- underneath stop announcing itself.
+--
+-- Two by default: enough to read as a frame at a glance, short of the heavy vignette three gives.
+M.FRAME_STRENGTH     = 2
+M.FRAME_STRENGTH_MAX = 3
+
+function M.GetFrameStrength()
+  local cd = M._store and M._store(false)
+  local v = cd and cd.frameStrength
+  if type(v) ~= "number" then return M.FRAME_STRENGTH end
+  if v < 1 then return 1 end
+  if v > M.FRAME_STRENGTH_MAX then return M.FRAME_STRENGTH_MAX end
+  return math.floor(v)
+end
+
+-- Build the extra copies for one tile. Registered so the setting can be applied live, the same way
+-- the inset is — and for the same reason: these are created once, at tile construction.
+function M.BuildFrameStack(parent, ox, oy)
+  if not (parent and parent.IconOverlay) then return end
+  local stack = {}
+  for i = 1, M.FRAME_STRENGTH_MAX - 1 do
+    local t = parent:CreateTexture(nil, "OVERLAY")
+    t:SetPoint("TOPLEFT", parent, "TOPLEFT", -ox, oy)
+    t:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", ox, -oy)
+    t:SetDrawLayer("OVERLAY", i)
+    t:Hide()
+    stack[i] = t
+  end
+  parent.IconOverlayStack = stack
+  M._frameStacks = M._frameStacks or {}
+  M._frameStacks[#M._frameStacks + 1] = parent
+  M.ApplyFrameStrength(parent)
+  return stack
+end
+
+function M.ApplyFrameStrength(parent)
+  local stack = parent and parent.IconOverlayStack
+  if not stack then return end
+  local extra = M.GetFrameStrength() - 1
+  for i = 1, #stack do
+    if i <= extra then stack[i]:Show() else stack[i]:Hide() end
+  end
+end
+
+function M.RefreshFrameStrength()
+  for _, parent in ipairs(M._frameStacks or {}) do M.ApplyFrameStrength(parent) end
+end
+
+function M.SetFrameStrength(v)
+  local cd = M._store and M._store(true)
+  if cd then cd.frameStrength = tonumber(v) or M.FRAME_STRENGTH end
+  M.RefreshFrameStrength()
 end
 
 function M.SetIconInsetExtra(v)

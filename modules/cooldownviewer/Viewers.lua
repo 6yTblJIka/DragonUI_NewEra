@@ -54,6 +54,9 @@ local function createItem(parent, category)
   local ox, oy = spec.overlayInset[1], spec.overlayInset[2]
   item.IconOverlay:SetPoint("TOPLEFT", item, "TOPLEFT", -ox, oy)
   item.IconOverlay:SetPoint("BOTTOMRIGHT", item, "BOTTOMRIGHT", ox, -oy)
+  -- The frame art peaks at 42% black, which reads as a bevel rather than a border. Extra copies in
+  -- the same rect deepen it; M.GetFrameStrength decides how many are shown.
+  M.BuildFrameStack(item, ox, oy)
 
   -- DOWNPORT (§H.2 8c): retail marks a spell whose own buff is up by tinting its swipe gold, and
   -- SetSwipeColor is WoD+. The substitute is a static gold halo on the tile. Its rect is OVERSIZED
