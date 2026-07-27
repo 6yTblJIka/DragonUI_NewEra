@@ -255,8 +255,9 @@ local function build(parent)
   -- auto-track window shows automatically, which is what makes trinket, potion and proc buffs work
   -- without enumerating them in advance.
   c:AddSection("Buff tracking", false)
-  c:AddText("Buffs you have not seen before are recorded and listed under Hidden on the Tracked Buffs "
-    .. "tab, where you can assign the ones you want. Nothing appears on screen until you do.")
+  c:AddText("Buffs you have not seen before are recorded and listed under Not Displayed on the "
+    .. "Tracked Buffs tab, where you can assign the ones you want. Nothing appears on screen until "
+    .. "you do.")
   c:AddCheckbox({
     label = ("Auto-track buffs under %ds"):format(M.BUFF_TRACK_MAX_DURATION or 120),
     desc  = "Show every short buff the moment it lands, without assigning it first. Convenient on a "

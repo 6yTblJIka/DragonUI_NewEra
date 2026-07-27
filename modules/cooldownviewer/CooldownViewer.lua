@@ -481,7 +481,7 @@ end
 
 -- Should the settings panel list curated spells the player has not learned?
 --
--- Off by default: Essential/Utility show what you can actually cast. The Hidden catalog ignores this
+-- Off by default: Essential/Utility show what you can actually cast. Not Displayed ignores this
 -- and always lists everything, because a low-level character seeing an empty picker reads as broken.
 function M.GetShowUnlearned()
   local cd = store(false)
@@ -764,7 +764,7 @@ end
 
 -- Called from the aura scan for every player buff it walks, BEFORE the include/exclude decision.
 -- The ordering is load-bearing: recorded after, an aura the player hides would drop out of the
--- registry, its row would vanish from Hidden, and there would be nothing left to unhide it with.
+-- registry, its row would vanish from Not Displayed, and nothing would be left to unhide it with.
 -- Returns true only when a NEW aura was added.
 function M.NoteSeenAura(spellID, name, icon, duration)
   if not (spellID and name) then return false end
@@ -939,7 +939,8 @@ function M.GetBuffOverrides(category)
 end
 
 -- Auto-track toggle. OFF by default: a newly met aura is RECORDED (the seen registry, §H.1) and
--- listed under Hidden on the Tracked Buffs tab, but nothing appears on screen until it is assigned.
+-- listed under Not Displayed on the Tracked Buffs tab, but nothing appears on screen until it is
+-- assigned.
 --
 -- This used to default ON, so any buff under two minutes showed itself the first time it landed. That
 -- makes trinket procs and potions work with no setup, and it also means a raid's worth of incidental

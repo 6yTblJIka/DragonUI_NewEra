@@ -8,19 +8,24 @@
 --
 -- CATEGORIES. Six, in two display modes:
 --   spells: Essential / Utility  — the editable lists
---           Hidden              — the ARSENAL, i.e. every class ability with a real cooldown that
+--           Not Displayed       — the ARSENAL, i.e. every class ability with a real cooldown that
 --                                 is not currently in a viewer. This is what makes the panel a
 --                                 picker rather than an undo list.
---   auras : Tracked Buffs / Tracked Bars / Hidden — the unified tracked-aura pool, keyed by each
---                                 entry's assignment ("icon" / "bar" / "hidden").
+--   auras : Tracked Buffs / Tracked Bars / Not Displayed — the unified tracked-aura pool, keyed by
+--                                 each entry's assignment ("icon" / "bar" / "hidden").
 --
 -- ONE Equip source pool, not upstream's two. `equipActive` holds the discovered on-use trinkets
 -- that the player has not placed in a viewer yet. The passive pool is cut for a data reason, not a
 -- scheduling one — see Equip.lua's header.
 --
--- "Hidden" is a CATALOG, not a bucket. For spells it is computed — arsenal minus what is placed —
--- rather than stored, so a newly-generated ability appears in it automatically. For auras it IS a
--- stored assignment, because an aura the player force-hides has to stay hidden against a live scan.
+-- "Not Displayed" is a CATALOG, not a bucket. For spells it is computed — arsenal minus what is
+-- placed — rather than stored, so a newly-generated ability appears in it automatically. For auras
+-- it IS a stored assignment, because an aura the player force-hides has to stay hidden against a
+-- live scan.
+--
+-- The LABEL is retail's ("Not Displayed", Phase 9 §H.3); the STORED assignment value is still
+-- "hidden" and the category ids are still hiddenSpell / hiddenAura. Renaming those would invalidate
+-- every existing saved layout for a cosmetic gain, so the rename stops at the display string.
 
 local NE = DragonUI_NewEra
 local M  = NE.cooldownviewer
@@ -45,14 +50,14 @@ local CATS = {
   essential   = { mode = "spells", kind = "icon", label = GS("COOLDOWN_VIEWER_SETTINGS_CATEGORY_ESSENTIAL", "Essential"), list = "essential" },
   utility     = { mode = "spells", kind = "icon", label = GS("COOLDOWN_VIEWER_SETTINGS_CATEGORY_UTILITY",   "Utility"),   list = "utility"   },
   equipActive = { mode = "spells", kind = "icon", label = GS("COOLDOWN_VIEWER_SETTINGS_CATEGORY_EQUIP_ACTIVE", "Trinkets"), source = true },
-  hiddenSpell = { mode = "spells", kind = "icon", label = GS("COOLDOWN_VIEWER_SETTINGS_CATEGORY_NOT_IN_BAR", "Hidden")                       },
+  hiddenSpell = { mode = "spells", kind = "icon", label = GS("COOLDOWN_VIEWER_SETTINGS_CATEGORY_NOT_IN_BAR", "Not Displayed")                },
   trackedBuff = { mode = "auras",  kind = "icon", label = GS("COOLDOWN_VIEWER_SETTINGS_CATEGORY_TRACKED_BUFF", "Tracked Buffs"), aura = "icon"   },
   trackedBar  = { mode = "auras",  kind = "bar",  label = GS("COOLDOWN_VIEWER_SETTINGS_CATEGORY_TRACKED_BARS", "Tracked Bars"),  aura = "bar"    },
-  hiddenAura  = { mode = "auras",  kind = "icon", label = GS("COOLDOWN_VIEWER_SETTINGS_CATEGORY_NOT_IN_BAR",   "Hidden"),        aura = "hidden" },
+  hiddenAura  = { mode = "auras",  kind = "icon", label = GS("COOLDOWN_VIEWER_SETTINGS_CATEGORY_NOT_IN_BAR", "Not Displayed"), aura = "hidden" },
 }
 
--- The source pool sits between the display categories and Hidden, which is upstream's order and
--- retail's: "here is what you own but haven't placed", above "here is everything else".
+-- The source pool sits between the display categories and Not Displayed, which is upstream's order
+-- and retail's: "here is what you own but haven't placed", above "here is everything else".
 Adapter.MODE_ORDER = {
   spells = { "essential", "utility", "equipActive", "hiddenSpell" },
   auras  = { "trackedBuff", "trackedBar", "hiddenAura" },
@@ -81,7 +86,7 @@ function Adapter.Kind(catID)  return CATS[catID] and CATS[catID].kind or "icon" 
 local EMPTY_TEXT = {
   trackedBuff = "Nothing here yet — drag a buff in to pin it.",
   trackedBar  = "Nothing here yet — drag a buff in to pin it.",
-  hiddenAura  = "Nothing hidden.",
+  hiddenAura  = "Everything recorded is displayed.",
 }
 
 function Adapter.EmptyText(catID) return EMPTY_TEXT[catID] or "(empty)" end
@@ -92,7 +97,7 @@ function Adapter.Mode(catID)  return CATS[catID] and CATS[catID].mode or "spells
 -- true = listed and on, false = listed and off, nil = NOT MENTIONED (no list, or absent from it).
 -- The nil case matters: it is what sends isPlaced to the curated defaults. Returning false for a
 -- missing list instead of nil made that fallback unreachable and put every curated spell into the
--- Hidden catalog alongside itself.
+-- Not Displayed catalog alongside itself.
 local function listHasEnabled(list, id)
   if not list then return nil end
   for _, e in ipairs(list) do
@@ -117,9 +122,9 @@ local function isPlaced(id, class)
   return false
 end
 
--- The Hidden catalog: every class ability with a real cooldown that is not currently placed, plus
--- the player's racials. Race-impossible spells are dropped outright — "show unlearned" is about
--- level, not about abilities this character can never have.
+-- The Not Displayed catalog: every class ability with a real cooldown that is not currently placed,
+-- plus the player's racials. Race-impossible spells are dropped outright — "show unlearned" is
+-- about level, not about abilities this character can never have.
 local function hiddenSpells(class)
   local seen, out = {}, {}
   local function consider(id)
@@ -292,8 +297,8 @@ function Adapter.GetItems(catID, class)
     return out
   end
 
-  -- Hidden: always the full catalog, learn state ignored. A fresh character seeing an empty picker
-  -- reads as broken, and the tile tints unlearned entries instead.
+  -- Not Displayed: always the full catalog, learn state ignored. A fresh character seeing an empty
+  -- picker reads as broken, and the tile tints unlearned entries instead.
   for _, id in ipairs(hiddenSpells(class)) do out[#out + 1] = id end
   for _, e in ipairs(equipItemsAssigned("hidden", class)) do out[#out + 1] = e end
   return out
@@ -350,7 +355,7 @@ function Adapter.Assign(spellID, fromCat, toCat, class)
     return true
   end
 
-  -- Spells: clear the old placement, then set the new one. Hidden is the ABSENCE of a placement,
+  -- Spells: clear the old placement, then set the new one. Not Displayed is the ABSENCE of a placement,
   -- which is why it has no list of its own.
   if fromMeta.list then M.SetSpellEnabled(fromMeta.list, spellID, false) end
   if toMeta.list   then M.SetSpellEnabled(toMeta.list,   spellID, true)  end
@@ -369,7 +374,7 @@ function Adapter.AssignEquip(token, fromCat, toCat)
 end
 
 -- Remove a user-added entry outright. Only meaningful for auras: a spell's "removal" is just
--- returning it to the Hidden catalog, which Assign already does, and an equip row is discovered
+-- returning it to the Not Displayed catalog, which Assign already does, and an equip row is discovered
 -- rather than stored — it leaves by being unequipped.
 function Adapter.IsRemovable(spellID, catID, class)
   local meta = CATS[catID]
@@ -390,7 +395,7 @@ function Adapter.Remove(spellID, catID, class)
 end
 
 -- The ordered backing list for a category: the editable spell list, or the tracked-aura pool.
--- Hidden (spells) has neither — it is computed — so it returns nil and reorders there are no-ops.
+-- Not Displayed (spells) has neither — it is computed — so it returns nil and reorders there are no-ops.
 local function orderedList(catID, class)
   local meta = CATS[catID]
   if not meta then return nil end

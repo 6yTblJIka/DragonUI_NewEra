@@ -32,8 +32,8 @@ local QUESTION_MARK = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 -- ── Item tiles ──────────────────────────────────────────────────────────────────────────────────
 
--- Unlearned entries stay listed but read as unavailable: the Hidden catalog deliberately shows the
--- whole arsenal, so a low-level character can see what they will be able to track.
+-- Unlearned entries stay listed but read as unavailable: the Not Displayed catalog deliberately
+-- shows the whole arsenal, so a low-level character can see what they will be able to track.
 local function applyLearnedTint(item)
   local known = (not M.IsTrackable) or M.IsTrackable(item.spellID)
   item._unlearned = not known
@@ -142,7 +142,7 @@ local function itemOnEnter(self)
     end
   end
   if self.token then
-    GameTooltip:AddLine(self._equipHidden and "Hidden from the viewer"
+    GameTooltip:AddLine(self._equipHidden and "Not displayed on any viewer"
       or "Drag onto Essential or Utility to track it.", 0.6, 0.8, 1)
   end
   -- What the corner badge means for this tile. Provided by SettingsMenu (4b-3).

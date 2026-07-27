@@ -3,20 +3,28 @@
 Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/` (Classic 1.15 /
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
-**Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets), 6 (loose
-ends) and 7 (the tracked-aura catalog) implemented — the whole of both phasing tables except the
-deliberate cuts. Offline harnesses pass (`qa/offline/`, 625 boot assertions). Phases 1-3 and the 4b-1
-window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
-fixed, §G.7.1/§G.7.2).
+**Status: the port is complete.** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use
+trinkets), 6 (loose ends), 7 (the tracked-aura catalog), 8 (the art) and 9 (the guide audit) are
+implemented — the whole of both phasing tables except the deliberate cuts. Offline harnesses pass
+(`qa/offline/`, 627 boot assertions). Phases 1-3 and the 4b-1 window shell are confirmed working
+in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and fixed, §G.7.1/§G.7.2).
 
-**Open work is §H.3** (planned, not built): **Phase 9**, the audit against Wowhead's current guide, which after 8c
-has no remaining feature gap (§H.3). **8a is DONE** (§H.2.1): six atlases the viewers had been setting
-by name were registered nowhere, so every one rendered as an invisible texture — which is why the icons
-looked like bare spellbook icons. **8c is DONE** (§H.2.2): a spell whose own buff is up now lights its
-frame gold, closing the last headline feature the retail guide lists and we did not have.
+**Phase 8 is DONE** (§H.2), one item at a time: **8a** registered six atlases the viewers had been
+setting by name and that existed nowhere, so every one rendered as an invisible texture — which is why
+the icons looked like bare spellbook icons. **8c** lights a spell's frame gold while its own buff is
+up, closing the last headline feature the retail guide lists and we did not have. **8d** is the bar
+3-slice and **8e** the pandemic ring. **8b** — the gold cooldown swipe — was measured, attempted and
+declined (§H.2.11): the ClassicAPI capture rig it needs is unexercised code that costs ~200 frames and
+takes our countdown numbers out with it, for a capability 8c already substitutes for.
+
+**Phase 9 is DONE** (§H.3): every feature the retail guide describes now has a verdict. Two of its
+three open items had already been paid for by earlier phases — the buffed-spell glow by 8c, and target
+DoT timers by Phase 7, which is what made `ScanTargetTrackedAuras` reachable at all. The third was
+the "Not Displayed" rename, which is the only code Phase 9 shipped.
+
 Phase 7 is **DONE** (§H.1, notes in §H.1.1): the Tracked Buffs tab now has two real sources — a
 generated per-class catalog gated on the player's actual talents, and a registry of auras the scan has
-met — which also makes target-DoT tracking reachable for the first time.
+met.
 
 Also outstanding: consumables (§G.9, parked as a stretch goal by the owner — blocked on a generator
 pass, not on effort), and three items needing the game rather than the harness — §F4 taint under a
@@ -2198,9 +2206,13 @@ Screenshots, into `screenshots/`, per the repo's existing practice: an Essential
 Utility row with one spell buffed, a Buff Bar mid-depletion, and an out-of-range target. Offline
 harness can only assert the atlases resolve — the rest is the eye.
 
-## H.3. Phase 9 — audit against the current retail guide
+## H.3. Phase 9 — audit against the current retail guide — **DONE**
 
 Every feature and setting the guide describes, with a verdict. Consumables excluded by owner decision.
+
+Phase 9 closes the port. Of the three items that were open when it was written, two had already been
+paid for by earlier phases and only needed confirming; the third was the rename, which is the only
+code this phase actually shipped.
 
 **Have it:**
 
@@ -2208,7 +2220,7 @@ Every feature and setting the guide describes, with a verdict. Consumables exclu
   Cooldown Settings") — §G.12, as an enable toggle plus "Open Cooldown Manager".
 - Two picker tabs, spells and buffs, with icon tooltips on hover. (We have three; the Settings tab is
   ours. Retail keeps its settings in Edit Mode.)
-- Essential / Utility / third "not displayed" category, per mode.
+- Essential / Utility / Not Displayed, per mode — and since Phase 9, under retail's own name.
 - Not-talented spells greyed out — our unlearned tint, which goes further: it explains itself in the
   tooltip.
 - Right-click to move between categories.
@@ -2219,17 +2231,36 @@ Every feature and setting the guide describes, with a verdict. Consumables exclu
 - All four elements movable — four movers plus, since Phase 6, a per-viewer Position button.
 - Buff timers on tracked buffs; out-of-combat buffs excluded.
 
-**Missing, and worth doing:**
+**Missing, and worth doing — all three now closed:**
 
 1. ~~**The glow around a buffed spell** → 8c. The only headline feature from the guide's own list that
    we do not have in some form.~~ **DONE** (§H.2.2). Nothing on the guide's feature list is now
    missing; what remains under Phase 9 is the "Not Displayed" naming preference and the two deliberate
    cuts below.
-2. **Target DoT timers.** The guide lists "timers for ... damage-over-time effects". The code exists
-   (`ScanTargetTrackedAuras`) and has never been reachable — fixed as a side effect of Phase 7, which
-   is worth stating plainly: one empty table was disabling two features.
-3. **"Not Displayed"** is retail's name for what we call "Hidden", in both modes. A one-line fidelity
-   fix; "Hidden" is arguably clearer, so this is a preference, not a defect.
+
+2. ~~**Target DoT timers.** The guide lists "timers for ... damage-over-time effects". The code exists
+   (`ScanTargetTrackedAuras`) and has never been reachable~~ — **DONE, by Phase 7**, and confirmed
+   rather than re-fixed. `ScanTargetTrackedAuras` reads the `include` set that `GetBuffOverrides`
+   builds from the tracked-aura pool, and that pool was empty on every character until 7a/7d gave it
+   a source. One empty table was disabling two features.
+
+   Confirmed end-to-end, not by reading: `test_boot.lua` assigns Shadow Word: Pain through the same
+   `SetAuraAssignment` the picker calls, puts a **Rank 10** SW:P on the target — a different spellID
+   from the assigned one, and outside the auto-track window, so nothing but the name match can show
+   it — and asserts the tile appears. The negative half is asserted separately: an *unassigned* target
+   debuff stays invisible, because the auto window must never reach targets or every enemy debuff in
+   the room arrives uninvited.
+
+3. ~~**"Not Displayed"** is retail's name for what we call "Hidden", in both modes.~~ **DONE.** The
+   two `CATS` labels, plus the three other places the old word reached the player: the empty-state
+   line for the aura catalog ("Everything recorded is displayed."), the trinket tooltip, and the
+   buff-tracking help text on the Settings tab. The right-click menu needed nothing — it builds
+   "Move to …" from `Adapter.Label`, so it followed.
+
+   **The rename stops at the display string.** The category ids (`hiddenSpell` / `hiddenAura`) and
+   the stored assignment value (`"hidden"`) are unchanged, because that value is what every saved
+   layout already on disk contains — renaming it would silently un-hide every aura a player has ever
+   hidden. Both halves are asserted, so a future tidy-up that "finishes" the rename fails loudly.
 
 **Deliberately not doing:**
 
@@ -2263,9 +2294,16 @@ already a hollow ring.
 things worse, and it would have — `CooldownCaptureShow` zeroes the Cooldown frame's alpha, which takes
 our countdown numbers with it, for ~200 frames' cost and a capability 8c already substitutes for.
 
-**Phase 9** is bookkeeping absorbed by the two above, apart from the "Not Displayed" rename, which is
-a one-line owner preference.
+**Phase 9 is done** (§H.3), and the prediction held: it was bookkeeping absorbed by the phases above,
+apart from the "Not Displayed" rename. What the estimate missed is that "a one-line owner preference"
+was five strings, not one — the label reached the player through the empty-state text, a trinket
+tooltip and the Settings tab's help text as well as the two category headers, and the right-click
+menu's "Move to …" only followed for free because it already read `Adapter.Label`. The single line it
+was *not* was the stored assignment value, which had to stay `"hidden"`.
 
 Phase 7 and 8a are also the two that most want an in-game pass immediately after, which argues for
 doing them before the deferred verification of 4b-4 / 4b-5 / 5a / 4c rather than after — one trip
 through the game covering all of it.
+
+**Nothing in the phasing tables is left.** What remains is not port work: §G.9 consumables (parked by
+the owner), and the in-game passes listed at the top — §F4, §F5, and 4b-4 / 4b-5 / 5a / 4c / Phase 6.

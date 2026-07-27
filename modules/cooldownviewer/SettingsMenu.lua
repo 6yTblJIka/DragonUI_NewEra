@@ -218,7 +218,7 @@ function CDS.ItemMenuGenerator(item, class)
     addMoveEntries(root, item, class)
 
     -- Remove only appears when the entry is genuinely deletable — a stored user aura. A spell is
-    -- never removed, only returned to the Hidden catalog, which "Move to Hidden" already does; a
+    -- never removed, only returned to the catalog, which "Move to Not Displayed" already does; a
     -- trinket is discovered, so it leaves by being unequipped and never by a menu.
     if not item.token and Adapter.IsRemovable and Adapter.IsRemovable(item.spellID, item._catID, class) then
       root:CreateDivider()

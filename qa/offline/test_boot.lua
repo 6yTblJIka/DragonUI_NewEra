@@ -947,8 +947,8 @@ assertf(DragonUI.EditableFrames["CooldownViewerBuffBar"] ~= nil, "buffBar is edi
 auraTick("player")
 assertf(shownItems(bIcon) == 0, "no auras -> buff icons empty")
 
--- Auto-track is OFF out of the box: a newly met aura is recorded and listed under Hidden, but nothing
--- appears on screen unassigned. Asserted here rather than assumed, because everything below this line
+-- Auto-track is OFF out of the box: a newly met aura is recorded and listed under Not Displayed,
+-- but nothing appears on screen unassigned. Asserted here rather than assumed, because everything below
 -- depends on the opposite and would otherwise fail for a reason that looks nothing like the cause.
 assertf(M.IsAutoTrackBuffs() == false, "auto-track defaults OFF (new buffs stay hidden)")
 BUFFS.player = { { name = "Power Infusion", rank = "", icon = "Interface\\Icons\\PI", count = 0,
@@ -2097,13 +2097,21 @@ end
 print("\n=== CATEGORY GRIDS (Phase 4b-2) ===")
 local A = CDS.adapter
 assertf(A ~= nil, "adapter present")
--- Four on the Spells side since the equip port: Essential / Utility / Trinkets / Hidden. The
+-- Four on the Spells side since the equip port: Essential / Utility / Trinkets / Not Displayed. The
 -- Trinkets pool is spells-only — see Equip.lua on why the passive pool is cut.
 assertf(#A.MODE_ORDER.spells == 4 and #A.MODE_ORDER.auras == 3, "four spell categories, three aura")
 assertf(A.IsSourcePool("equipActive") and not A.IsSourcePool("essential"),
         "only the equip pool is a source category")
 
--- The arsenal is what turns Hidden from an undo list into a picker.
+-- Phase 9 (§H.3): the third category carries RETAIL's name in both modes, and the right-click menu
+-- reads it from here, so "Move to Not Displayed" follows the label with nothing to keep in sync.
+assertf(A.Label("hiddenSpell") == "Not Displayed" and A.Label("hiddenAura") == "Not Displayed",
+        "the third category is labelled Not Displayed in both modes")
+-- …and the rename stopped at the display string. The stored assignment value is what every saved
+-- layout on disk already contains; renaming it would have silently unhidden everything.
+assertf(A.Meta("hiddenAura").aura == "hidden", "…while the STORED assignment value is still hidden")
+
+-- The arsenal is what turns Not Displayed from an undo list into a picker.
 assertf(M.ARSENAL_BY_CLASS ~= nil, "generated arsenal loaded")
 assertf(#(M.ARSENAL_BY_CLASS.PRIEST or {}) > 15,
         "priest arsenal populated (" .. #(M.ARSENAL_BY_CLASS.PRIEST or {}) .. ")")
@@ -2115,14 +2123,14 @@ CDS.OpenTo("essential")
 local ess = A.GetItems("essential", "PRIEST")
 local hid = A.GetItems("hiddenSpell", "PRIEST")
 assertf(#ess > 0, "Essential lists the curated spells (" .. #ess .. ")")
-assertf(#hid > 0, "Hidden lists the rest of the arsenal (" .. #hid .. ")")
+assertf(#hid > 0, "Not Displayed lists the rest of the arsenal (" .. #hid .. ")")
 
 -- The two must not overlap: a placed spell is not offered again.
 local placed = {}
 for _, id in ipairs(ess) do placed[id] = true end
 local overlap = 0
 for _, id in ipairs(hid) do if placed[id] then overlap = overlap + 1 end end
-assertf(overlap == 0, "Hidden excludes what is already placed (" .. overlap .. " overlaps)")
+assertf(overlap == 0, "Not Displayed excludes what is already placed (" .. overlap .. " overlaps)")
 
 -- Grids built and stacked.
 local grids = CDS._categories
@@ -2539,8 +2547,8 @@ do
   end
   assertf(found ~= nil, "the trinket now renders under Essential")
 
-  -- Hidden is STORED, and storable-ness is the whole reason it is distinct from unassigned.
-  assertf(A2.AssignEquip("item:45148", "essential", "hiddenSpell"), "it can be moved to Hidden")
+  -- The hidden assignment is STORED, and storable-ness is why it is distinct from unassigned.
+  assertf(A2.AssignEquip("item:45148", "essential", "hiddenSpell"), "it can be moved to Not Displayed")
   assertf(M.GetEquipAssignment("item:45148") == "hidden", "…which stores 'hidden', not nil")
   assertf(#A2.GetItems("equipActive", "PRIEST") == 0, "…so it does NOT fall back into the source pool")
 
@@ -3120,12 +3128,12 @@ do
           "dest=bar keeps candidates out of Tracked Buffs")
   assertf(namesOf(A7.GetItems("trackedBar", "PRIEST"))["fade"] ~= nil, "…and in Tracked Bars")
 
-  -- Auto-track OFF: nothing is showing these, so Hidden is where they honestly belong.
+  -- Auto-track OFF: nothing is showing these, so Not Displayed is where they honestly belong.
   M.SetAutoTrackBuffs(false)
   assertf(namesOf(A7.GetItems("trackedBar", "PRIEST"))["fade"] == nil,
           "auto-track off empties the tracked sections of candidates")
   assertf(namesOf(A7.GetItems("hiddenAura", "PRIEST"))["fade"] ~= nil,
-          "…and lists them under Hidden instead")
+          "…and lists them under Not Displayed instead")
   M.SetAutoTrackBuffs(true)
   M.SetAutoTrackDest("both")
 
