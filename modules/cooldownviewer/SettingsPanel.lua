@@ -137,19 +137,29 @@ local function build()
   -- "bgTint"); this window is the last one that still wore it.
   if f.Bg and f.Bg.SetVertexColor then f.Bg:SetVertexColor(1, 1, 1) end
 
-  -- The Inset keeps its recessed inner border and lets the body stone show through it.
+  -- The INSET is the recessed content area, and it reads near-black over the body stone — the same
+  -- fill and the same colour as every other inset in this addon (Collections' buildInset, LFG's
+  -- category rail).
   --
-  -- It used to be given a `character-panel-background` fill of its own, on the reasoning that retail
-  -- fills the Inset with that rather than the rock marble. THAT TEXTURE WAS NEVER ONCE VISIBLE: it
-  -- was created at BACKGROUND subLevel -5 while PC's f.Bg sits at subLevel 0 and spans the whole
-  -- frame, so it drew underneath. The window has always been rock; only the tint was ever in
-  -- question. (ClassicAPI's PortraitFrameTemplate declares its own $parentBg with NO parentKey, so
-  -- PC builds f.Bg fresh at the default subLevel rather than re-texturing the template's at -6 —
-  -- which is what put the two on the wrong sides of each other.)
+  -- THE SUBLEVEL IS THE POINT. This window's previous Inset fill was created at BACKGROUND subLevel
+  -- -5 while PanelChrome's f.Bg sits at subLevel 0 and spans the entire frame, so it drew UNDERNEATH
+  -- the body stone and was never once visible — the window looked like whatever f.Bg was tinted to,
+  -- and the fill might as well not have existed. It has to sit ABOVE f.Bg.
   --
-  -- Hiding the template's own Inset marble is kept. It is the old ClassicAPI stone, and it is what
-  -- would be on show if f.Bg were ever moved or dropped.
-  if f.Inset and f.Inset.Bg then f.Inset.Bg:Hide() end
+  -- (ClassicAPI's PortraitFrameTemplate declares its own $parentBg with NO parentKey, so PanelChrome
+  -- builds f.Bg fresh at the default subLevel instead of re-texturing the template's at -6. That is
+  -- what put the two on the wrong sides of each other.)
+  if f.Inset then
+    if f.Inset.Bg then f.Inset.Bg:Hide() end   -- the template's own old-ClassicAPI marble
+    local ibg = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+    ibg:SetPoint("TOPLEFT",     f.Inset, "TOPLEFT",     0, 0)
+    ibg:SetPoint("BOTTOMRIGHT", f.Inset, "BOTTOMRIGHT", 0, 0)
+    ibg:SetTexture(0.05, 0.05, 0.06, 0.92)
+    f.InsetBg = ibg
+    -- Guards it against HideClassicChrome's BACKGROUND walk, which hides everything but f.Bg. Chrome
+    -- is applied above this today; the Keep is what makes re-applying it survivable.
+    if PC and PC.Keep then PC.Keep(f, ibg) end
+  end
   if PC and PC.ModernizeCloseButton then PC.ModernizeCloseButton(f.CloseButton) end
 
   -- Portrait: retail shows the spec icon. No specs on 3.3.5a, so use the class icon — the same

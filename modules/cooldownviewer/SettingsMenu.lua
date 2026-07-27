@@ -225,14 +225,37 @@ local function addAlertEntries(root, item)
   alertRoot:CreateRadio("Refresh", function() return isType("refresh") end, pick("refresh"))
     :SetTooltip("Refresh", refreshText)
 
-  local usableText = "Glows for as long as the spell is off cooldown|nand affordable."
-  local threshold = M.alertdata and M.alertdata.ExecuteThreshold
-    and M.alertdata.ExecuteThreshold(item.spellID, item._rankCDIDs)
-  if threshold then
-    usableText = usableText .. ("|n|nThis one also waits for a target below %d%% health."):format(threshold * 100)
+  -- ACTIVE, on aura rows only. The other three all ask questions about a COOLDOWN, and a proc with
+  -- no castable spell of its own name can answer "yes" to none of them. Offered first among the
+  -- aura-row triggers because for a tracked buff it is the obvious one.
+  if isAuraRow(item) then
+    alertRoot:CreateRadio("Active", function() return isType("active") end, pick("active"))
+      :SetTooltip("Active", "Glows for as long as this buff is on you.|n|nThe one that works for a"
+        .. " proc: it asks whether the|nbuff is up, not whether something is castable|nor off cooldown.")
   end
-  alertRoot:CreateRadio("Usable", function() return isType("usable") end, pick("usable"))
-    :SetTooltip("Usable", usableText)
+
+  -- USABLE asks the client whether a spell of this name can be cast. On an aura row that is a real
+  -- question for a self-buff you re-cast (Inner Fire, Fortitude) and a meaningless one for a proc —
+  -- IsUsableSpell does not know "Surge of Light", so the alert stores, badges, and never fires.
+  -- Offered only when the client can actually answer, which it can only do for a spell in the book.
+  --
+  -- Probed with GetSpellInfo rather than IsUsableSpell: the latter returns nil BOTH for a name it
+  -- does not know and for a known spell that is merely unaffordable right now, so reading it here
+  -- would hide the entry from anyone who opened the menu out of mana.
+  local usableCastable = (not isAuraRow(item)) or (item.spellName and GetSpellInfo(item.spellName) ~= nil)
+  if usableCastable then
+    local usableText = "Glows for as long as the spell is off cooldown|nand affordable."
+    local threshold = M.alertdata and M.alertdata.ExecuteThreshold
+      and M.alertdata.ExecuteThreshold(item.spellID, item._rankCDIDs)
+    if threshold then
+      usableText = usableText .. ("|n|nThis one also waits for a target below %d%% health."):format(threshold * 100)
+    end
+    if isAuraRow(item) then
+      usableText = usableText .. "|n|nOn a buff row this is about RE-CASTING it,|nnot about the buff being up — that is Active."
+    end
+    alertRoot:CreateRadio("Usable", function() return isType("usable") end, pick("usable"))
+      :SetTooltip("Usable", usableText)
+  end
 
   alertRoot:CreateDivider()
 

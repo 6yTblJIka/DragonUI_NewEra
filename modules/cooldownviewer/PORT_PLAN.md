@@ -2336,6 +2336,67 @@ Four mutations, each failing by name: the ticker reverted to the two spell viewe
 assertions), the `Available` gate removed, the ready-sound gate removed, and `isAuraRow` forced true
 to prove the gate does not fire on spell rows.
 
+### H.3.3. In-game fault: the alert triggers were all cooldown questions
+
+Reported after §H.3.2 shipped: "the tracked buffs still don't work with effects", with an alert
+reading `Alert: usable (Button Glow)` on **Surge of Light**. The ticker was reaching the aura viewers
+by then. The trigger could still never fire.
+
+All three ported triggers ask questions about a **cooldown** — has it finished (`available`), is it
+castable (`usable`), is the buff it applies running out (`refresh`). A proc is none of those. Surge
+of Light is a 10s aura with no castable spell of its own name, so `IsUsableSpell` answers nil,
+`available` has no cooldown edge to consume, and `refresh` covers the last 3 seconds of the 10. The
+question a tracked buff actually asks — *is this proc up* — had no trigger at all.
+
+**`active` is the fourth type**, ours and not retail's, offered on aura rows only. It reads the
+item's own `_auraActive`, which both aura mixins already maintain, so it costs nothing on the ticker
+path. **`usable` is now gated** on the client knowing a castable spell of that name — probed with
+`GetSpellInfo`, not `IsUsableSpell`, because the latter returns nil both for an unknown name and for
+a known spell you merely cannot afford right now, and reading it would have hidden the entry from
+anyone who opened the menu out of mana. A self-buff row keeps it, with a line saying it is about
+re-casting rather than about the buff being up.
+
+**A second fault, found while fixing the first.** Per-spell settings are stored under the id the
+PICKER ROW carries — rank 1 from the catalog, or whatever rank the scan first met — while a live
+viewer item carries the id the scan returned this time. For any ranked buff those differ, so
+`AL.Get(item.spellID)` found nothing: stored, badged, silently dead. `GetBuffOverrides` had already
+solved this for *assignments* by keying on name as well as id; `M.SettingsKeyForAura` applies the
+same rule to the settings stores, and the aura mixins gained the `GetSettingsKey` the spell items
+have always had. It did not bite Surge of Light (catalog id 33151 is also the applied id) which is
+why the report was about `usable` and not about everything.
+
+**Three harness gaps, each of which had been hiding one of these.**
+`IsUsableSpell` returned `true` for **any** string, so a proc row looked castable offline — the exact
+opposite of the client's answer, and the reason `usable`-on-an-aura had a passing test.
+`CreateTexture` **discarded the subLevel**, so "created underneath the thing it was meant to cover"
+had no offline symptom; that is the same fault §H.3.2's stone note describes, and it had gone
+unmodelled for four phases. And the earlier `refresh`-on-a-buff test used one spellID for both the
+stored alert and the scanned aura, so it could not have caught the rank mismatch.
+
+Six mutations, each failing by name: `active` never evaluated, `active` sharing the usable tint,
+`Active` not offered, `Usable` offered regardless, the settings key falling back to the live id, and
+the Inset fill returned to subLevel -5.
+
+### H.3.4. The window body, and the inset that was never visible
+
+The `/cdm` window read as a dark wash beside every other standalone window: `PC.ApplyModernChrome`
+tints its `f.Bg` to 0.32 grey — a downport fix for a different frame's first-paint colour flash — and
+this was the last window still wearing it. Stripped to full brightness, as Collections does.
+
+The Inset fill it carried was `character-panel-background` at BACKGROUND subLevel **-5**, while
+`f.Bg` sits at subLevel **0** and spans the whole frame. It drew underneath and **was never once
+visible**. ClassicAPI's `PortraitFrameTemplate` declares its own `$parentBg` with no parentKey
+(`UIPanelTemplates.xml:1517`), so PanelChrome builds `f.Bg` fresh at the default subLevel instead of
+re-texturing the template's at -6 — which is what put the two on the wrong sides of each other. The
+Inset now carries the near-black recessed fill every other inset in this addon uses (Collections'
+`buildInset`, LFG's rail), at a subLevel **above** the body stone.
+
+The rock FDID was never registered in the offline harness, so PanelChrome took its graceful-degrade
+branch and applied no tint at all — a guard on the body brightness passed against the very regression
+it exists to catch, and a mutation removing the untint failed to fail. Registering it fixed that, the
+registration is now itself asserted, and the stub gained `SetHorizTile`/`SetVertTile` (whose absence
+was what forced the degrade branch) plus `ButtonFrameTemplate`'s `Inset` child.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

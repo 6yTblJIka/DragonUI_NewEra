@@ -263,7 +263,16 @@ function frameMeta:CreateAnimationGroup()
   self._animGroups[#self._animGroups + 1] = ag
   return ag
 end
-function frameMeta:CreateTexture(_, layer) local t = newRegion("Texture", layer); self._regions[#self._regions+1] = t; return t end
+-- The SUBLEVEL is recorded, not dropped. Two textures on the same layer are ordered by it, and
+-- "created below the thing it was meant to cover" is a bug with no other symptom: the region exists,
+-- is shown, has the right texture and the right anchors, and is invisible. The /cdm window shipped
+-- an Inset fill that way and nobody could see it for four phases.
+function frameMeta:CreateTexture(_, layer, _, sublevel)
+  local t = newRegion("Texture", layer)
+  t._sublevel = sublevel or 0
+  self._regions[#self._regions+1] = t
+  return t
+end
 function frameMeta:CreateFontString() local t = newRegion("FontString"); self._regions[#self._regions+1] = t; return t end
 function frameMeta:SetCooldown(s, d) self._cdStart, self._cdDur = s, d end
 function frameMeta:SetDrawEdge() end
@@ -383,8 +392,17 @@ end
 -- spellID it reads it as an index past the end of the book and returns nil — no error, just a
 -- silent nil that is neither usable nor out-of-mana. Returning a blanket `true` here is what let
 -- the viewer ship rendering every icon permanently grey.
+-- 3.3.5a answers by NAME (or spellbook index), and answers NIL for a name it does not know as a
+-- castable spell. That nil is the whole point: a tracked-buff row like "Surge of Light" is an aura
+-- with no spell of that name, so the `usable` alert can never fire on it. A stub that said `true`
+-- for any string reported those rows as castable and hid it.
 function IsUsableSpell(arg)
-  if type(arg) == "string" then return true, false end
+  -- Asked through GetSpellInfo rather than the name table directly: that table is a local declared
+  -- further down this file, so naming it here reads a nil global at call time.
+  if type(arg) == "string" then
+    if not GetSpellInfo(arg) then return nil end
+    return true, false
+  end
   return nil
 end
 function IsSpellInRange() return nil end
@@ -1606,6 +1624,55 @@ do
 
   AL.SetType(10060, nil)
   AL.ClearFX(pi); AL.ClearFX(piBar)
+
+  -- ── ACTIVE: the trigger a proc can answer ────────────────────────────────────────────────────
+  -- The reported case. A proc has no cooldown to finish and no castable spell of its own name, so
+  -- the three ported triggers answer "never" between them; this one asks the only question a tracked
+  -- buff can answer. Marching ants rather than the ring, so GLOWS is where it shows.
+  BUFFS.player = { { name = "Power Infusion", rank = "", icon = "Interface\\Icons\\PI", count = 0,
+                     duration = 15, expiration = GetTime() + 14, spellID = 10060 } }
+  auraTick("player")
+  pi = auraItemFor(bIcon, "Power Infusion")
+  AL.SetType(10060, "active")
+  AL.SetFX(10060, 1)
+  nextFrame(); tick()
+  assertf(GLOWS[pi] ~= nil, "ACTIVE glows for the whole time the buff is up, not just its last 30%")
+  local activeColour = GLOWS[pi] and GLOWS[pi].color
+  assertf(activeColour and activeColour[3] == 1.00 and activeColour[1] == 0.35,
+          "…in its own tint, not borrowed from usable")
+
+  BUFFS.player = {}
+  auraTick("player"); tick()
+  assertf(GLOWS[pi] == nil, "…and stops the moment the buff drops")
+  AL.SetType(10060, nil)
+  AL.ClearFX(pi)
+
+  -- ── the settings key survives a rank change ──────────────────────────────────────────────────
+  -- The picker writes an alert under the row's id: rank 1 from the catalog, or whatever rank the
+  -- scan first met. The live item carries the id the scan returned THIS time. For a ranked buff
+  -- those differ, and an id-only lookup finds nothing — stored, badged, and silently dead.
+  --
+  -- Mind Blast stands in for a ranked aura here: the tracked row holds rank 1 (8092) and the aura on
+  -- the player is rank 3 (10947), exactly the shape a real ranked buff takes.
+  M.SetAuraAssignment("PRIEST", 8092, "icon", "Mind Blast")
+  BUFFS.player = { { name = "Mind Blast", rank = "Rank 3", icon = "Interface\\Icons\\MB", count = 0,
+                     duration = 15, expiration = GetTime() + 14, spellID = 10947 } }
+  auraTick("player")
+  local ranked = auraItemFor(bIcon, "Mind Blast")
+  assertf(ranked ~= nil and ranked.spellID == 10947, "the live tile carries the rank the scan found")
+  assertf(ranked:GetSettingsKey() == 8092,
+          "…but its settings key is the LISTED rank the picker wrote under (" ..
+          tostring(ranked and ranked:GetSettingsKey()) .. ")")
+
+  AL.SetType(8092, "active")
+  AL.SetFX(8092, 1)
+  nextFrame(); tick()
+  assertf(GLOWS[ranked] ~= nil,
+          "…so an alert stored on the rank-1 row fires on the rank-3 aura the player actually has")
+  AL.SetType(8092, nil); AL.ClearFX(ranked)
+  M.SetAuraAssignment("PRIEST", 8092, nil, "Mind Blast")
+
+  BUFFS.player = {}
   auraTick("player")
   M.SetAutoTrackBuffs(realAuto)
 end
@@ -1734,6 +1801,23 @@ if sp then
   -- would fall back to if the body fill were ever moved off subLevel 0.
   assertf(not (sp.Inset and sp.Inset.Bg and sp.Inset.Bg:IsShown()),
           "the template's Inset marble stays hidden under our own stone")
+
+  -- THE RECESSED INSET, near-black over the stone. Asserted on the SUBLEVEL as well as on existence,
+  -- because the previous fill had every other property right — created, shown, anchored to the Inset,
+  -- correct texture — and sat one layer UNDER the body stone, so none of it was ever on screen. That
+  -- is the failure this pair exists to name, and it is invisible to any check that only asks whether
+  -- the texture is there.
+  assertf(sp.InsetBg ~= nil and sp.InsetBg:IsShown(), "the Inset has its own recessed fill")
+  assertf(sp.InsetBg._sublevel > sp.Bg._sublevel,
+          ("…ABOVE the body stone, not under it (subLevel %d vs %d)")
+            :format(sp.InsetBg._sublevel, sp.Bg._sublevel))
+  -- SetTexture(r, g, b, a) — the 3.3.5a colour form; the stub keeps the first argument, so a red
+  -- channel this dark is the whole statement.
+  local insetR = sp.InsetBg:GetTexture()
+  assertf(type(insetR) == "number" and insetR < 0.2,
+          "…and it is near-black, not another sheet of stone")
+  local ip1, irel1 = sp.InsetBg:GetPoint(1)
+  assertf(ip1 == "TOPLEFT" and irel1 == sp.Inset, "…covering the Inset rect exactly")
 
   local esc = false
   for _, n in ipairs(UISpecialFrames) do if n == "NE_CooldownViewerSettings" then esc = true end end
@@ -2518,8 +2602,27 @@ do
   local auraAlert = auraRoot:Child("Alert")
   assertf(auraAlert ~= nil, "an aura row still gets an Alert submenu")
   assertf(auraAlert:Child("Available") == nil, "…without Available, which needs a cooldown to finish")
-  assertf(auraAlert:Child("Refresh") ~= nil and auraAlert:Child("Usable") ~= nil,
-          "…but keeping the two that can fire on an aura")
+  assertf(auraAlert:Child("Refresh") ~= nil, "…keeping Refresh, which reads the aura's own decay")
+  assertf(auraAlert:Child("Active") ~= nil, "…and gaining Active, the trigger a proc can answer")
+  -- The reported case, in miniature: a proc has no castable spell of its own name, so Usable can
+  -- never fire on it. It used to be offered anyway, which is how "Alert: usable (Button Glow)" came
+  -- to be configured on Surge of Light and do nothing at all.
+  assertf(auraAlert:Child("Usable") == nil,
+          "…and losing Usable, because the client knows no castable spell by this name")
+
+  -- …but NOT losing it on a buff the player can actually re-cast. The gate reads the client, so a
+  -- self-buff row keeps the entry; a gate that just said "auras never" would fail this.
+  M.NoteSeenAura(10060, "Power Infusion", "Interface\\Icons\\PI", 15)
+  S.RefreshLayout()
+  local castGrid, castTile = S._categories.hiddenAura, nil
+  for i = 1, (castGrid and castGrid._count or 0) do
+    if castGrid.items[i].spellName == "Power Infusion" then castTile = castGrid.items[i] end
+  end
+  assertf(castTile ~= nil, "an aura row whose name IS a castable spell")
+  local castAlert = NE.menu.BuildRoot(S.ItemMenuGenerator(castTile, "PRIEST")):Child("Alert")
+  assertf(castAlert:Child("Usable") ~= nil, "…keeps Usable, because re-casting it is a real question")
+  assertf(castAlert:Child("Usable").tipText:find("RE-CASTING", 1, true) ~= nil,
+          "…and says so, so it is not mistaken for the buff being up")
   assertf(auraAlert:Child("None") ~= nil,
           "…and None, so a layout that stored Available before the gate can still be cleared")
   assertf(auraAlert:Child("Refresh").tipText:find("no aura", 1, true) == nil,

@@ -17,6 +17,15 @@
 --               below an execute threshold, or a curated reactive ability becoming castable. Only
 --               those spells ever flash; flashing every ready spell is explicitly not the feature.
 --
+-- A FOURTH, which is ours and not retail's:
+--
+--   active    — the tracked aura is on the player right now. AURA ROWS ONLY. Retail has no such
+--               event because retail's alerts belong to cooldowns; ours are offered on tracked
+--               buffs too, and all three ported events ask questions about a COOLDOWN. For a proc
+--               with no castable spell of its own name — Surge of Light, a trinket proc, anything
+--               the player does not press — the honest answer to every one of them is "never", and
+--               the only question worth asking is whether the proc is up. See inActiveState.
+--
 -- ── THE PANDEMIC BORDER: WHAT PORTS, AND WHAT DOES NOT ──────────────────────────────────────────
 --
 -- Upstream renders `refresh` with a 1:1 port of retail's CooldownPandemicFXTemplate: a static ring
@@ -97,6 +106,7 @@ local TINT = {
   available = { 0.35, 1.00, 0.35, 1 },
   refresh   = { 1.00, 0.50, 0.10, 1 },
   usable    = { 0.95, 0.95, 0.32, 1 },
+  active    = { 0.35, 0.75, 1.00, 1 },
 }
 local GLOW_KEY = "NECDMAlert"
 
@@ -507,6 +517,24 @@ local function inUsableState(item)
   return isSpellUsableNow(sid, item)
 end
 
+-- "Active" = the tracked aura is on the player right now. AURA ROWS ONLY, and it exists because the
+-- other three all answer questions about a COOLDOWN: has it finished, is it castable, is the buff it
+-- applies running out. None of those is the question a tracked buff asks, which is simply "is this
+-- proc up". A Priest assigning an alert to Surge of Light — a 10s proc with no castable spell of its
+-- own name — had `usable` (never fires: IsUsableSpell does not know the name), `available` (never
+-- fires: no cooldown to finish) and `refresh` (fires for the last 3 seconds of the 10). That is the
+-- report this answers.
+--
+-- The item's own cached flag first: both aura mixins maintain `_auraActive` from the scan that built
+-- them, so this costs nothing on the path that matters. The name lookup is the fallback for an item
+-- that has no such flag, which is any spell tile that somehow carries this type.
+local function inActiveState(item)
+  if item._auraActive ~= nil then return item._auraActive and true or false end
+  local name = item.spellName
+  if not (name and NE.aura and NE.aura.FindByName) then return false end
+  return NE.aura.FindByName("player", name) ~= nil
+end
+
 -- Evaluate one item's assigned alert. `available` is edge-triggered elsewhere, so the ticker leaves
 -- its flash alone rather than clearing it every pass.
 local function evalItem(item)
@@ -532,6 +560,8 @@ local function evalItem(item)
     on = inRefreshWindow(item, cfg.window)
   elseif cfg.type == "usable" then
     on = inUsableState(item)
+  elseif cfg.type == "active" then
+    on = inActiveState(item)
   end
 
   if on then AL.ShowFX(item, cfg.fx, cfg.type) else AL.ClearFX(item) end

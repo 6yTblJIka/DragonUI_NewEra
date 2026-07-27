@@ -39,6 +39,22 @@ M.RefreshAuraDebuffBorder = refreshAuraDebuffBorder
 
 local QUESTION_MARK = "Interface\\Icons\\INV_Misc_QuestionMark"
 
+-- Per-spell settings (alert, ready sound) are stored under the id the PICKER ROW carries, which for
+-- a ranked buff is not the id the aura scan hands this item. Shared by both mixins, and memoized per
+-- binding: the ticker asks 5x a second, and M.SettingsKeyForAura walks the candidate pool.
+--
+-- The spell items' own GetSettingsKey (ItemMixins.lua) exists for the same reason one rung along —
+-- there it is the trained rank vs the listed rank. Same fault, same shape, different table.
+local function auraSettingsKey(self)
+  local sid = self.spellID
+  if not sid then return nil end
+  if self._settingsKeyFor ~= sid then
+    self._settingsKeyFor = sid
+    self._settingsKey    = M.SettingsKeyForAura and M.SettingsKeyForAura(sid, self.spellName) or sid
+  end
+  return self._settingsKey
+end
+
 -- ════════════════════════════════════════════════════════════════════════════════════════════════
 -- BuffIcon tile
 -- ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -117,6 +133,8 @@ function AuraItem:RefreshAura()
 
   if self.hideWhenInactive then self:UpdateShownState() end
 end
+
+function AuraItem:GetSettingsKey() return auraSettingsKey(self) end
 
 -- Forwarding alias so the shared viewer dispatch can call one method name on either item type.
 function AuraItem:RefreshCooldown() self:RefreshAura() end
@@ -358,6 +376,8 @@ function BarItem:RefreshCooldownInfo()
   end
   setShown(self.Bar.Pip, true)
 end
+
+function BarItem:GetSettingsKey() return auraSettingsKey(self) end
 
 function BarItem:RefreshCooldown() self:RefreshAura() end
 

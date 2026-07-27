@@ -907,6 +907,34 @@ function M.GetAuraCandidates(class, includeUntalented)
   return out
 end
 
+-- The key an aura's per-spell SETTINGS (alert, ready sound) are stored under.
+--
+-- The picker writes them under the row's own spellID: a catalog row is rank 1, a seen row is
+-- whatever rank was first met. A live viewer item carries the id the aura scan actually returned.
+-- Those are the same id for an unranked proc and different ids the moment a buff has ranks, and an
+-- id-only lookup then finds nothing at all — the alert is stored, the badge is lit, and the viewer
+-- never sees it. GetBuffOverrides already solved exactly this for ASSIGNMENTS by keying on name as
+-- well as id; this is the same rule applied to the settings stores.
+--
+-- Resolution order matches the picker's own: an explicit tracked entry wins, then the candidate pool
+-- (catalog ∪ seen), then the id we were handed. Callers memoize per binding — see the aura mixins'
+-- GetSettingsKey — because this allocates and the ticker runs at 5Hz.
+function M.SettingsKeyForAura(spellID, name)
+  if not name then return spellID end
+  local lower = name:lower()
+  local _, class = UnitClass("player")
+  if not class then return spellID end
+
+  for _, e in ipairs(M.GetTrackedAuraList(class) or {}) do
+    local nm = e.name or (e.spellID and GetSpellInfo(e.spellID))
+    if e.spellID and nm and nm:lower() == lower then return e.spellID end
+  end
+  for _, c in ipairs(M.GetAuraCandidates(class, true) or {}) do
+    if c.spellID and c.name and c.name:lower() == lower then return c.spellID end
+  end
+  return spellID
+end
+
 -- Auras never to auto-track, by spellID. Starts empty; populate as real noise turns up.
 M.BUFFBAR_EXCLUDE = M.BUFFBAR_EXCLUDE or {}
 
