@@ -127,18 +127,29 @@ local function build()
     PC.Apply(f, { layout = "PortraitFrameTemplate", title = "Cooldown Manager", noPortrait = true })
   end
 
-  -- Retail fills the Inset with character-panel-background rather than the rock marble. That atlas
-  -- is already registered by modules/character/Assets.lua. PC.Keep guards it against any later
-  -- BACKGROUND-layer teardown.
-  if f.Inset and NE.tex and NE.tex.SetAtlas then
-    if f.Inset.Bg then f.Inset.Bg:Hide() end
-    local bg = f:CreateTexture(nil, "BACKGROUND", nil, -5)
-    bg:SetPoint("TOPLEFT",     f.Inset, "TOPLEFT",     0, 0)
-    bg:SetPoint("BOTTOMRIGHT", f.Inset, "BOTTOMRIGHT", 0, 0)
-    NE.tex.SetAtlas(bg, "character-panel-background", false)
-    f.bg = bg
-    if PC and PC.Keep then PC.Keep(f, bg) end
-  end
+  -- THE BODY: plain, full-brightness UI-Background-Rock — the same stone every other from-scratch
+  -- standalone window in this addon shows (Guild, LFG, Professions, AuctionHouse, Social,
+  -- Collections, Encounter Journal).
+  --
+  -- PC.ApplyModernChrome tints its own f.Bg to 0.32 grey. That tint is a DOWNPORT fix for a
+  -- different frame's first-paint colour flash, and on a window this size it reads as a dark wash
+  -- rather than stone. Collections strips it for exactly this reason (modules/collections/Window.lua
+  -- "bgTint"); this window is the last one that still wore it.
+  if f.Bg and f.Bg.SetVertexColor then f.Bg:SetVertexColor(1, 1, 1) end
+
+  -- The Inset keeps its recessed inner border and lets the body stone show through it.
+  --
+  -- It used to be given a `character-panel-background` fill of its own, on the reasoning that retail
+  -- fills the Inset with that rather than the rock marble. THAT TEXTURE WAS NEVER ONCE VISIBLE: it
+  -- was created at BACKGROUND subLevel -5 while PC's f.Bg sits at subLevel 0 and spans the whole
+  -- frame, so it drew underneath. The window has always been rock; only the tint was ever in
+  -- question. (ClassicAPI's PortraitFrameTemplate declares its own $parentBg with NO parentKey, so
+  -- PC builds f.Bg fresh at the default subLevel rather than re-texturing the template's at -6 —
+  -- which is what put the two on the wrong sides of each other.)
+  --
+  -- Hiding the template's own Inset marble is kept. It is the old ClassicAPI stone, and it is what
+  -- would be on show if f.Bg were ever moved or dropped.
+  if f.Inset and f.Inset.Bg then f.Inset.Bg:Hide() end
   if PC and PC.ModernizeCloseButton then PC.ModernizeCloseButton(f.CloseButton) end
 
   -- Portrait: retail shows the spec icon. No specs on 3.3.5a, so use the class icon — the same

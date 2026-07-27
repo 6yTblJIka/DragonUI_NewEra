@@ -37,6 +37,12 @@ local function newRegion(kind, layer)
     return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
   end
   function r:SetDesaturated(v) self._desat = v end
+  -- Tiling. Recorded because a body fill that does not tile stretches one 1024px stone across the
+  -- whole window, and because their ABSENCE was hiding more than that: PanelChrome calls these on
+  -- the branch it takes when the rock art resolves, so a stub without them could only ever run the
+  -- graceful-degrade branch no player sees.
+  function r:SetHorizTile(v) self._horizTile = v end
+  function r:SetVertTile(v)  self._vertTile  = v end
   -- Anchors are RECORDED, in the same shape frames use. Discarding them meant a texture's geometry
   -- was unassertable, which is how the icon/frame fit went unnoticed: the overlay art was registered
   -- and the icon overshot its border by four pixels with nothing able to see it.
@@ -94,6 +100,20 @@ function CreateFrame(kind, name, parent, template)
   if parent and parent._children then parent._children[#parent._children + 1] = f end
   if name then _G[name] = f end
   allFrames[#allFrames + 1] = f
+
+  -- Templates are otherwise ignored here, with ONE exception. ButtonFrameTemplate ships an Inset
+  -- child frame whose $parentBg carries parentKey="Bg" — the old ClassicAPI marble, BACKGROUND
+  -- subLevel -5. It is the one template-supplied region our panels reach for by name, and a guard
+  -- that says "the marble stays hidden" asserts precisely nothing while f.Inset is nil.
+  --
+  -- Note what is NOT modelled: the template's own $parentBg on the frame itself has NO parentKey
+  -- (UIPanelTemplates.xml:1517), which is exactly why PanelChrome builds f.Bg fresh instead of
+  -- re-texturing that one — and why the two ended up on opposite sides of subLevel 0.
+  if template == "ButtonFrameTemplate" then
+    local inset = CreateFrame("Frame", name and (name .. "Inset"), f)
+    inset.Bg = inset:CreateTexture(nil, "BACKGROUND", nil, -5)
+    f.Inset = inset
+  end
   return f
 end
 
@@ -723,6 +743,15 @@ for _, rel in ipairs(FILES) do
     os.exit(1)
   end
 end
+
+-- The rock body fill (UI-Background-Rock), which Textures/Assets.lua registers in the real client.
+-- PanelChrome only takes its REAL branch — tiled rock, then a 0.32 grey tint — when this FDID
+-- resolves to a local file; otherwise it degrades to a flat solid colour and never tints anything.
+-- Without this line every chrome'd window in the suite silently ran the graceful-degrade path, so a
+-- guard on the body's tint asserted nothing at all and passed against the very regression it exists
+-- to catch. Registered on its own rather than by loading Textures/Assets.lua whole, which would pull
+-- in the full atlas sheet set this suite has no other use for.
+NE.tex.RegisterLocal(374155, "Interface\\AddOns\\DragonUI_NewEra\\Textures\\Common\\374155-uibackground-rock.blp")
 
 local M = NE.cooldownviewer
 local fails = 0
@@ -1681,6 +1710,30 @@ if sp then
   assertf(sp.settingsTab.displayMode == "settings", "…the third being Settings, not Group Buffs")
   assertf(sp.scroll ~= nil and sp.content ~= nil, "scroll body built")
   assertf(sp.search ~= nil, "search box built")
+
+  -- THE BODY STONE. PC.ApplyModernChrome tints its f.Bg to 0.32 grey for a first-paint fix that
+  -- belongs to a different frame; this window wore it and read as a dark wash next to every other
+  -- standalone window, which is what was reported. Asserted on the RESULT rather than on "we called
+  -- SetVertexColor", because the tint is applied by shared code we do not own and could come back.
+  assertf(sp.Bg ~= nil, "the panel has a body fill")
+  local br, bg_, bb = sp.Bg:GetVertexColor()
+  assertf(br == 1 and bg_ == 1 and bb == 1,
+          ("body stone at full brightness, not PC's 0.32 wash (%.2f, %.2f, %.2f)"):format(br, bg_, bb))
+  -- The PRECONDITION for the guard above, asserted so it cannot quietly stop holding. PanelChrome
+  -- tints only on the branch where the rock art resolves; with the art unregistered it degrades to a
+  -- flat fill, applies no tint, and the brightness check passes on a window with no stone in it at
+  -- all. That is not hypothetical — it is exactly how this suite behaved until the rock was
+  -- registered above, and a mutation removing the untint failed to fail because of it.
+  --
+  -- Deliberately NOT asserted on sp.Bg:GetTexture(): NE.nineslice is absent offline, so
+  -- ApplyModernChrome finishes through applyFallbackBackdrop and overwrites the texture with a solid
+  -- colour. The tint it set on the way past is what survives, and is what this pair actually checks.
+  assertf(NE.tex.Local(374155) ~= nil,
+          "…and the rock art resolves, which is what makes that brightness guard non-vacuous")
+  -- The Inset's own marble stays hidden. It is the OLD ClassicAPI stone, and it is what the window
+  -- would fall back to if the body fill were ever moved off subLevel 0.
+  assertf(not (sp.Inset and sp.Inset.Bg and sp.Inset.Bg:IsShown()),
+          "the template's Inset marble stays hidden under our own stone")
 
   local esc = false
   for _, n in ipairs(UISpecialFrames) do if n == "NE_CooldownViewerSettings" then esc = true end end
