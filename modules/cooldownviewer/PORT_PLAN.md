@@ -5,7 +5,7 @@ TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global conventio
 
 **Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets), 6 (loose
 ends) and 7 (the tracked-aura catalog) implemented — the whole of both phasing tables except the
-deliberate cuts. Offline harnesses pass (`qa/offline/`, 582 boot assertions). Phases 1-3 and the 4b-1
+deliberate cuts. Offline harnesses pass (`qa/offline/`, 581 boot assertions). Phases 1-3 and the 4b-1
 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
 fixed, §G.7.1/§G.7.2).
 
@@ -1974,6 +1974,39 @@ the property that actually fixes the artefact.
 
 Retail's mask is not what we lost here. A mask clips an icon that was already anchored on whole
 pixels; it does not centre anything. What we lost was the snapping, and that we could always have had.
+
+### H.2.8 The glow was under the sweep the whole time
+
+Four passes were spent on this glow, and every reported symptom had one cause.
+
+**`Cooldown` is a CHILD FRAME of the tile, and a child frame draws above EVERY layer of its parent.**
+BACKGROUND, OVERLAY 0, OVERLAY 7 — all of them are below it. The halo was under the rotating sweep no
+matter which draw layer it was given, and the sweep is a *wedge*, so which part of the halo survived
+depended on where the sweep had got to. Read back with that in hand, the reports are one fault:
+
+| reported | actually |
+|---|---|
+| "icon glow effect inside frame" | the swept wedge covering part of the ring |
+| "doesn't align to the top or right hand sides" | the wedge's current position, not an anchor |
+| "the swipe covers the glow on the right but not the left" | said outright, and I read it as two faults |
+| pixel-snapping "didn't fix anything" | correct: pixels were never this one's problem |
+
+The third row is the uncomfortable one. The owner described the mechanism exactly, and I treated the
+swipe and the glow as two separate misalignments to be reconciled rather than one drawing over the
+other.
+
+The fix is a **sibling frame with a higher frame level**, which is the only thing that outranks a
+child frame. Art, blend and rect are unchanged from the version that was already there. Note this is
+the same structural insight as the reverted flat-ring experiment (§H.2.6) — that version hosted its
+strips in a frame *and* replaced the art, so when the art was rejected the insight went with it. It
+was the frame that mattered.
+
+What the detours were worth keeping: the region is on top of the frame shadow rather than behind it
+(§H.2.6 — a ring with a transparent middle, not a filled glow), and the icon inset snaps to whole
+pixels (§H.2.7 — a genuine artefact, just not this one).
+
+The assertion that closes it compares the glow's frame level against the Cooldown's. A draw-layer
+assertion could never have caught this, because the layer was never wrong in the terms it could see.
 
 ### 8d. Bar theming
 

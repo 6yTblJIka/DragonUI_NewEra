@@ -58,27 +58,6 @@ local function createItem(parent, category)
   -- the same rect deepen it; M.GetFrameStrength decides how many are shown.
   M.BuildFrameStack(item, ox, oy)
 
-  -- DOWNPORT (§H.2 8c): retail marks a spell whose own buff is up by tinting its swipe gold, and
-  -- SetSwipeColor is WoD+. The substitute is a gold halo, oversized because the glow texture keeps
-  -- its ring inset within a wide transparent margin (see M.BuffGlowInset).
-  --
-  -- OVERLAY sublevel 7 — ON TOP, above the frame's shadow and its stacked copies. It spent two passes
-  -- on BACKGROUND on my reasoning that the texture was a filled square glow that would wash light
-  -- across the icon if drawn over it. That was inferred from a symptom and never checked, and it is
-  -- wrong: this is a RING with a transparent middle, which is why the same texture is drawn straight
-  -- over item icons in four other places in this addon — modules/professions/Crafting.lua:463 uses
-  -- exactly this layer and sublevel. Behind the shadow it was being suppressed by it; in front of it
-  -- there is nothing left to eat it.
-  --
-  -- Anchored to the ICON, not the tile, so the two are concentric by construction and the halo
-  -- follows the inset slider without being told about it.
-  item.BuffGlow = item:CreateTexture(nil, "OVERLAY")
-  local go = M.BuffGlowInset(spec.size)
-  item.BuffGlow:SetPoint("TOPLEFT", item.Icon, "TOPLEFT", -go, go)
-  item.BuffGlow:SetPoint("BOTTOMRIGHT", item.Icon, "BOTTOMRIGHT", go, -go)
-  item.BuffGlow:SetDrawLayer("OVERLAY", 7)
-  item.BuffGlow:Hide()
-
   -- DOWNPORT: the three regions below are `setAllPoints` on the TILE upstream, and are anchored to the
   -- ICON's rect here. Retail can use the tile because its swipe, shadow and flash are rounded art cut
   -- to the masked icon; ours are the engine's plain sweep, a flat shade and a square-ish sprite, so at
@@ -103,6 +82,11 @@ local function createItem(parent, category)
   item.CooldownFlash.Flipbook = item.CooldownFlash:CreateTexture(nil, "ARTWORK")
   item.CooldownFlash.Flipbook:SetAllPoints(item.CooldownFlash)
   item.CooldownFlash.Flipbook:SetAlpha(0)
+
+  -- DOWNPORT (§H.2 8c): retail marks a spell whose own buff is up by tinting its swipe gold, and
+  -- SetSwipeColor is WoD+. The substitute is a gold halo. Built LAST and hosted in its own frame so
+  -- it can outrank the Cooldown — see M.BuildBuffGlow for why a draw layer could never do it.
+  item.BuffGlow = M.BuildBuffGlow(item, spec.size)
 
   -- XML KeyValues.
   item.cooldownFont = spec.cooldownFont

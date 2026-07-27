@@ -1653,39 +1653,31 @@ do
   local glow = mb.BuffGlow
   assertf(glow ~= nil, "the tile has a buff-glow region")
 
-  -- ADD blending emits src.rgb x alpha. The first version of this drew a gold additive copy of the
-  -- tile's own IconOverlay atlas, and 6704514's overlay cell is PURE BLACK — (0,0,0) throughout,
-  -- with only an alpha ramp — because it is a drop shadow, not a metal frame. Everything about that
-  -- version passed: the atlas resolved, the region was shown, the blend was ADD, the tint was gold.
-  -- It rendered nothing, because zero times gold is zero. So the assertion is on the SOURCE: an
-  -- additive region has to be given art that can carry light, and none of the sheet we ship can.
-  local tx = glow:GetTexture()
-  assertf(tx == M.BUFF_GLOW_TEXTURE, "…drawn from the stock soft-glow ring, not a sheet atlas")
-  assertf(not tostring(tx):find("CooldownViewer", 1, true),
-    "…and NOT from the CoolDownManager sheet, whose art is black and emits nothing under ADD")
-  assertf(glow:GetBlendMode() == "ADD", "…blended additively, so it lights rather than darkens")
-
-  -- Oversized, not matched to the frame or the icon: the ring has a wide transparent margin of its
-  -- own, and at the tile's rect the visible part falls inside the icon instead of on its edge.
-  local gp, _, _, gx, gy = glow:GetPoint(1)
-  local over = M.BuffGlowInset(50)
-  assertf(gp == "TOPLEFT" and gx == -over and gy == over,
-    ("…and oversized past the tile by %dpx (got %s,%s)"):format(over, tostring(gx), tostring(gy)))
-  local ox = select(4, mb.IconOverlay:GetPoint(1))
-  assertf(over > math.abs(ox), "…which is wider than the frame art's own overhang")
-  -- ON TOP, above the frame's shadow and its stacked copies. It sat on BACKGROUND for two passes on
-  -- the belief that this texture is a filled glow that would veil the icon — inferred from a symptom,
-  -- never checked, and wrong: it is a ring with a transparent middle, drawn straight over item icons
-  -- in four other places in this addon (modules/professions/Crafting.lua:463 uses this exact layer
-  -- and sublevel). Behind the shadow, the shadow ate it.
-  local layer, sub = glow:GetDrawLayer()
-  assertf(layer == "OVERLAY" and (sub or 0) >= 7,
-    ("…drawn above the frame art, not behind it (%s %s)"):format(tostring(layer), tostring(sub)))
-  local _, stackSub = mb.IconOverlayStack[1]:GetDrawLayer()
-  assertf((sub or 0) > (stackSub or 0),
-    "…and above the stacked copies specifically, which are what was suppressing it")
-  local r, g, b = glow:GetVertexColor()
+  -- The texture lives INSIDE the glow frame now. Everything about the art is unchanged; what changed
+  -- is what hosts it.
+  local tex = glow.Texture
+  assertf(tex ~= nil, "the glow hosts its texture in a frame of its own")
+  assertf(tex:GetTexture() == M.BUFF_GLOW_TEXTURE,
+    "…still the stock soft-glow ring, not a sheet atlas")
+  assertf(not tostring(tex:GetTexture()):find("CooldownViewer", 1, true),
+    "…and NOT the CoolDownManager sheet, whose art is black and emits nothing under ADD")
+  assertf(tex:GetBlendMode() == "ADD", "…blended additively, so it lights rather than darkens")
+  local r, g, b = tex:GetVertexColor()
   assertf(r > g and g > b, "…in gold, the colour retail gives the swipe it cannot set here")
+
+  -- ABOVE THE COOLDOWN, and this is the assertion the whole glow saga needed. `Cooldown` is a CHILD
+  -- FRAME, and a child frame draws above EVERY layer of its parent — BACKGROUND and OVERLAY 7 alike.
+  -- So the halo was under the rotating sweep whichever layer it was given, and which part of it
+  -- survived depended on where the sweep had got to. Only a higher frame level beats a child frame.
+  assertf(glow:GetFrameLevel() > mb.Cooldown:GetFrameLevel(),
+    ("…and outranks the cooldown sweep (%d vs %d)")
+      :format(glow:GetFrameLevel(), mb.Cooldown:GetFrameLevel()))
+
+  -- Oversized past the icon, and anchored to the ICON so the two stay concentric.
+  local gp, rel, _, gx, gy = glow:GetPoint(1)
+  local over = M.BuffGlowInset(50)
+  assertf(gp == "TOPLEFT" and rel == mb.Icon and gx == -over and gy == over,
+    ("…hung off the icon by %dpx (got %s,%s)"):format(over, tostring(gx), tostring(gy)))
 
   -- The state machine. A tile with no aura of its own must not glow, or the signal means nothing.
   BUFFS.player[1] = nil

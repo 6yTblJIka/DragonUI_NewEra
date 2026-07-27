@@ -42,13 +42,8 @@ local function applyItemAtlases(item)
   end
   if item.OutOfRange  then set(item.OutOfRange,  "UI-CooldownManager-OORshadow",       false) end
 
-  -- The buff glow (see ItemMixin:SetBuffGlow). Deliberately NOT an atlas from the sheet above.
-  if item.BuffGlow then
-    item.BuffGlow:SetTexture(M.BUFF_GLOW_TEXTURE)
-    item.BuffGlow:SetBlendMode("ADD")
-    item.BuffGlow:SetVertexColor(M.COLOR_BUFF_GLOW[1], M.COLOR_BUFF_GLOW[2], M.COLOR_BUFF_GLOW[3],
-                                 M.COLOR_BUFF_GLOW[4])
-  end
+  -- The buff glow textures itself in M.BuildBuffGlow — it is a frame with a texture inside, not a
+  -- region on the tile, so it has nothing to collect here.
 
   -- The ready-flash sprite. The retail GCD flipbook atlas is not registered on this client, so give
   -- the texture the fallback highlight the stepper pulses instead (see the Ready flash section).
@@ -296,6 +291,41 @@ function M.BuffGlowInset(size)
   local over = math.floor((size or 0) * M.BUFF_GLOW_OVERSIZE + 0.5)
   if over < M.BUFF_GLOW_MIN_OVER then over = M.BUFF_GLOW_MIN_OVER end
   return over
+end
+
+-- The halo, in its OWN FRAME. This is the part no draw layer could have fixed, and it is why moving
+-- the region from BACKGROUND to OVERLAY 7 changed nothing the owner could see.
+--
+-- `Cooldown` is a CHILD FRAME of the tile, and a child frame draws above EVERY layer of its parent —
+-- BACKGROUND and OVERLAY 7 alike. The halo was therefore under the sweep no matter which layer it was
+-- given, and the sweep is a rotating wedge, so which part of the halo survived depended on where the
+-- sweep happened to be. That is every symptom reported against this glow, in one mechanism: "doesn't
+-- align to the top or right hand sides", "the swipe covers the glow on the right but not the left",
+-- and a snapped-to-pixel inset that "didn't fix anything" — because pixels were never the problem
+-- on this one.
+--
+-- A sibling frame with a higher frame level is the only thing that outranks a child frame. The
+-- texture inside it is unchanged: same art, same ADD, same rect.
+function M.BuildBuffGlow(parent, size)
+  if not parent then return nil end
+  local go = M.BuffGlowInset(size)
+  local f = CreateFrame("Frame", nil, parent)
+  -- Anchored to the ICON, not the tile, so the two are concentric by construction and the halo
+  -- follows the inset slider without being told about it.
+  f:SetPoint("TOPLEFT", parent.Icon, "TOPLEFT", -go, go)
+  f:SetPoint("BOTTOMRIGHT", parent.Icon, "BOTTOMRIGHT", go, -go)
+  local base = (parent.Cooldown and parent.Cooldown.GetFrameLevel and parent.Cooldown:GetFrameLevel())
+               or (parent.GetFrameLevel and parent:GetFrameLevel()) or 1
+  f:SetFrameLevel(base + 3)
+
+  f.Texture = f:CreateTexture(nil, "OVERLAY")
+  f.Texture:SetAllPoints(f)
+  f.Texture:SetTexture(M.BUFF_GLOW_TEXTURE)
+  f.Texture:SetBlendMode("ADD")
+  f.Texture:SetVertexColor(M.COLOR_BUFF_GLOW[1], M.COLOR_BUFF_GLOW[2], M.COLOR_BUFF_GLOW[3],
+                           M.COLOR_BUFF_GLOW[4])
+  f:Hide()
+  return f
 end
 
 -- Tunable: warm gold, the colour retail gives the swipe it will not let us tint here.
