@@ -42,13 +42,8 @@ local function applyItemAtlases(item)
   end
   if item.OutOfRange  then set(item.OutOfRange,  "UI-CooldownManager-OORshadow",       false) end
 
-  -- The buff glow (see ItemMixin:SetBuffGlow). Deliberately NOT an atlas from the sheet above.
-  if item.BuffGlow then
-    item.BuffGlow:SetTexture(M.BUFF_GLOW_TEXTURE)
-    item.BuffGlow:SetBlendMode("ADD")
-    item.BuffGlow:SetVertexColor(M.COLOR_BUFF_GLOW[1], M.COLOR_BUFF_GLOW[2], M.COLOR_BUFF_GLOW[3],
-                                 M.COLOR_BUFF_GLOW[4])
-  end
+  -- The buff glow builds and textures itself now (M.BuildBuffGlow) — it is a frame of four strips
+  -- rather than one region, and nothing about it comes from an atlas.
 
   -- The ready-flash sprite. The retail GCD flipbook atlas is not registered on this client, so give
   -- the texture the fallback highlight the stepper pulses instead (see the Ready flash section).
@@ -276,24 +271,59 @@ end
 -- colour is multiplied over it. The atlas resolved, the region was shown, and the maths produced an
 -- invisible texture — a different route to 8a's exact failure mode.
 --
--- So: the stock soft-glow ring, which is what this repo already uses for the bag rarity glow, the
--- auction detail ring and the profession reagent slots (modules/bags/BagSkin.lua:29). It is present
--- on every 3.3.5a client, it is pale rather than black, and it is built to be tinted.
-M.BUFF_GLOW_TEXTURE = "Interface\\Buttons\\UI-ActionButton-Border"
+-- The SECOND attempt used the stock soft-glow ring (`UI-ActionButton-Border`, ADD, gold), drawn
+-- behind the icon so the icon masked its filled middle. It emitted light, but it could not be made to
+-- line up: the visible part of a soft square glow is wherever its own falloff happens to survive
+-- whatever is drawn over it, and here that is the frame shadow at 66% black across the whole border
+-- band. What escaped was a thin gold edge on the sides where the shadow had faded — reported first as
+-- "the glow doesn't align to the top or right hand sides", which is exactly what an alignment problem
+-- looks like when the truth is that most of the ring is being eaten.
+--
+-- So the third version stops asking a soft texture to land in the right place, and DRAWS THE EDGE:
+-- four thin strips of flat colour on the icon's own rect, in a frame above the shadow. A child frame
+-- outranks every layer of its parent, so nothing suppresses it; the strips have no middle, so nothing
+-- veils the icon; and "aligned to the icon" is not an outcome of blending any more, it is the anchor.
+M.BUFF_GLOW_SOLID = "Interface\\Buttons\\WHITE8X8"
 
--- Oversize, as a fraction of the tile edge; 35% is the figure the three call sites above converged
--- on. The ring is not hollow — it is a filled square glow, brightest near its edge — so at the tile's
--- own rect it washes light straight across the icon art ("icon glow effect inside frame"). The fix
--- is the DRAW LAYER, not this number: Viewers.lua puts the region on BACKGROUND, where the opaque
--- icon masks the interior and only the halo past the icon survives. This then just controls how far
--- that halo reaches.
-M.BUFF_GLOW_OVERSIZE = 0.35
-M.BUFF_GLOW_MIN_OVER = 6
+-- Thickness in tile pixels. Scaled, so a 30px Utility tile does not wear a 50px tile's border.
+function M.BuffGlowThickness(size)
+  local th = math.floor((size or 0) * 0.05 + 0.5)
+  if th < 2 then th = 2 end
+  return th
+end
 
-function M.BuffGlowInset(size)
-  local over = math.floor((size or 0) * M.BUFF_GLOW_OVERSIZE + 0.5)
-  if over < M.BUFF_GLOW_MIN_OVER then over = M.BUFF_GLOW_MIN_OVER end
-  return over
+-- The ring. Returns a FRAME, so Show/Hide/IsShown work exactly as they did when this was one texture.
+function M.BuildBuffGlow(parent, size)
+  if not parent then return nil end
+  local th = M.BuffGlowThickness(size)
+  local f = CreateFrame("Frame", nil, parent)
+  M.AnchorMaskedIcon(f, parent, size)      -- the icon's rect, and it follows the inset slider
+  -- Above the cooldown swipe as well as the frame art: a buffed spell is usually also on cooldown,
+  -- and the sweep would otherwise cover the half of the ring it has swept past.
+  local base = (parent.Cooldown and parent.Cooldown.GetFrameLevel and parent.Cooldown:GetFrameLevel())
+               or (parent.GetFrameLevel and parent:GetFrameLevel()) or 1
+  f:SetFrameLevel(base + 3)
+
+  -- Top and bottom run the full width plus the corners; the sides fill between them. Each corner is
+  -- therefore covered exactly once, which matters under ADD — overlap would read as four bright dots.
+  local EDGES = {
+    top    = { { "TOPLEFT",  "TOPLEFT",     -th,  th }, { "BOTTOMRIGHT", "TOPRIGHT",     th,   0 } },
+    bottom = { { "TOPLEFT",  "BOTTOMLEFT",  -th,   0 }, { "BOTTOMRIGHT", "BOTTOMRIGHT",  th, -th } },
+    left   = { { "TOPLEFT",  "TOPLEFT",     -th,   0 }, { "BOTTOMRIGHT", "BOTTOMLEFT",    0,   0 } },
+    right  = { { "TOPLEFT",  "TOPRIGHT",      0,   0 }, { "BOTTOMRIGHT", "BOTTOMRIGHT",  th,   0 } },
+  }
+  f.edges = {}
+  for name, pts in pairs(EDGES) do
+    local t = f:CreateTexture(nil, "OVERLAY")
+    t:SetTexture(M.BUFF_GLOW_SOLID)
+    t:SetBlendMode("ADD")
+    t:SetVertexColor(M.COLOR_BUFF_GLOW[1], M.COLOR_BUFF_GLOW[2], M.COLOR_BUFF_GLOW[3],
+                     M.COLOR_BUFF_GLOW[4])
+    for _, pt in ipairs(pts) do t:SetPoint(pt[1], f, pt[2], pt[3], pt[4]) end
+    f.edges[name] = t
+  end
+  f:Hide()
+  return f
 end
 
 -- Tunable: warm gold, the colour retail gives the swipe it will not let us tint here.

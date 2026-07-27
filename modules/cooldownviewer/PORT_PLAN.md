@@ -5,7 +5,7 @@ TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global conventio
 
 **Status:** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use trinkets), 6 (loose
 ends) and 7 (the tracked-aura catalog) implemented — the whole of both phasing tables except the
-deliberate cuts. Offline harnesses pass (`qa/offline/`, 573 boot assertions). Phases 1-3 and the 4b-1
+deliberate cuts. Offline harnesses pass (`qa/offline/`, 582 boot assertions). Phases 1-3 and the 4b-1
 window shell are confirmed working in-game; 4b-2 and 4b-3 are confirmed in-game (three faults found and
 fixed, §G.7.1/§G.7.2).
 
@@ -1899,6 +1899,48 @@ own art, and next to the CDM shadow it reads as a different UI. Reverted whole; 
 kept. What this leaves on the table is that cut corners ARE achievable here — the blocker is art that
 suits these tiles, not the technique. If retail's own CDM sheet turns out to carry an opaque frame
 cell, that is the piece to look for.
+
+### H.2.6 The glow, third version: draw the edge instead of aiming a glow at it
+
+"The glow doesn't align to the top or right hand sides."
+
+Anchoring was not the problem, and that is the lesson. Both previous versions were anchored
+symmetrically — equal and opposite offsets on TOPLEFT and BOTTOMRIGHT — so the RECT was always
+centred. What was not centred was what you could SEE, because a soft glow's visible extent is
+wherever its own falloff happens to survive whatever is drawn over it, and here that is the frame
+shadow at 66% black across the entire border band. What escaped was a gold edge on the two sides
+where the shadow had faded most. Reported, reasonably, as an alignment fault.
+
+The three versions, and what each one taught:
+
+1. **A gold additive copy of the frame art.** Emitted nothing: the art is pure black, and ADD emits
+   `src.rgb × alpha` (§H.2.2).
+2. **The stock soft glow behind the icon.** Emitted light, could not be aimed. Drawn over the tile it
+   veiled the icon; drawn behind it, the shadow ate the ring.
+3. **Four flat strips on the icon's own rect**, in a child frame above the shadow *and* above the
+   cooldown sweep. No middle, so it cannot veil the icon. No falloff, so what is drawn is what is
+   seen. A child frame outranks every layer of its parent, so nothing suppresses it.
+
+Alignment stopped being an outcome of blending and became an anchor, which is also the difference
+between an assertion that can check it and one that cannot. The harness now checks all four strips
+exist, that the ring sits on the icon's rect symmetrically, and that it is levelled above the sweep —
+a buffed spell is usually also on cooldown, and the swipe covering half the ring is one more way to
+look "not aligned".
+
+Top and bottom run the full width plus the corners and the sides fill between them, so each corner is
+covered exactly once. Under ADD, overlap would read as four bright dots.
+
+Stub fidelity again: `SetFrameLevel` was discarding its argument, so "this draws above that" was
+unassertable — the same gap `CreateTexture`'s dropped layer argument left two passes ago. Third time
+a stub that quietly accepted and forgot a parameter hid something real.
+
+**Also this pass, and reverted:** cut corners. The spellbook makes square icons stop looking square
+without a mask — §C2 holds, `CreateMaskTexture` is dead — by covering the corners with something
+OPAQUE. That is why frame strength could not finish the job: our frame is translucent, so stacking
+makes corners darker and never absent. The square talent-node socket does work, and flush with the
+icon is the right sizing (growing it so its band clears the art overhangs the tile by 16% and collides
+neighbouring icons). Rejected on look — it reads as a different UI next to the CDM art. The blocker is
+art that suits these tiles, not the technique.
 
 ### 8d. Bar theming
 

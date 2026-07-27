@@ -138,8 +138,11 @@ function frameMeta:GetPoint(i)
 end
 function frameMeta:GetChildren() return unpack(self._children) end
 function frameMeta:EnableMouse() end
-function frameMeta:SetFrameLevel() end
-function frameMeta:GetFrameLevel() return 1 end
+-- Frame level is RECORDED. Discarding it meant "this draws above that" could not be asserted at all —
+-- the same gap CreateTexture's dropped layer argument left. The buff ring has to sit above the
+-- cooldown sweep or the swipe covers half of it, and that was unassertable.
+function frameMeta:SetFrameLevel(v) self._level = v end
+function frameMeta:GetFrameLevel() return self._level or 1 end
 function frameMeta:SetFrameStrata() end
 function frameMeta:SetParent(p) self._parent = p end
 function frameMeta:GetParent() return self._parent end
@@ -1608,13 +1611,6 @@ do
       "the tile carries spare copies of the frame art")
   end
 
-  -- The buff halo hangs off the ICON, not the tile. Off the tile it sat wide of the thing it was
-  -- lighting — "improve the alignment of the icon to the gold background" — and it would not have
-  -- followed the inset slider either.
-  do
-    local rel = select(2, mb.BuffGlow:GetPoint(1))
-    assertf(rel == mb.Icon, "the buff halo is anchored to the icon, so the two are concentric")
-  end
 
   -- The flipbook's frame grid has to divide its strip evenly, or the ready-flash sprite samples
   -- across frame boundaries. 94/2 and 517/11 are both 47.
@@ -1629,33 +1625,48 @@ do
   local glow = mb.BuffGlow
   assertf(glow ~= nil, "the tile has a buff-glow region")
 
-  -- ADD blending emits src.rgb x alpha. The first version of this drew a gold additive copy of the
-  -- tile's own IconOverlay atlas, and 6704514's overlay cell is PURE BLACK — (0,0,0) throughout,
-  -- with only an alpha ramp — because it is a drop shadow, not a metal frame. Everything about that
-  -- version passed: the atlas resolved, the region was shown, the blend was ADD, the tint was gold.
-  -- It rendered nothing, because zero times gold is zero. So the assertion is on the SOURCE: an
-  -- additive region has to be given art that can carry light, and none of the sheet we ship can.
-  local tx = glow:GetTexture()
-  assertf(tx == M.BUFF_GLOW_TEXTURE, "…drawn from the stock soft-glow ring, not a sheet atlas")
-  assertf(not tostring(tx):find("CooldownViewer", 1, true),
-    "…and NOT from the CoolDownManager sheet, whose art is black and emits nothing under ADD")
-  assertf(glow:GetBlendMode() == "ADD", "…blended additively, so it lights rather than darkens")
+  -- ADD blending emits src.rgb x alpha. The FIRST version drew a gold additive copy of the tile's own
+  -- IconOverlay atlas, and 6704514's overlay cell is PURE BLACK — (0,0,0) throughout, with only an
+  -- alpha ramp, because it is a drop shadow. Everything about it passed: the atlas resolved, the
+  -- region was shown, the blend was ADD, the tint was gold. It rendered nothing, because zero times
+  -- gold is zero. The SECOND used the stock soft glow behind the icon; that emitted light but could
+  -- not be aimed — most of the ring was eaten by the frame shadow, and what escaped read as a gold
+  -- edge on two sides ("the glow doesn't align to the top or right hand sides").
+  --
+  -- So the third draws the edge instead of hoping a soft texture lands on it. Four strips, flat
+  -- colour, on the icon's own rect. Alignment is now an anchor rather than an outcome of blending,
+  -- which is what these assertions can actually check.
+  assertf(glow.edges ~= nil, "the glow is a ring of edge strips, not one soft texture")
+  local names = {}
+  for k in pairs(glow.edges) do names[#names + 1] = k end
+  table.sort(names)
+  assertf(table.concat(names, ",") == "bottom,left,right,top",
+    "…one per side (" .. table.concat(names, ",") .. ")")
+  for _, k in ipairs(names) do
+    local t = glow.edges[k]
+    assertf(t:GetBlendMode() == "ADD", "…" .. k .. " blends additively")
+    local r, g, b = t:GetVertexColor()
+    assertf(r > g and g > b, "…" .. k .. " is gold, the colour retail gives the swipe")
+    assertf(tostring(t:GetTexture()):upper():find("WHITE", 1, true) ~= nil,
+      "…" .. k .. " is flat colour, so nothing about it can be off-centre")
+  end
 
-  -- Oversized, not matched to the frame or the icon: the ring has a wide transparent margin of its
-  -- own, and at the tile's rect the visible part falls inside the icon instead of on its edge.
+  -- The ring sits ON the icon's rect, and symmetrically. The previous version's TOPLEFT and
+  -- BOTTOMRIGHT offsets were equal and opposite too, and it STILL looked misaligned, because what
+  -- you saw was not the rect — it was whichever part of a soft falloff survived. Here they are the
+  -- same thing.
   local gp, _, _, gx, gy = glow:GetPoint(1)
-  local over = M.BuffGlowInset(50)
-  assertf(gp == "TOPLEFT" and gx == -over and gy == over,
-    ("…and oversized past the tile by %dpx (got %s,%s)"):format(over, tostring(gx), tostring(gy)))
-  local ox = select(4, mb.IconOverlay:GetPoint(1))
-  assertf(over > math.abs(ox), "…which is wider than the frame art's own overhang")
-  -- BEHIND the icon, which is what keeps a filled glow texture off the icon art. Drawn over the tile
-  -- it veiled the icon instead of haloing it; on BACKGROUND the opaque icon does the masking that
-  -- this client cannot do with a MaskTexture.
-  local layer = glow:GetDrawLayer()
-  assertf(layer == "BACKGROUND", "…drawn behind the icon, so it haloes rather than veils")
-  local r, g, b = glow:GetVertexColor()
-  assertf(r > g and g > b, "…in gold, the colour retail gives the swipe it cannot set here")
+  local want = M.IconInset(50)
+  assertf(gp == "TOPLEFT" and math.abs(gx - want) < 0.01 and math.abs(gy + want) < 0.01,
+    ("…on the icon's rect (%s %.2f,%.2f vs %.2f)"):format(tostring(gp), gx, gy, want))
+  local bp, _, _, bx, by = glow:GetPoint(2)
+  assertf(bp == "BOTTOMRIGHT" and math.abs(bx + want) < 0.01 and math.abs(by - want) < 0.01,
+    ("…and symmetric on the other corner (%s %.2f,%.2f)"):format(tostring(bp), bx, by))
+
+  -- Above the sweep. A buffed spell is usually also on cooldown, and the swipe would otherwise cover
+  -- the half of the ring it has already passed — which is one more way to look "not aligned".
+  assertf(glow:GetFrameLevel() > mb.Cooldown:GetFrameLevel(),
+    "…and above the cooldown sweep, which would otherwise cover half of it")
 
   -- The state machine. A tile with no aura of its own must not glow, or the signal means nothing.
   BUFFS.player[1] = nil
