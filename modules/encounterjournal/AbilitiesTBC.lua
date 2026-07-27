@@ -499,7 +499,82 @@ local ABIL = {
     { title = "Armageddon", flags = 48, spell = 45921,
       body = "In the final phase Kil'jaeden rains flaming meteors across the platform. Players channel Anveena's power through the Blaze of the Heavens shield to survive the onslaught and weaken him." },
   },
+  
+  -- Zul'Aman (instance 780)
+  [186] = { -- Akil'zon
+    { title = "Electrical Storm", flags = 48, spell = 43648,
+      body = "Akil'zon summons a violent electrical storm that lifts a random player into the air. Allies must stack beneath the suspended player to avoid the deadly lightning striking the rest of the raid." },
+    { title = "Static Disruption", flags = 128, spell = 44008,
+      body = "A burst of electricity strikes a random player, dealing Nature damage and increasing the Nature damage taken by nearby allies. Spread out to prevent multiple players from being afflicted." },
+    { title = "Call Lightning", flags = 128, spell = 43661,
+      body = "Akil'zon repeatedly calls down bolts of lightning on his current target, inflicting heavy Nature damage throughout the encounter." },
+    { title = "Summon Soaring Eagles", flags = 32, spell = 44769,
+      body = "Soaring Eagles join the fight and harass random players, repeatedly swooping through the raid until defeated." },
+  },
 
+  [187] = { -- Nalorakk
+    { title = "Bear Form", flags = 32, spell = 42377,
+      body = "Nalorakk alternates between troll and bear forms throughout the encounter, gaining different abilities in each phase while retaining his previous threat." },
+    { title = "Brutal Swipe", flags = 1, spell = 42384,
+      body = "A crushing cleave strikes Nalorakk's current target and anyone standing beside them. Only the active tank should remain in front of the boss." },
+    { title = "Mangle", flags = 8193, spell = 44955,
+      body = "In bear form Nalorakk mangles his current target, inflicting heavy physical damage and leaving a powerful Bleed effect." },
+    { title = "Surge", flags = 16, spell = 42402,
+      body = "Nalorakk charges a distant player, dealing heavy damage before immediately returning to his tank." },
+    { title = "Lacerating Slash", flags = 8193, spell = 42395,
+      body = "A vicious slash leaves a stacking Bleed on Nalorakk's tank, increasing healing requirements as the fight progresses." },
+  },
+
+  [188] = { -- Jan'alai
+    { title = "Flame Breath", flags = 16, spell = 43140,
+      body = "Jan'alai breathes a cone of fire in front of him, dealing heavy Fire damage. The tank should always keep him facing away from the raid." },
+    { title = "Fire Bombs", flags = 48, spell = 42628,
+      body = "Jan'alai fills the arena with Fire Bombs before igniting them simultaneously. Players must quickly locate a safe gap or risk being killed in the explosions." },
+    { title = "Hatch Eggs", flags = 32, spell = 43144,
+      body = "Dragonhawk eggs hatch throughout the encounter, releasing Amani Dragonhawk Hatchlings that quickly overwhelm the raid if left alive." },
+    { title = "Summon Amani Hatchers", flags = 32, spell = 43962,
+      body = "Amani Hatchers run toward the egg platforms and rapidly hatch large groups of Dragonhawks unless stopped." },
+    { title = "Frenzy", flags = 2048, spell = 44779,
+      body = "After enough eggs have been destroyed or at low health, Jan'alai enters a frenzy, dramatically increasing his attack speed until defeated." },
+  },
+
+  [189] = { -- Halazzi
+    { title = "Saber Lash", flags = 1, spell = 43267,
+      body = "Halazzi lashes out in a wide arc, splitting heavy physical damage between everyone standing in front of him. Multiple tanks should share the attack." },
+    { title = "Split Form", flags = 32, spell = 43142,
+      body = "At health thresholds Halazzi separates into his troll body and Spirit Lynx, forcing the raid to manage both enemies before they merge once more." },
+    { title = "Lightning Totem", flags = 32, spell = 43302,
+      body = "Halazzi summons a Lightning Totem that repeatedly shocks nearby players. Destroy the totem quickly to reduce incoming raid damage." },
+    { title = "Frenzy", flags = 2048, spell = 43139,
+      body = "Halazzi periodically enters a frenzy, greatly increasing his melee damage until soothed or the effect expires." },
+  },
+
+  [190] = { -- Hex Lord Malacrass
+    { title = "Spirit Bolts", flags = 16, spell = 43383,
+      body = "Malacrass bombards the entire raid with shadowy Spirit Bolts, dealing unavoidable Shadow damage over several seconds." },
+    { title = "Drain Power", flags = 32, spell = 44131,
+      body = "Hex Lord Malacrass steals power from every player, increasing his own damage while reducing the raid's effectiveness for the remainder of the fight." },
+    { title = "Siphon Soul", flags = 32, spell = 43501,
+      body = "Malacrass steals the soul of a random player, gaining access to several abilities from that player's class for a short time." },
+    { title = "Spirit Companions", flags = 32, spell = 0,
+      body = "Malacrass is accompanied by four random Amani champions selected from a larger pool. Each encounter requires a different strategy depending on which companions are present." },
+  },
+
+  [191] = { -- Zul'jin
+    { title = "Whirlwind", flags = 16, spell = 17207,
+      body = "During his troll aspect Zul'jin spins through nearby players, dealing heavy physical damage. Melee should move away until the attack ends." },
+    { title = "Grievous Throw", flags = 8192, spell = 43093,
+      body = "In bear form Zul'jin hurls a grievous weapon that leaves a Bleed effect which persists until the victim is healed to full health." },
+    { title = "Energy Storm", flags = 16, spell = 43983,
+      body = "While empowered by the eagle spirit, Zul'jin fills the platform with electrical energy that continually damages players throughout the phase." },
+    { title = "Claw Rage", flags = 16, spell = 43150,
+      body = "In lynx form Zul'jin fixates on a random player, rapidly striking them with a flurry of claw attacks before returning to the tank." },
+    { title = "Flame Whirl", flags = 16, spell = 43213,
+      body = "In dragonhawk form Zul'jin unleashes fiery cyclones and pillars of flame that force the raid to keep moving until the phase ends." },
+    { title = "Animal Aspects", flags = 32, spell = 0,
+      body = "As his health falls, Zul'jin invokes the spirits of the bear, eagle, lynx and dragonhawk, completely changing his abilities with each new phase." },
+  },
+  
 }
 
 NE.ej.ABIL_TBC = ABIL
