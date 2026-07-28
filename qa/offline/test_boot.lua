@@ -783,6 +783,7 @@ local FILES = {
   "modules/cooldownviewer/SettingsPresets.lua",
   "modules/cooldownviewer/SettingsControls.lua",
   "modules/cooldownviewer/SettingsOptions.lua",
+  "modules/cooldownviewer/EditorMenu.lua",
   "modules/cooldownviewer/Register.lua",
 }
 
@@ -3580,6 +3581,166 @@ do
   local ok6, why6 = NE.OpenFrameEditor(M.viewers.essential)
   assertf(ok6 == false and type(why6) == "string", "no editor mode reports a reason rather than erroring")
   DragonUI.EditorMode = savedEM
+
+  -- Leave the store as we found it.
+  for _, id in pairs(M.FRAME_ID) do M.ResetOpts(id) end
+  S.SetDisplayMode("spells")
+  S.HidePanel()
+end
+
+-- ── The edit-mode right-click menu ──────────────────────────────────────────────────────────────
+--
+-- Retail puts a system's settings ON the frame in Edit Mode. This is that, and it is tested here
+-- rather than in-game because none of it needs a screen: the generator is a pure tree (core/Menu.lua's
+-- BuildRoot), and the click path is one script on an anchor whose editor state the stub owns.
+print("\n=== EDIT-MODE RIGHT-CLICK MENU ===")
+do
+  local S   = NE.cooldownviewersettings
+  local FID = M.FRAME_ID.essential
+  local ALL = "All settings\226\128\166"
+
+  local gen = M.EditorMenuGenerator("essential")
+  assertf(type(gen) == "function", "each viewer gets a menu generator")
+  local root = NE.menu.BuildRoot(gen)
+  assertf(root ~= nil and #root.children > 0, "…which builds a tree with no UIDropDownMenu present")
+  assertf(root.children[1].kind == "title" and root.children[1].text == "Essential Cooldowns",
+          "…titled with the viewer it belongs to, so two open menus are tellable apart")
+
+  -- Every per-viewer setting the Settings tab offers is reachable without leaving the frame. Listed
+  -- by name rather than counted: a count passes just as well when the wrong control is present.
+  for _, name in ipairs({ "Enabled", "Orientation", "Icon direction", "Visibility", "Icons per row",
+                          "Icon size", "Icon padding", "Opacity", "Show timer", "Show tooltips" }) do
+    assertf(root:Child(name) ~= nil, "the menu carries " .. name)
+  end
+
+  -- Reading and writing one value end to end.
+  M.SetOpt(FID, "iconLimit", 12)
+  local perRow = NE.menu.BuildRoot(gen):Child("Icons per row")
+  assertf(perRow:Child("12").isSelected() == true, "the stored value is the ticked row")
+  assertf(perRow:Child("5").isSelected() == false, "…and it is the only ticked row")
+  perRow:Child("5"):Invoke()
+  assertf(M.GetOpt(FID, "iconLimit") == 5, "picking a row writes the setting")
+  assertf(M.viewers.essential.iconLimit == 5, "…and the viewer re-lays out at once, with no reload")
+
+  -- A menu is a list of discrete rows and the tab's sliders are finer, so a stored value can land
+  -- between two rows. Nothing ticked is the honest rendering; rounding it to the nearest row would
+  -- silently CHANGE a setting on open.
+  M.SetOpt(FID, "opacity", 63)
+  local op, ticked = NE.menu.BuildRoot(gen):Child("Opacity"), 0
+  for _, r in ipairs(op.children) do if r.isSelected() then ticked = ticked + 1 end end
+  assertf(ticked == 0, "a value between two rows ticks nothing rather than rounding your setting")
+  M.SetOpt(FID, "opacity", 65)
+  assertf(NE.menu.BuildRoot(gen):Child("Opacity"):Child("65%").isSelected() == true,
+          "…and a value on a row ticks exactly it")
+
+  -- Per-viewer differences, both directions. Offering a row that does nothing is the failure the
+  -- Settings tab already refused (§4c) and it would be no better here.
+  local barRoot  = NE.menu.BuildRoot(M.EditorMenuGenerator("buffBar"))
+  local iconRoot = NE.menu.BuildRoot(M.EditorMenuGenerator("buffIcon"))
+  assertf(barRoot:Child("Bar content") ~= nil and barRoot:Child("Bar width") ~= nil,
+          "the bar viewer gets the two bar-only settings")
+  assertf(root:Child("Bar content") == nil, "…and no other viewer does")
+  assertf(iconRoot:Child("Hide when inactive") ~= nil,
+          "Hide when inactive is offered where the template honours it")
+  assertf(root:Child("Hide when inactive") == nil,
+          "…and not on Essential, whose template ignores the setting entirely")
+
+  local anchor = DragonUI.EditableFrames["CooldownViewerEssential"].frame
+
+  -- Enabled empties the viewer, which is exactly why it must be reversible from the same menu: the
+  -- green handle is the ANCHOR, not the content, so it stays on screen and stays right-clickable.
+  DragonUI.EditorMode._active = true
+  local en = NE.menu.BuildRoot(gen):Child("Enabled")
+  assertf(en.isSelected() == M.IsCategoryEnabled("essential"), "the Enabled row reads the category")
+  en:Invoke()
+  assertf(M.IsCategoryEnabled("essential") == false, "…and toggles it")
+  assertf(not M.viewers.essential:IsShown(), "…which empties the viewer immediately")
+  assertf(anchor ~= M.viewers.essential and NE.OpenFrameEditorMenu(anchor) == true,
+          "…while the handle still opens the menu, or there would be no way back")
+  NE.menu.BuildRoot(gen):Child("Enabled"):Invoke()
+  assertf(M.IsCategoryEnabled("essential") == true, "…and back on from the same menu")
+
+  -- Reset is scoped to APPEARANCE. DragonUI's editor panel carries its own Reset for placement, and
+  -- two differently-scoped Reset buttons a few pixels apart would be read as one.
+  local posKey = NE.FramePositionKey("neCooldownViewerEssential", true)
+  profile.widgets[posKey] = { anchor = "TOPLEFT", posX = 33, posY = -44 }
+  M.SetOpt(FID, "iconPadding", 9)
+  NE.menu.BuildRoot(gen):Child("Reset appearance"):Invoke()
+  assertf(M.GetOpt(FID, "iconPadding") == M.DEFAULTS.iconPadding,
+          "Reset appearance puts this viewer's defaults back")
+  assertf(profile.widgets[posKey] and profile.widgets[posKey].posX == 33,
+          "…and leaves its POSITION alone, which is what its tooltip promises")
+  profile.widgets[posKey] = nil
+
+  -- TWO EDITORS, ONE VALUE. SettingsOptions.lua's header forbids exactly this unless both views
+  -- re-read, so assert the page actually moves — a menu that wrote without notifying would leave a
+  -- slider showing a number the frame no longer uses, which reads as a setting that did not take.
+  S.SetDisplayMode("settings")
+  S.EnsureSettingsPage()
+  local perRowRow
+  for _, e in ipairs((S.settingsColumn or {}).entries or {}) do
+    local f = e.frame
+    if f.Slider and f.Label and f.Label:GetText() == "Icons per row"
+      and e.section and e.section.title == "Essential Cooldowns" then
+      perRowRow = f
+    end
+  end
+  assertf(perRowRow ~= nil, "the Settings tab renders the same value as a slider")
+  NE.menu.BuildRoot(gen):Child("Icons per row"):Child("7"):Invoke()
+  assertf(perRowRow.Slider:GetValue() == 7,
+          "…and a menu write refreshes it, so the two views cannot disagree ("
+          .. tostring(perRowRow.Slider:GetValue()) .. ")")
+
+  -- THE CLICK PATH. OpenContext is swapped for a recorder because the dropdown backend does not
+  -- exist offline — which is the point of keeping the generator separate from the render.
+  assertf(type(anchor.neEditorMenu) == "function", "the viewer's anchor carries its own generator")
+  -- Read defensively and fall back to a no-op. A regression that unwires the handler would otherwise
+  -- abort the run on a nil call here, and a caught regression that looks like a truncated harness is
+  -- barely a catch at all.
+  local onMouseUp = anchor:GetScript("OnMouseUp")
+  local onEnter   = anchor:GetScript("OnEnter")
+  assertf(type(onMouseUp) == "function", "…and a mouse handler to open it with")
+  onMouseUp = onMouseUp or function() end
+  onEnter   = onEnter   or function() end
+
+  local seen
+  local realOpen = NE.menu.OpenContext
+  NE.menu.OpenContext = function(g, owner) seen = { g = g, owner = owner } return true end
+
+  DragonUI.EditorMode._active, DragonUI._selected = true, nil
+  onMouseUp(anchor, "LeftButton")
+  assertf(seen == nil, "left-click stays DragonUI's — select and drag — and opens nothing")
+  onMouseUp(anchor, "RightButton")
+  assertf(seen ~= nil and seen.g == anchor.neEditorMenu, "right-click opens THIS frame's menu")
+  local clicked = seen and seen.g and NE.menu.BuildRoot(seen.g)
+  assertf(clicked ~= nil and (clicked.children[1] or {}).text == "Essential Cooldowns",
+          "…and it is the essential viewer's menu, not an empty tree")
+  -- CreateUIFrame only selects on LeftButton, so without this the editor's coordinate readout and
+  -- Reset button would still describe whatever was clicked last while the menu edits something else.
+  assertf(DragonUI._selected == anchor, "…selecting the frame too, so both agree on the target")
+
+  seen, DragonUI.EditorMode._active = nil, false
+  onMouseUp(anchor, "RightButton")
+  assertf(seen == nil, "outside edit mode there is no menu at all")
+  NE.menu.OpenContext = realOpen
+
+  -- The hint. A menu nobody knows is there is a menu nobody uses, and the handle is the only thing
+  -- on screen in edit mode.
+  DragonUI.EditorMode._active = true
+  GameTooltip.lines = {}   -- so a stale line from an earlier test cannot answer for this one
+  onEnter(anchor)
+  local hinted = false
+  for _, line in ipairs(GameTooltip.lines) do
+    if tostring(line):find("Right%-click") then hinted = true end
+  end
+  assertf(hinted, "hovering the handle in edit mode says right-click opens its settings")
+
+  -- The way out, to the settings a menu has no business carrying.
+  S.HidePanel()
+  NE.menu.BuildRoot(gen):Child(ALL):Invoke()
+  assertf(not DragonUI.EditorMode:IsActive(), "All settings leaves edit mode, which covers the screen")
+  assertf(S.panel:IsShown() and S.GetDisplayMode() == "settings",
+          "…and opens the window on its Settings tab")
 
   -- Leave the store as we found it.
   for _, id in pairs(M.FRAME_ID) do M.ResetOpts(id) end

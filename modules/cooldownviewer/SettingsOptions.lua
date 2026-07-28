@@ -12,6 +12,12 @@
 -- as long as both are rebuilt on show, and the first time one is not, the player is looking at a stale
 -- value with no way to tell. (Actions are a different matter — see the Reset section below.)
 --
+-- ONE EXCEPTION, added later: EditorMenu.lua renders the per-viewer settings AGAIN, as a right-click
+-- menu on the viewer's edit-mode handle — retail's shape, where a system's settings sit on the frame.
+-- The rule above is about staleness, so both halves are closed rather than the rule waived: that menu
+-- is rebuilt from its generator on every open (so it cannot go stale), and every write it makes calls
+-- CDS.RefreshSettingsPage below (so this page cannot either).
+--
 -- Frame POSITION stays with the movers (`/dui edit`) — §B1's decision, unchanged. It is the one
 -- setting that is not a value in this store.
 --
@@ -193,7 +199,9 @@ local function build(parent)
 
   c:AddText("Everything the Cooldown Manager can be told to do. Position is the one setting that is not "
     .. "stored here — each viewer's \"Position this viewer\" button hands it to DragonUI's editor mode, "
-    .. "which owns frame placement (/dui edit).", { font = "GameFontHighlightSmall" })
+    .. "which owns frame placement (/dui edit). While you are in there, right-click a viewer for the "
+    .. "same layout settings without coming back to this window.",
+    { font = "GameFontHighlightSmall" })
 
   for _, spec in ipairs(M.VIEWER_SPECS or {}) do
     buildViewerSection(c, spec)

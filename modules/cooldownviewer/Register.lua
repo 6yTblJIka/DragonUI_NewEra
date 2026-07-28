@@ -75,6 +75,9 @@ local function boot()
         -- no reason to inherit a Priest's placement. Existing shared positions are seeded into each
         -- character's slot on first login, so nothing moves on upgrade.
         perCharacter = true,
+        -- Retail keeps a system's settings ON the frame in Edit Mode, not in a separate options
+        -- window. EditorMenu.lua builds that menu; integration/Register.lua owns when it may open.
+        editorMenu = M.EditorMenuGenerator and M.EditorMenuGenerator(spec.category) or nil,
         defaultPoint = {
           point = "BOTTOM", relativePoint = "BOTTOM",
           -- BuffBar sits off to the side in retail's preset; the rest are centred.
@@ -302,7 +305,9 @@ end)
 --
 -- No stored VALUE is rendered in both places. A setting with two editors stays consistent only while
 -- both are rebuilt on show, and the first time one is not, the player is reading a stale control and
--- cannot tell that from a setting that failed to apply.
+-- cannot tell that from a setting that failed to apply. (EditorMenu.lua later added a third view of the
+-- per-viewer settings — retail's on-the-frame menu — and pays that cost explicitly: it rebuilds on
+-- every open and refreshes the Settings tab on every write. See its header.)
 
 NE.RegisterOptionSection({
   id    = "cooldownviewer",
@@ -314,7 +319,7 @@ NE.RegisterOptionSection({
       "Retail's Cooldown Manager, driven from curated per-class cooldown lists. Every setting — which "
       .. "spells and buffs are tracked, each viewer's layout, size and visibility, alerts and ready "
       .. "sounds — lives in the Cooldown Manager window itself (/cdm). Drag the viewers with DragonUI's "
-      .. "editor mode to reposition them.")
+      .. "editor mode to reposition them, and right-click one there for its own layout settings.")
 
     C:AddToggle(scroll, {
       label   = "Enable Cooldown Manager",

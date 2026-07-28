@@ -2547,6 +2547,57 @@ rather than assuming, so the round-trip test now asserts the appearance leaf sur
 Five mutations, each failing by name: capture removed, the box ignored in both directions, appearance
 never applied, Revert no longer forcing it, and the option defaulting on.
 
+### H.3.10. The settings move onto the frame, in edit mode
+
+Retail puts a system's settings **on the frame**: enter Edit Mode, select the Cooldown Manager, and
+orientation / icon limit / size / opacity are right there beside it. Ours were reachable only from the
+`/cdm` Settings tab — correct, complete, and a different window from the one showing the thing you want
+to change. The owner asked for the retail shape.
+
+**§B1's decision is not reopened.** Upstream's 6,441-line Edit Mode reimplementation stays unported;
+what changes is that DragonUI's editor now carries the *settings* as well as the *position*. The
+affordance is a **right-click on the viewer's editor handle**, because that handle is the only thing on
+screen in edit mode and it is already the thing you drag.
+
+**The seam is `NE.RegisterHUDFrame`'s new `editorMenu` field** (integration/Register.lua), not the
+module. Every DragonUI touch — the mouse handler, the edit-mode gate, `SelectEditorFrame`,
+`EditorMode:Hide` — lives there, so `EditorMenu.lua` produces a MenuUtil-shaped generator and knows
+nothing about the host (CONTRACTS §4). That is also what makes the whole thing testable with no editor
+and no `UIDropDownMenu` present: `NE.menu.BuildRoot` walks the tree, and the click path is one script.
+
+**Nothing in DragonUI is edited (CONTRACTS §0).** `CreateUIFrame` sets `OnMouseDown` (left-click
+select), `OnDragStart` and `OnDragStop`, and *none* of `OnMouseUp` / `OnEnter` / `OnLeave` — so ours are
+plain `SetScript` calls on a frame we asked the factory to build, overwriting nothing. Out of edit mode
+the anchor is `EnableMouse(false)`, so the menu is unreachable without the gate even existing.
+
+**Right-click also selects the frame.** `CreateUIFrame` only selects on `LeftButton`, so without this
+the editor's coordinate readout and Reset button would still describe whatever was clicked last while
+the menu edited something else.
+
+**Two editors for one value**, which SettingsOptions.lua's header explicitly forbids. The rule is about
+*staleness*, so both halves are closed rather than the rule waived: core/Menu.lua rebuilds the tree from
+the generator on every open and re-reads every radio predicate on every click, so the menu cannot go
+stale; the page can, so every write calls `CDS.RefreshSettingsPage`, which no-ops when the tab was never
+built. The test asserts the tab's slider actually moves.
+
+**Opacity steps by 5 here and by 1 on the tab** — a 51-row menu is not a control. A stored value that
+lands between two rows ticks **nothing**, which is the honest rendering: rounding to the nearest row
+would silently change a setting just by opening the menu.
+
+**Reset is scoped to appearance, and says so.** DragonUI's editor panel already carries a Reset for
+placement; two differently-scoped Reset buttons a few pixels apart read as one. `All settings…` closes
+edit mode (which saves every frame's position on the way out) and opens `/cdm`, for the settings a menu
+has no business carrying: alerts, ready sounds, buff tracking, icon fit, the resets.
+
+**Turning a viewer off is reversible from the same menu**, because the green handle is the *anchor* and
+`UpdateVisibility` only ever hides the *content*. Same for Visibility → Hidden. Asserted, since a menu
+whose first entry can strand you is worse than no menu.
+
+Ten mutations, each failing by name and none aborting the run: the menu never attached, the edit-mode
+gate dropped, the panel never notified, values rounded to the nearest row, the frame not selected, any
+button opening it, `Hide when inactive` offered everywhere, Reset resetting nothing, the hint removed,
+and `All settings…` leaving the editor up.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**
