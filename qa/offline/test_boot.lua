@@ -114,6 +114,17 @@ function CreateFrame(kind, name, parent, template)
     inset.Bg = inset:CreateTexture(nil, "BACKGROUND", nil, -5)
     f.Inset = inset
   end
+
+  -- UIPanelScrollFrameTemplate's stock bar: a `$parentScrollBar` Slider carrying
+  -- `$parentScrollUpButton` / `$parentScrollDownButton`. Modelled by GLOBAL NAME and deliberately
+  -- WITHOUT a `.ScrollBar` parentKey, because that is precisely how 3.3.5a declares it — and that
+  -- absence is why NE.scrollbar.Reskin, which only ever checked the parentKey, returned at its
+  -- second line and silently reskinned nothing on frames like this one.
+  if template == "UIPanelScrollFrameTemplate" and name then
+    local sb = CreateFrame("Slider", name .. "ScrollBar", f)
+    CreateFrame("Button", sb:GetName() .. "ScrollUpButton",   sb)
+    CreateFrame("Button", sb:GetName() .. "ScrollDownButton", sb)
+  end
   return f
 end
 
@@ -164,7 +175,12 @@ function frameMeta:EnableMouse() end
 -- have now each hidden something.
 function frameMeta:SetFrameLevel(v) self._level = v end
 function frameMeta:GetFrameLevel() return self._level or 1 end
-function frameMeta:SetFrameStrata() end
+-- Recorded and readable. A write-only SetFrameStrata meant any code that RE-READ a strata to match
+-- it (the scrollbar promotes its arrows to the track's own strata, so they cannot render behind it)
+-- hit a nil method and died inside a pcall — visible offline only as a widget that quietly failed
+-- to build. UIParent's default is MEDIUM, same as the client's.
+function frameMeta:SetFrameStrata(s) self._strata = s end
+function frameMeta:GetFrameStrata() return self._strata or "MEDIUM" end
 function frameMeta:SetParent(p) self._parent = p end
 function frameMeta:GetParent() return self._parent end
 function frameMeta:SetMovable() end
@@ -204,7 +220,10 @@ function frameMeta:SetScrollChild(c) self._scrollChild = c end
 function frameMeta:GetScrollChild() return self._scrollChild end
 function frameMeta:SetVerticalScroll(v) self._vscroll = v end
 function frameMeta:GetVerticalScroll() return self._vscroll or 0 end
-function frameMeta:GetVerticalScrollRange() return 0 end
+-- Settable, so a test can put a scroll frame into the "there is something to scroll" state. It used
+-- to be a hard 0, which is the one value that makes every scrollbar hide itself — a bar could have
+-- been built wrong in every respect and still looked right, because it was never asked to appear.
+function frameMeta:GetVerticalScrollRange() return self._vrange or 0 end
 function frameMeta:UpdateScrollChildRect() end
 -- EditBox surface (the search box).
 function frameMeta:SetAutoFocus() end
@@ -216,7 +235,18 @@ function frameMeta:SetFontObject() end
 function frameMeta:SetNormalTexture() end
 function frameMeta:SetHighlightTexture() end
 function frameMeta:SetPushedTexture() end
-function frameMeta:GetNormalTexture() return newRegion("Texture") end
+-- The four button state textures, MEMOIZED. They used to hand back a fresh region every call, so a
+-- reskin that set an atlas on one wrote it to a throwaway and nothing could observe the result —
+-- "did this button get retextured" was an unanswerable question offline.
+local function stateTex(self, key)
+  self._stateTex = self._stateTex or {}
+  if not self._stateTex[key] then self._stateTex[key] = newRegion("Texture") end
+  return self._stateTex[key]
+end
+function frameMeta:GetNormalTexture()    return stateTex(self, "normal")    end
+function frameMeta:GetPushedTexture()    return stateTex(self, "pushed")    end
+function frameMeta:GetDisabledTexture()  return stateTex(self, "disabled")  end
+function frameMeta:GetHighlightTexture() return stateTex(self, "highlight") end
 function frameMeta:SetDisabledTexture() end
 function frameMeta:Enable() self._enabled = true end
 function frameMeta:Disable() self._enabled = false end
@@ -735,6 +765,7 @@ local FILES = {
   -- .toc has core/ long before modules/, which is why this only bites here.
   "modules/cooldownviewer/Assets.lua",
   "core/Tabs.lua",
+  "core/ScrollbarReskin.lua",
   "core/Menu.lua",
   "core/PanelChrome.lua",
   "core/FrameUtil.lua",
@@ -1845,6 +1876,60 @@ if sp then
   assertf(sp.layoutButton:GetHeight() + 6 < insetBottom,
           "…leaving the layout button clear of the Inset's bottom border, which is the point")
 
+  -- ── THE MODERN SCROLLBAR ─────────────────────────────────────────────────────────────────────
+  -- NE.scrollbar.Reskin looked applied here for phases and could never have done anything: it
+  -- reaches for `scroll.ScrollBar`, and 3.3.5a's UIPanelScrollFrameTemplate declares that slider as
+  -- `$parentScrollBar` with NO parentKey, so the field is nil and Reskin returns at its second line.
+  -- The failure has no symptom beyond "the bar looks stock", which is exactly what it looked like.
+  local bar = sp.scroll._neCustomBar
+  assertf(bar ~= nil, "the scroll body carries the hand-built minimal bar, not an in-place reskin")
+
+  local stockSB = _G["NE_CooldownViewerSettingsScrollScrollBar"]
+  assertf(stockSB ~= nil, "…and the template's stock Slider exists to have been dealt with")
+  assertf(not stockSB:IsShown(), "…which is hidden, so the player does not get two bars side by side")
+
+  -- The arrows have to leave the stock slider or its Hide() takes them with it, whatever their own
+  -- state — a hidden parent hides its children.
+  local upBtn   = _G["NE_CooldownViewerSettingsScrollScrollBarScrollUpButton"]
+  local downBtn = _G["NE_CooldownViewerSettingsScrollScrollBarScrollDownButton"]
+  assertf(upBtn ~= nil and upBtn._parent ~= stockSB,
+          "the up arrow is reparented off the hidden slider, so it can still be seen")
+  local upPoint, upRel = upBtn:GetPoint(1)
+  assertf(upPoint == "BOTTOM" and upRel == bar, "…and anchored to OUR track, not the stock one")
+
+  -- Clicking must SCROLL, not error. The template's inline OnClick drives self:GetParent() and
+  -- assumes that is the slider; once the button hangs off the panel, GetValue is nil there and every
+  -- click throws. BuildCustom learned this the hard way on the character Skills list.
+  sp.scroll._vrange = 200
+  sp.scroll:SetVerticalScroll(0)
+  -- Read the handlers BEFORE calling them. Missing ones are a real regression (the reparent strands
+  -- the template's inline OnClick), and calling nil aborts the whole run instead of failing here by
+  -- name — a caught bug that looks like a truncated harness is barely caught at all.
+  local downClick, upClick = downBtn:GetScript("OnClick"), upBtn:GetScript("OnClick")
+  assertf(downClick ~= nil and upClick ~= nil, "both arrows carry a click handler of our own")
+  if downClick then downClick(downBtn) end
+  assertf(sp.scroll:GetVerticalScroll() > 0,
+          "clicking the down arrow scrolls the frame (" .. sp.scroll:GetVerticalScroll() .. ")")
+  if upClick then upClick(upBtn) end
+  assertf(sp.scroll:GetVerticalScroll() == 0, "…and the up arrow scrolls it back")
+
+  -- The thumb sizes from visible:total — the pixel-scroll variant's own arithmetic, not
+  -- BuildCustom's row-step heuristic for FauxScrollFrames.
+  bar:SetHeight(300)
+  sp.scroll:SetVerticalScroll(0)
+  NE.scrollbar.BuildCustomPixel(sp.scroll)   -- idempotent; returns the existing bar
+  sp.scroll._scripts.OnScrollRangeChanged(sp.scroll)
+  assertf(bar:IsShown(), "the bar shows once there is something to scroll")
+  local thumbH = bar._thumb:GetHeight()
+  assertf(thumbH > 0 and thumbH < 300, "…with a thumb shorter than its track (" .. thumbH .. ")")
+
+  sp.scroll._vrange = 0
+  sp.scroll._scripts.OnScrollRangeChanged(sp.scroll)
+  assertf(not bar:IsShown(), "…and hides again when the content fits")
+  assertf(not upBtn:IsShown() and not downBtn:IsShown(),
+          "…taking the arrows with it, which being siblings they do not do by themselves")
+
+
   local esc = false
   for _, n in ipairs(UISpecialFrames) do if n == "NE_CooldownViewerSettings" then esc = true end end
   assertf(esc, "registered with UISpecialFrames for ESC-close")
@@ -2649,6 +2734,29 @@ do
   assertf(castAlert:Child("Usable") ~= nil, "…keeps Usable, because re-casting it is a real question")
   assertf(castAlert:Child("Usable").tipText:find("RE-CASTING", 1, true) ~= nil,
           "…and says so, so it is not mistaken for the buff being up")
+
+  -- ── ROW HIGHLIGHT ────────────────────────────────────────────────────────────────────────────
+  -- A bar row is ~344px wide and 26 tall. ButtonHilight-Square is a 64x64 glow drawn for a SQUARE
+  -- button, and stretching it across that reads as a lopsided blue smear: bright over the icon,
+  -- bleeding away to the right. Reported from the game on a Holy Concentration row. Wide rows take
+  -- the texture built to stretch; square tiles keep theirs, which is the half a blanket swap breaks.
+  M.SetAuraAssignment("PRIEST", 10060, "bar", "Power Infusion")
+  S.RefreshLayout()
+  local function highlightOf(frame)
+    for _, r in ipairs(frame._regions or {}) do
+      if r._layer == "HIGHLIGHT" then return r end
+    end
+  end
+  local barRow   = S._categories.trackedBar and S._categories.trackedBar.items[1]
+  local iconTile = S._categories.hiddenAura and S._categories.hiddenAura.items[1]
+  assertf(barRow ~= nil and iconTile ~= nil, "a bar row and an icon tile to compare")
+  assertf(highlightOf(barRow) ~= nil
+          and highlightOf(barRow):GetTexture() == "Interface\\QuestFrame\\UI-QuestTitleHighlight",
+          "a wide bar row uses the row highlight, the one built to stretch horizontally")
+  assertf(highlightOf(iconTile) ~= nil
+          and highlightOf(iconTile):GetTexture() == "Interface\\Buttons\\ButtonHilight-Square",
+          "…while a square icon tile keeps the square one, which is right for ITS shape")
+  M.SetAuraAssignment("PRIEST", 10060, nil, "Power Infusion")
   assertf(auraAlert:Child("None") ~= nil,
           "…and None, so a layout that stored Available before the gate can still be cleared")
   assertf(auraAlert:Child("Refresh").tipText:find("no aura", 1, true) == nil,

@@ -2397,6 +2397,41 @@ it exists to catch, and a mutation removing the untint failed to fail. Registeri
 registration is now itself asserted, and the stub gained `SetHorizTile`/`SetVertTile` (whose absence
 was what forced the degrade branch) plus `ButtonFrameTemplate`'s `Inset` child.
 
+### H.3.5. The scrollbar was never reskinned, and the row highlight was the wrong shape
+
+**The scrollbar.** `/cdm` called `NE.scrollbar.Reskin`, which looked applied and could never have done
+anything here. Reskin reaches for `scroll.ScrollBar`; 3.3.5a's `UIPanelScrollFrameTemplate` declares
+its slider as `$parentScrollBar` with **no parentKey**, so that field is nil and Reskin returns at its
+second line. Exactly the shape of the `PortraitFrameTemplate` `$parentBg` trap in §H.3.4, and it has
+no symptom beyond "the bar looks stock" — which is what it looked like.
+
+Switched to `NE.scrollbar.BuildCustomPixel`, the hand-built track+thumb every other list in this addon
+uses. It is the right variant for a real ScrollFrame: it drives `SetVerticalScroll` directly and sizes
+the thumb from visible:total, rather than `BuildCustom`'s row-step heuristic for FauxScrollFrames.
+
+`BuildCustomPixel` had to grow the stock-bar handling `BuildCustom` has always had. Its only previous
+caller (the character stats sidebar) is a bare `CreateFrame("ScrollFrame")` with no template and so no
+stock bar to get out of the way of; a templated ScrollFrame has one, complete with arrows, and without
+this the player gets **two** bars side by side. It now hides the stock slider with a re-show guard,
+reparents the arrows off it (a hidden parent hides its children whatever their own state), reskins and
+re-anchors them to our track, and replaces their `OnClick` — the template's inline handler drives
+`self:GetParent()` and assumes that is the slider, so after the reparent every click throws.
+
+**The row highlight.** Reported from the game: the blue highlight over-stretched on Tracked Bars.
+`ButtonHilight-Square` is a 64×64 glow drawn for a square button; across a 344px row it smears — bright
+over the icon, bleeding away to the right. Wide rows take `UI-QuestTitleHighlight`, which is built to
+stretch and is what the character Sidebar, EquipmentManagerPane and TitlesPane rows already use. The
+square tiles keep the square texture, which is the half a blanket swap would have broken.
+
+**Harness.** `core/ScrollbarReskin.lua` was not loaded at all, so none of this had coverage. Loading it
+needed four stub fixes, each of which had been hiding something: `GetVerticalScrollRange` was a hard 0
+(the one value that makes every scrollbar hide itself, so a bar built wrong in every respect still
+looked right), `SetFrameStrata` was write-only with no getter (code that re-reads a strata to match it
+died inside a `pcall`, visible only as a widget that quietly failed to build), the four button state
+textures returned a fresh region per call (so "did this button get retextured" was unanswerable), and
+`UIPanelScrollFrameTemplate` supplied no slider — modelled now by global name and deliberately
+**without** a `.ScrollBar` parentKey, because that absence is the bug.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

@@ -281,7 +281,23 @@ local function build()
   f.content = CreateFrame("Frame", nil, f.scroll)
   f.content:SetSize(330, 1)
   f.scroll:SetScrollChild(f.content)
-  if NE.scrollbar and NE.scrollbar.Reskin then NE.scrollbar.Reskin(f.scroll) end
+  -- The MODERN minimal scrollbar — the hand-built track+thumb every other list in this addon uses,
+  -- not NE.scrollbar.Reskin.
+  --
+  -- Reskin is the in-place re-skin of the stock UIPanelScrollBar Slider, and it is the older path
+  -- for a documented reason: it "was not rendering — the user still saw the default Blizzard bar"
+  -- (core/ScrollbarReskin.lua's own header, and the reason BuildCustom exists at all). On this frame
+  -- it could not have rendered: Reskin reaches for `scroll.ScrollBar`, and 3.3.5a's
+  -- UIPanelScrollFrameTemplate declares its slider as `$parentScrollBar` with no parentKey, so that
+  -- field is nil and Reskin returned at its second line without touching anything.
+  --
+  -- BuildCustomPixel is the variant for a real ScrollFrame — it drives SetVerticalScroll directly
+  -- and sizes the thumb from visible:total, rather than BuildCustom's row-step heuristic for
+  -- FauxScrollFrames. x = -6 puts the bar in the gutter this panel already reserves between the
+  -- scroll body's right edge and the Inset border.
+  if NE.scrollbar and NE.scrollbar.BuildCustomPixel then
+    pcall(NE.scrollbar.BuildCustomPixel, f.scroll, { x = -6 })
+  end
 
   -- A SECOND scroll child for the settings tab, swapped in by SetDisplayMode. The grids own
   -- `f.content` end to end — RefreshLayout rebuilds it from the adapter on every call — so a page of

@@ -220,10 +220,16 @@ local function makeBarItem(parent)
   b.Label:SetPoint("RIGHT", b, "RIGHT", -6, 0)
   b.Label:SetJustifyH("LEFT")
 
+  -- A WIDE-ROW highlight, not the square one the icon tiles use. ButtonHilight-Square is a 64x64
+  -- glow drawn for a square button, and stretching it across a 344px row smears it into the
+  -- lopsided blue wash that was reported — bright over the icon, bleeding away to the right.
+  -- UI-QuestTitleHighlight is built to stretch horizontally, and is what every other wide list row
+  -- in this addon uses (character Sidebar, EquipmentManagerPane, TitlesPane), at the same alpha.
   local hl = b:CreateTexture(nil, "HIGHLIGHT")
   hl:SetAllPoints()
-  hl:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
+  hl:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
   hl:SetBlendMode("ADD")
+  hl:SetAlpha(0.4)
 
   function b:SetSpell(spellID)
     clearEquipBinding(self)
