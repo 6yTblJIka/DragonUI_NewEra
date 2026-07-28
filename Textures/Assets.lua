@@ -52,6 +52,17 @@ NE.tex.RegisterLocal(1723831, P .. "Common\\1723831-uiframe-inner.blp")         
 NE.tex.RegisterLocal(1723832, P .. "Common\\1723832-uiframe-inner.blp")             -- 64x256  DXT5; !UI-Frame-Inner{Left,Right}Tile (3x256)
 NE.tex.RegisterLocal(1723833, P .. "Common\\1723833-uiframe-inner.blp")             -- 256x128 DXT5; _UI-Frame-Inner{Top,Bot}Tile band
 
+-- --- DiamondMetal "Dialog" border — retail's clean thin dialog frame (the ESC menu and every
+--     modern dialog wear it). Core art, not a module's: the Metal family above is panel chrome and
+--     wrong on a small floating dialog, so anything dialog-shaped needs this instead.
+NE.tex.RegisterLocal(3056750, P .. "Common\\3056750-diamondmetal-frame.blp")        -- corners + top/bottom edges
+NE.tex.RegisterLocal(3056755, P .. "Common\\3056755-diamondmetal-edges.blp")        -- !-tile left/right edges
+
+-- --- Modern dropdown trigger (5390329) — common-dropdown-textholder (the body) plus the
+--     a-button arrow and its five states. 3.3.5a has no WowStyle1DropdownTemplate to carry these,
+--     so the widget is assembled from them in SettingsControls.
+NE.tex.RegisterLocal(5390329, P .. "Common\\5390329-common-dropdown-bg.blp")        -- 512x512; textholder + a-button states
+
 -- --- RedButton close-button sheet (4698972) — the Dragonflight red "X". One sheet carries all
 --     four states (exit / pressed / highlight / disabled) via texcoords in core/NineSliceLayouts.
 --     Consumed by PanelChrome.ModernizeCloseButton; without it the close button falls back to the

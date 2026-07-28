@@ -90,6 +90,28 @@ NE.tex.RegisterAtlases({
   ["minimal-scrollbar-small-thumb-bottom"]      = { file = 5142787, left = 0.609375, right = 0.734375, top = 0.484375, bottom = 0.609375, width = 8, height = 8 },
   ["minimal-scrollbar-small-thumb-bottom-over"] = { file = 5142787, left = 0.312500, right = 0.437500, top = 0.687500, bottom = 0.812500, width = 8, height = 8 },
   ["minimal-scrollbar-small-thumb-bottom-down"] = { file = 5142787, left = 0.765625, right = 0.890625, top = 0.484375, bottom = 0.609375, width = 8, height = 8 },
+
+  -- DiamondMetal (frame sheet 3056750, side edges 3056755) — retail's "Dialog" border, the clean
+  -- thin frame the ESC menu and every modern dialog wear. Distinct from the Metal family above,
+  -- which is the heavy panel chrome with the portrait ring.
+  ["ui-frame-diamondmetal-cornertopleft-2x"]     = { file = 3056750, left = 0.003906, right = 0.503906, top = 0.508789, bottom = 0.633789, width = 64, height = 64 },
+  ["ui-frame-diamondmetal-cornertopright-2x"]    = { file = 3056750, left = 0.003906, right = 0.503906, top = 0.635742, bottom = 0.760742, width = 64, height = 64 },
+  ["ui-frame-diamondmetal-cornerbottomleft-2x"]  = { file = 3056750, left = 0.003906, right = 0.503906, top = 0.254883, bottom = 0.379883, width = 64, height = 64 },
+  ["ui-frame-diamondmetal-cornerbottomright-2x"] = { file = 3056750, left = 0.003906, right = 0.503906, top = 0.381836, bottom = 0.506836, width = 64, height = 64 },
+  ["_ui-frame-diamondmetal-edgetop-2x"]          = { file = 3056750, left = 0.000000, right = 0.500000, top = 0.127930, bottom = 0.252930, width = 64, height = 64 },
+  ["_ui-frame-diamondmetal-edgebottom-2x"]       = { file = 3056750, left = 0.000000, right = 0.500000, top = 0.000977, bottom = 0.125977, width = 64, height = 64 },
+  ["!ui-frame-diamondmetal-edgeleft-2x"]         = { file = 3056755, left = 0.001953, right = 0.251953, top = 0.000000, bottom = 1.000000, width = 64, height = 64 },
+  ["!ui-frame-diamondmetal-edgeright-2x"]        = { file = 3056755, left = 0.255859, right = 0.505859, top = 0.000000, bottom = 1.000000, width = 64, height = 64 },
+
+  -- Modern dropdown trigger (sheet 5390329). `textholder` is the static body; the GRADIENT lives
+  -- on the a-button arrow, which is why the states below are arrow art and the body has none.
+  ["common-dropdown-textholder"]            = { file = 5390329, left = 0.001953, right = 0.107422, top = 0.636719, bottom = 0.796875, width = 54, height = 41 },
+  ["common-dropdown-a-button"]              = { file = 5390329, left = 0.111328, right = 0.164062, top = 0.636719, bottom = 0.742188, width = 27, height = 27 },
+  ["common-dropdown-a-button-hover"]        = { file = 5390329, left = 0.341797, right = 0.394531, top = 0.863281, bottom = 0.968750, width = 27, height = 27 },
+  ["common-dropdown-a-button-pressed"]      = { file = 5390329, left = 0.501953, right = 0.554688, top = 0.335938, bottom = 0.441406, width = 27, height = 27 },
+  ["common-dropdown-a-button-pressedhover"] = { file = 5390329, left = 0.501953, right = 0.554688, top = 0.562500, bottom = 0.667969, width = 27, height = 27 },
+  ["common-dropdown-a-button-open"]         = { file = 5390329, left = 0.421875, right = 0.474609, top = 0.816406, bottom = 0.921875, width = 27, height = 27 },
+  ["common-dropdown-a-button-disabled"]     = { file = 5390329, left = 0.181641, right = 0.234375, top = 0.863281, bottom = 0.968750, width = 27, height = 27 },
 })
 
 -- ============================================================================
@@ -110,6 +132,25 @@ NE.nineslice.AddLayout("ButtonFrameTemplateNoPortrait", {
 })
 -- §2 contract requires "ButtonFrameTemplate" by name — alias it to the no-portrait metal chrome.
 NE.nineslice.AddLayout("ButtonFrameTemplate", NE.nineslice.layouts["ButtonFrameTemplateNoPortrait"])
+
+-- Dialog — retail's "clean diamond" border (DialogBorderTemplate: the ESC menu and every modern
+-- dialog). The DiamondMetal frame, NOT the heavy Metal panel chrome above: a small floating dialog
+-- wearing panel chrome reads as a window that lost its contents. Verbatim from NewEra
+-- Core/Chrome/NineSliceLayouts.lua, including its D — the corner square and the edge thickness must
+-- match or the corners and edges do not line up.
+local D = 32
+NE.nineslice.AddLayout("Dialog", {
+  -- No disableSharpening: retail's Dialog layout leaves the chrome at the crisp engine default,
+  -- and NewEra's note records that softening it here read blurrier than retail.
+  TopLeftCorner     = { layer = "OVERLAY", atlas = "UI-Frame-DiamondMetal-CornerTopLeft-2x",     w = D, h = D },
+  TopRightCorner    = { layer = "OVERLAY", atlas = "UI-Frame-DiamondMetal-CornerTopRight-2x",    w = D, h = D },
+  BottomLeftCorner  = { layer = "OVERLAY", atlas = "UI-Frame-DiamondMetal-CornerBottomLeft-2x",  w = D, h = D },
+  BottomRightCorner = { layer = "OVERLAY", atlas = "UI-Frame-DiamondMetal-CornerBottomRight-2x", w = D, h = D },
+  TopEdge    = { layer = "OVERLAY", atlas = "_UI-Frame-DiamondMetal-EdgeTop-2x",    h = D },
+  BottomEdge = { layer = "OVERLAY", atlas = "_UI-Frame-DiamondMetal-EdgeBottom-2x", h = D },
+  LeftEdge   = { layer = "OVERLAY", atlas = "!UI-Frame-DiamondMetal-EdgeLeft-2x",   w = D },
+  RightEdge  = { layer = "OVERLAY", atlas = "!UI-Frame-DiamondMetal-EdgeRight-2x",  w = D },
+})
 
 -- InsetFrameTemplate — the THIN GOLD inner border that wraps an inset's content area.
 NE.nineslice.AddLayout("InsetFrameTemplate", {

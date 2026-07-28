@@ -2631,6 +2631,52 @@ the snapshot, snapshots surviving the session, Revert always armed, the arrows n
 not clamping, `onHide` not wired, `Hide When Inactive` offered everywhere, the title never updated, pages
 never hidden on switch, and the strata left below the handles.
 
+#### The art, second pass
+
+The first render was the right dialog wearing the wrong clothes: `PC.Apply` is PANEL chrome, so a
+small floating dialog arrived with the rock fill and — despite `noPortrait` — the portrait ring, which
+lives in the `PortraitFrameTemplate` nineslice, not in the portrait texture that flag suppresses. It
+read as a window that had lost its contents.
+
+The reference is `ReferenceAddons/NewEra/EditMode/SettingsPopup.lua`, itself a transcription of
+retail's `EditModeSystemSettingsDialog`. Taken from it:
+
+* **Chrome** — `DialogBorderTranslucentTemplate`: black at 0.8 inset 7, under the **DiamondMetal
+  "Dialog"** nineslice. That layout is now registered in `core/NineSliceLayouts.lua` (verbatim from
+  NewEra, including its `D = 32`, since the corner square and the edge thickness must match or they do
+  not line up), and its two sheets — 3056750 frame, 3056755 side edges — ship in `Textures/Common`.
+  Core art, not the module's: anything dialog-shaped needs it, and the Metal family is panel chrome.
+* **Metrics** — 343×32 rows spaced 2, a 100px label column, 200px controls, 20px content inset,
+  `GameFontHighlightMedium` labels, a 32px checkbox, `GameFontHighlightLarge` title at `TOP -15`.
+* **Buttons region** — Revert at 180 wide, the `UI-FriendsFrame-OnlineDivider` strip, then full-width
+  Reset. "Cooldown Manager Settings" moved OUT of that region and onto the end of the options stack,
+  which is where retail's `AddExtraButtons` puts a system's own extra actions.
+* **Dropdown** — retail's `WowStyle1Dropdown` paints a STATIC body and puts the gradient on the arrow.
+  3.3.5a has no such template, so the trigger is assembled from four pieces off sheet 5390329
+  (`common-dropdown-textholder` plus the `a-button` states) on a bare Button — fighting
+  `UIPanelButtonTemplate`'s own art for a look this different is more code than drawing it.
+
+**A THEME, NOT A SECOND KIT.** All of that lands in `SettingsControls.lua` as a table passed to
+`Kit.New`, with every default equal to what the `/cdm` tab already had. Same widgets, two sets of
+metrics; the tab is a scrolling page of sections and this is a fixed panel, and asserting the tab kept
+its own is part of the suite.
+
+**`Scale` is still not carried** — see above; unchanged by this pass.
+
+**Three assertions in the first art pass were vacuous, and the mutations found all three.** Checking
+that the `Dialog` layout table names a DiamondMetal atlas passed just as happily with the dialog
+applying `PortraitFrameTemplate`, and with the BLPs never copied: `NE.tex.SetAtlas` reports a miss and
+leaves the texture blank in both cases. Reading the file path off the piece the dialog actually wears
+answers all three questions at once. The harness now loads `core/NineSlice.lua`,
+`core/NineSliceLayouts.lua` and `Textures/Assets.lua` for the same reason — without them it could not
+tell a registered atlas from one whose art nobody shipped, and PanelChrome takes its graceful-degrade
+path silently either way.
+
+Ten further mutations, each failing by name: the panel chrome layout swapped back in, the nineslice
+never applied, each of the three sheets unshipped (frame, edges, dropdown — three separate mutations,
+since they fail independently), the theme ignored, the modern trigger never built, the theme leaking
+into the tab, the hover state never swapping the arrow, and the bare button left without `SetText`.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

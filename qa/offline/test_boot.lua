@@ -782,6 +782,13 @@ local FILES = {
   -- silently, and with every HasAtlas assertion below then failing for the wrong reason. The real
   -- .toc has core/ long before modules/, which is why this only bites here.
   "modules/cooldownviewer/Assets.lua",
+  -- The chrome data layer, added when the edit-mode dialog started depending on a NAMED nineslice
+  -- layout and on art being shipped for it. Without these three the harness could not tell a
+  -- registered atlas from one whose BLP nobody copied — and PanelChrome silently takes its
+  -- graceful-degrade path either way, so nothing else would have noticed.
+  "core/NineSlice.lua",
+  "core/NineSliceLayouts.lua",
+  "Textures/Assets.lua",
   "core/Tabs.lua",
   "core/ScrollbarReskin.lua",
   "core/Menu.lua",
@@ -3638,8 +3645,65 @@ do
                           "Icon Padding", "Opacity", "Visibility", "Show Timer", "Show Tooltips" }) do
     assertf(rowOf("essential", name) ~= nil, "the dialog carries " .. name)
   end
-  assertf(panel.settingsButton and panel.revertButton and panel.resetButton,
-          "…and the three footer buttons")
+  assertf(panel.revertButton and panel.resetButton, "…and the Revert / Reset buttons region")
+  -- "Cooldown Manager Settings" is NOT in that region: retail's AddExtraButtons puts a system's own
+  -- extra actions at the END of the options stack, which is where NewEra's dialog carries this one.
+  local settingsRow
+  for _, e in ipairs((select(2, M._editorPanel()).essential.col.entries) or {}) do
+    if e.frame.Button and e.frame.Button.GetText
+      and e.frame.Button:GetText() == "Cooldown Manager Settings" then settingsRow = e.frame end
+  end
+  assertf(settingsRow ~= nil, "…and the way out sits at the end of the options stack, as retail does")
+
+  -- ART. The dialog wears retail's DialogBorderTranslucentTemplate — black 0.8 under the DiamondMetal
+  -- "Dialog" nineslice — NOT PanelChrome's portrait frame, which is window chrome: on a small
+  -- floating dialog that brings a rock fill and a portrait ring and reads as a window that lost its
+  -- contents. That was the first render's actual fault.
+  -- Pieces land ON the frame (core/NineSlice.lua's getPiece writes container[pieceName]), which is
+  -- what NewEra's dialog does too — not on a PanelChrome-style .NineSlice child.
+  assertf(panel.Bg ~= nil and panel.TopLeftCorner ~= nil,
+          "the dialog carries a background and a nineslice border")
+  assertf(panel.Portrait == nil, "…and no portrait, whose ring is panel chrome and wrong here")
+  -- Read what the border ACTUALLY WEARS, not what the registry could offer. Asserting the layout
+  -- table alone passed just as happily with the dialog applying PortraitFrameTemplate, and it would
+  -- pass with the BLP never shipped: NE.tex.SetAtlas reports a miss and leaves the texture blank in
+  -- both cases, so the file path on the piece is the only thing that answers all three questions.
+  assertf(tostring(panel.TopLeftCorner:GetTexture()):lower():find("diamondmetal") ~= nil,
+          "…wearing DiamondMetal, the retail dialog border, from a shipped file (" ..
+          tostring(panel.TopLeftCorner:GetTexture()) .. ")")
+  assertf(tostring(panel.LeftEdge:GetTexture()):lower():find("diamondmetal") ~= nil,
+          "…edges too, which come off a different sheet and so can go missing on their own")
+
+  -- THE THEME IS THE DIALOG'S, and it must not have leaked into the tab: one kit, two sets of
+  -- metrics, and the tab is a scrolling page of sections where this is a fixed 32px-row panel.
+  local dlgCheck = rowOf("essential", "Show Timer")
+  local dlgDrop  = rowOf("essential", "Orientation")
+  assertf(dlgDrop.Button.RefreshArt ~= nil,
+          "the dialog's dropdown is the modern textholder-and-arrow trigger")
+  assertf(tostring(dlgDrop.Button._body:GetTexture()):lower():find("dropdown") ~= nil
+          and tostring(dlgDrop.Button._arrow:GetTexture()):lower():find("dropdown") ~= nil,
+          "…with its body and arrow art actually resolving to a shipped file")
+  -- The gradient lives on the ARROW in retail's design, so the state IS the arrow swapping atlas.
+  dlgDrop.Button:RefreshArt()
+  assertf(dlgDrop.Button._arrowAtlas == "common-dropdown-a-button", "…idle at rest")
+  dlgDrop.Button._neOver = true
+  dlgDrop.Button:RefreshArt()
+  assertf(dlgDrop.Button._arrowAtlas == "common-dropdown-a-button-hover",
+          "…and hovering moves it to the hover art, which is the only state this trigger has")
+  dlgDrop.Button._neOver = false
+  dlgDrop.Button:RefreshArt()
+  -- A bare Button has no SetText/GetText of its own, and every refresh below calls them.
+  dlgDrop.Button:SetText("probe")
+  assertf(dlgDrop.Button:GetText() == "probe", "…and it answers SetText/GetText like the template did")
+  local function heightOf(col, label)
+    for _, e in ipairs(col.entries or {}) do
+      if e.frame.Label and e.frame.Label.GetText and e.frame.Label:GetText() == label then return e.h end
+    end
+  end
+  local pgsT = select(2, M._editorPanel())
+  assertf(heightOf(pgsT.essential.col, "Show Timer") == 32,
+          "…and its rows are retail's 32px (" .. tostring(heightOf(pgsT.essential.col, "Show Timer")) .. ")")
+  assertf(dlgCheck.Check:GetWidth() == 32, "…with retail Edit Mode's 32px checkbox")
 
   -- A slider writes through, and the frame follows without a reload.
   local limit = rowOf("essential", "Icon Limit")
@@ -3686,10 +3750,9 @@ do
   local _, pgs = M._editorPanel()
   assertf(pgs.buffBar.body:IsShown(), "selecting another viewer shows its page")
   assertf(not pgs.essential.body:IsShown(), "…and hides the one before it")
-  local titleFS = panel.TitleContainer and panel.TitleContainer.TitleText or panel.Title
-  assertf(titleFS and titleFS:GetText() == "Buff Bars",
+  assertf(panel.TitleText and panel.TitleText:GetText() == "Buff Bars",
           "…and the title says which frame you are editing (" ..
-          tostring(titleFS and titleFS:GetText()) .. ")")
+          tostring(panel.TitleText and panel.TitleText:GetText()) .. ")")
 
   -- REVERT goes back to how this viewer was when the editor opened — NOT to defaults, which is the
   -- button below it. Conflating the two is how someone loses a setup they spent ten minutes on.
@@ -3734,6 +3797,15 @@ do
     end
   end
   assertf(tabRow ~= nil, "the Settings tab renders the same value as a slider")
+  -- The other half of the theme assertion: the tab kept every default it had.
+  local tabDrop
+  for _, e in ipairs((S.settingsColumn or {}).entries or {}) do
+    if e.frame.Button and e.frame.Label and e.frame.Label.GetText
+      and e.frame.Label:GetText() == "Orientation" then tabDrop = e.frame end
+  end
+  assertf(tabDrop ~= nil and tabDrop.Button.RefreshArt == nil,
+          "…and the tab's dropdown is untouched by the dialog's theme")
+
   rowOf("essential", "Icon Limit").Slider:SetValue(9)
   assertf(tabRow.Slider:GetValue() == 9,
           "…and a dialog write refreshes it, so the two views cannot disagree (" ..
@@ -3793,7 +3865,7 @@ do
 
   -- The way out, to the settings a per-frame dialog has no business carrying.
   S.HidePanel()
-  panel.settingsButton:GetScript("OnClick")(panel.settingsButton)
+  settingsRow.Button:GetScript("OnClick")(settingsRow.Button)
   assertf(not DragonUI.EditorMode:IsActive(),
           "Cooldown Manager Settings leaves edit mode, which covers the screen")
   assertf(S.panel:IsShown() and S.GetDisplayMode() == "settings",

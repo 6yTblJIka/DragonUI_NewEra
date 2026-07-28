@@ -82,10 +82,29 @@ end
 local Column = {}
 Column.__index = Column
 
-function Kit.New(parent, width)
+-- A THEME, not a second kit. The Settings tab is a scrolling page of sections; the edit-mode dialog
+-- is a fixed panel of 32px rows transcribed from retail's EditModeSystemSettingsDialog. Same widgets,
+-- different metrics and fonts — so the differences live in one table the caller passes, and every
+-- default here is exactly what the tab already had.
+local DEFAULT_THEME = {
+  labelFont  = "GameFontHighlightSmall",
+  checkSize  = 24,
+  checkH     = CHECK_H,
+  sliderH    = DROPDOWN_H,
+  dropH      = DROPDOWN_H,
+  labelW     = 96,          -- compact slider only; the tab's dropdown right-anchors instead
+  controlW   = nil,         -- nil = the tab's behaviour (fill the row / o.width)
+  dropdownArt = false,      -- true = the modern textholder + arrow, instead of a red panel button
+}
+
+function Kit.New(parent, width, theme)
+  local t = {}
+  for k, v in pairs(DEFAULT_THEME) do t[k] = v end
+  for k, v in pairs(theme or {}) do t[k] = v end
   local col = setmetatable({
     frame    = parent,
     width    = width or 330,
+    theme    = t,
     entries  = {},          -- ordered rows: { frame =, h =, section =, gap =, indent = }
     sections = {},
     refreshers = {},
@@ -216,13 +235,14 @@ end
 -- o = { label, desc, get, set, onChanged }
 
 function Column:AddCheckbox(o)
-  local row = self:_row("Button", CHECK_H)
+  local th = self.theme
+  local row = self:_row("Button", th.checkH)
 
   local cb = CreateFrame("CheckButton", nextName("Check"), row, "UICheckButtonTemplate")
-  cb:SetSize(24, 24)
+  cb:SetSize(th.checkSize, th.checkSize)
   cb:SetPoint("LEFT", row, "LEFT", 0, 0)
 
-  local label = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  local label = row:CreateFontString(nil, "ARTWORK", th.labelFont)
   label:SetPoint("LEFT", cb, "RIGHT", 2, 0)
   label:SetPoint("RIGHT", row, "RIGHT", -4, 0)
   label:SetJustifyH("LEFT")
@@ -343,12 +363,13 @@ end
 local ARROW_W, VALUE_W, LABEL_W = 18, 44, 96
 
 function Column:AddCompactSlider(o)
-  local row = self:_row("Frame", DROPDOWN_H)
+  local th = self.theme
+  local row = self:_row("Frame", th.sliderH)
   local minV, maxV, step = o.min or 0, o.max or 100, o.step or 1
-  local labelW = o.labelWidth or LABEL_W
+  local labelW = o.labelWidth or th.labelW or LABEL_W
   local rowW = self.width - (self._section and ROW_INDENT or 0)
 
-  local label = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  local label = row:CreateFontString(nil, "ARTWORK", th.labelFont)
   label:SetPoint("LEFT", row, "LEFT", 2, 0)
   label:SetWidth(labelW)
   label:SetJustifyH("LEFT")
@@ -450,18 +471,67 @@ end
 -- AceGUI, which sorts it for you, and a radio menu has to decide its own order. "Always / In Combat
 -- / Hidden" reads as a progression; alphabetised it does not.
 
+-- The modern trigger, assembled by hand. 3.3.5a has no WowStyle1DropdownTemplate, and retail's own
+-- version paints the body with a STATIC atlas and puts the gradient on the ARROW — so the states
+-- below are arrow art, and the body has none. Built from a bare Button rather than reskinning
+-- UIPanelButtonTemplate: fighting a template's own art for a look this different is more code than
+-- the four textures it takes to draw it.
+local function buildModernTrigger(row, name, w, h)
+  local btn = CreateFrame("Button", name, row)
+  btn:SetSize(w, h)
+
+  local body = btn:CreateTexture(nil, "BACKGROUND")
+  body:SetAllPoints()
+  NE.tex.SetAtlas(body, "common-dropdown-textholder", false)
+
+  local arrow = btn:CreateTexture(nil, "ARTWORK")
+  arrow:SetSize(h - 2, h - 2)
+  arrow:SetPoint("RIGHT", btn, "RIGHT", -2, 0)
+  NE.tex.SetAtlas(arrow, "common-dropdown-a-button", false)
+
+  local text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  text:SetPoint("LEFT", btn, "LEFT", 8, 0)
+  text:SetPoint("RIGHT", arrow, "LEFT", -2, 0)
+  text:SetJustifyH("LEFT")
+  btn.Text = text
+  -- A bare Button has no SetText/GetText of its own; the callers below (and every refresh) expect
+  -- the template's, so provide them rather than teaching each call site which kind it holds.
+  btn.SetText = function(self, s) self.Text:SetText(s) end
+  btn.GetText = function(self) return self.Text:GetText() end
+
+  btn._body, btn._arrow = body, arrow
+  btn.RefreshArt = function(self)
+    local suffix = ""
+    if self._neDown and self._neOver then suffix = "-pressedhover"
+    elseif self._neOver then suffix = "-hover"
+    elseif self._neDown then suffix = "-pressed" end
+    -- Recorded as well as applied: every state comes off ONE sheet, so the file path cannot say
+    -- which one is showing and a test would have nothing to read.
+    self._arrowAtlas = "common-dropdown-a-button" .. suffix
+    NE.tex.SetAtlas(self._arrow, self._arrowAtlas, false)
+  end
+  return btn
+end
+
 function Column:AddDropdown(o)
-  local row = self:_row("Frame", DROPDOWN_H)
+  local th = self.theme
+  local row = self:_row("Frame", th.dropH)
   local values = o.values or {}
 
-  local label = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  local label = row:CreateFontString(nil, "ARTWORK", th.labelFont)
   label:SetPoint("LEFT", row, "LEFT", 2, 0)
   label:SetJustifyH("LEFT")
   label:SetText(o.label or "")
 
-  local btn = CreateFrame("Button", nextName("Drop"), row, "UIPanelButtonTemplate")
-  btn:SetSize(o.width or 130, 22)
-  btn:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+  local btn
+  if th.dropdownArt then
+    btn = buildModernTrigger(row, nextName("Drop"), th.controlW or o.width or 200, th.dropH - 6)
+    btn:SetPoint("LEFT", row, "LEFT", th.labelW + 6, 0)
+  else
+    btn = CreateFrame("Button", nextName("Drop"), row, "UIPanelButtonTemplate")
+    btn:SetSize(o.width or 130, 22)
+    btn:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+  end
 
   local function refresh()
     btn:SetText(labelFor(values, o.get and o.get()))
@@ -489,6 +559,15 @@ function Column:AddDropdown(o)
   end)
 
   tip(btn, o.label, o.desc)
+  -- AFTER tip, and hooked rather than set: tip owns OnEnter/OnLeave with SetScript, which would
+  -- discard a hook installed before it. The arrow's hover and pressed art is the only state this
+  -- trigger has, so losing it would leave a button that never acknowledges the mouse.
+  if btn.RefreshArt then
+    btn:HookScript("OnEnter",     function(s) s._neOver = true;  s:RefreshArt() end)
+    btn:HookScript("OnLeave",     function(s) s._neOver = false; s:RefreshArt() end)
+    btn:HookScript("OnMouseDown", function(s) s._neDown = true;  s:RefreshArt() end)
+    btn:HookScript("OnMouseUp",   function(s) s._neDown = false; s:RefreshArt() end)
+  end
   refresh()
   self.refreshers[#self.refreshers + 1] = refresh
   row.Button, row.Label, row.Refresh = btn, label, refresh

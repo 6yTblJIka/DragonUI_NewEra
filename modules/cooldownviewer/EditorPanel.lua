@@ -27,11 +27,18 @@
 local NE = DragonUI_NewEra
 local M  = NE.cooldownviewer
 
-local PANEL_W = 306
-local BODY_W  = PANEL_W - 26
-local TITLE_H = 28
-local FOOTER_BTN_H, FOOTER_GAP = 24, 4
-local SIDE_GAP = 12          -- clearance between the dialog and the frame it edits
+-- Geometry transcribed from retail's EditModeSystemSettingsDialog, via NewEra's own transcription of
+-- it (ReferenceAddons/NewEra/EditMode/SettingsPopup.lua): 343×32 rows spaced 2, a 100px label column,
+-- 20px content inset each side, and the buttons region at the bottom.
+local ROW_W, ROW_H, ROW_GAP = 343, 32, 2
+local LABEL_W   = 100
+local CONTROL_W = 200
+local CONTENT_X = 20
+local PANEL_W   = ROW_W + (CONTENT_X * 2)
+local BODY_TOP  = 43         -- title at TOP -15, options at its BOTTOM -12
+local BTN_H     = 28
+local FOOTER_H  = 15 + BTN_H + 2 + 16 + BTN_H   -- reset, divider, revert, from the bottom up
+local SIDE_GAP  = 12         -- clearance between the dialog and the frame it edits
 
 -- Same value/label pairs, in the same order, as the /cdm Settings tab.
 local ORIENTATION = { { "horizontal", "Horizontal" }, { "vertical", "Vertical" } }
@@ -110,11 +117,22 @@ local function buildPage(category)
   local spec    = specFor(category)
 
   local body = CreateFrame("Frame", nil, panel)
-  body:SetPoint("TOPLEFT", panel, "TOPLEFT", 13, -TITLE_H)
-  body:SetWidth(BODY_W)
+  body:SetPoint("TOPLEFT", panel, "TOPLEFT", CONTENT_X, -BODY_TOP)
+  body:SetWidth(ROW_W)
   body:Hide()
 
-  local col = Kit.New(body, BODY_W)
+  -- The dialog's metrics, not the Settings tab's. Same widgets either way — see the theme note in
+  -- SettingsControls.lua.
+  local col = Kit.New(body, ROW_W, {
+    labelFont   = "GameFontHighlightMedium",
+    checkSize   = 32,
+    checkH      = ROW_H,
+    sliderH     = ROW_H,
+    dropH       = ROW_H,
+    labelW      = LABEL_W,
+    controlW    = CONTROL_W,
+    dropdownArt = true,
+  })
 
   local function get(key) return M.GetOpt(frameID, key) end
   -- Every write goes through here: store, then the OTHER view, then this dialog's own Revert state.
@@ -210,6 +228,21 @@ local function buildPage(category)
     })
   end
 
+  -- Retail's AddExtraButtons puts a system's own extra actions at the END of the options stack,
+  -- above the Revert/Reset region — which is where NewEra's dialog carries this one too.
+  col:AddButton({
+    label = "Cooldown Manager Settings",
+    width = ROW_W,
+    desc  = "Closes edit mode and opens the Cooldown Manager window, which carries the settings that "
+            .. "are not per-viewer: alerts, ready sounds, buff tracking, icon fit and the resets.",
+    onClick = function()
+      -- Leave the editor first: it covers the screen, and DragonUI saves every frame's position on
+      -- the way out, so nothing is lost by going this way.
+      if NE.CloseFrameEditor then NE.CloseFrameEditor() end
+      if M.OpenSettingsPanel then M.OpenSettingsPanel("settings") end
+    end,
+  })
+
   col:Relayout()
   local page = { body = body, col = col, category = category }
   pages[category] = page
@@ -237,40 +270,60 @@ local function ensurePanel()
   end)
   f:Hide()
 
-  local PC = NE.chrome
-  if PC and PC.Apply then
-    pcall(PC.Apply, f, { title = "Cooldown Manager", noPortrait = true })
-    -- PanelChrome washes the rock down for a full-size window body; at this size that reads as murk.
-    if f.Bg and f.Bg.SetVertexColor then f.Bg:SetVertexColor(1, 1, 1) end
-  end
-  if f.CloseButton then
-    f.CloseButton:SetScript("OnClick", function() M.HideEditorPanel() end)
+  -- CHROME: retail's DialogBorderTranslucentTemplate — black at 0.8 inset 7, under the DiamondMetal
+  -- "Dialog" nineslice. NOT PanelChrome's portrait frame, which is window chrome: applied to a small
+  -- floating dialog it brings the rock fill and the portrait ring, and reads as a window that lost
+  -- its contents.
+  local bg = f:CreateTexture(nil, "BACKGROUND", nil, -5)
+  bg:SetTexture(0, 0, 0, 0.8)
+  bg:SetPoint("TOPLEFT", 7, -7)
+  bg:SetPoint("BOTTOMRIGHT", -7, 7)
+  f.Bg = bg
+  if NE.nineslice and NE.nineslice.ApplyLayout then
+    pcall(NE.nineslice.ApplyLayout, f, "Dialog")
   end
 
-  -- Footer. Built once and pointed at whichever viewer is showing, rather than per page: three
-  -- buttons that differ only in which category they act on would be three copies of this block.
-  local function footerButton(label, onClick)
+  f.TitleText = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightLarge")
+  f.TitleText:SetPoint("TOP", 0, -15)
+
+  local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+  close:SetPoint("TOPRIGHT")
+  local PC = NE.chrome
+  if PC and PC.ModernizeCloseButton then
+    pcall(PC.ModernizeCloseButton, close, { anchor = false })
+  end
+  close:SetScript("OnClick", function() M.HideEditorPanel() end)
+  f.CloseButton = close
+
+  -- Buttons region, retail's shape: Revert (180 wide), a divider, then the full-width Reset. Built
+  -- once and pointed at whichever viewer is showing — two buttons differing only in which category
+  -- they act on would be two copies of this block. "Cooldown Manager Settings" is NOT here; retail
+  -- puts a system's extra actions at the end of the options stack, and so does buildPage.
+  local function footerButton(label, w, onClick)
     local b = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    b:SetSize(BODY_W, FOOTER_BTN_H)
+    b:SetSize(w, BTN_H)
     b:SetText(label)
     b:SetScript("OnClick", function() if current then onClick(current) end end)
+    if NE.button and NE.button.Skin then pcall(NE.button.Skin, b) end
     return b
   end
 
-  f.settingsButton = footerButton("Cooldown Manager Settings", function()
-    -- Leave the editor first: it covers the screen, and DragonUI saves every frame's position on the
-    -- way out, so nothing is lost by going this way.
-    if NE.CloseFrameEditor then NE.CloseFrameEditor() end
-    if M.OpenSettingsPanel then M.OpenSettingsPanel("settings") end
-  end)
-  f.revertButton = footerButton("Revert Changes", function(category)
+  f.revertButton = footerButton("Revert Changes", 180, function(category)
     revert(category)
     M.RefreshEditorPanel()
   end)
-  f.resetButton = footerButton("Reset to Default", function(category)
+  f.revertButton:SetPoint("BOTTOMLEFT", CONTENT_X, 15 + BTN_H + 2 + 16)
+
+  f.buttonsDivider = f:CreateTexture(nil, "ARTWORK")
+  f.buttonsDivider:SetTexture("Interface\\FriendsFrame\\UI-FriendsFrame-OnlineDivider")
+  f.buttonsDivider:SetSize(330, 16)
+  f.buttonsDivider:SetPoint("BOTTOM", 0, 15 + BTN_H + 1)
+
+  f.resetButton = footerButton("Reset to Default", 330, function(category)
     M.ResetOpts(M.FRAME_ID[category])
     M.RefreshEditorPanel()
   end)
+  f.resetButton:SetPoint("BOTTOMLEFT", CONTENT_X, 15)
 
   -- Revert is disabled until there IS something to revert. A button that is always live and usually
   -- does nothing teaches you to ignore it, and this one is the undo.
@@ -322,19 +375,12 @@ function M.ShowEditorPanel(category, anchor)
   local h = page.col:Relayout()
 
   local spec = specFor(category)
-  local PC = NE.chrome
-  if PC and PC.SetTitle then PC.SetTitle(f, (spec and spec.label) or category) end
+  f.TitleText:SetText((spec and spec.label) or category)
 
-  -- Size to the page, then the footer under it. Height varies by viewer — Buff Bars carries two rows
-  -- nothing else does — so this is computed rather than a constant that would clip one of them.
-  local footerH = (FOOTER_BTN_H + FOOTER_GAP) * 3
-  f:SetHeight(TITLE_H + h + 10 + footerH + 10)
-  f.settingsButton:ClearAllPoints()
-  f.settingsButton:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 13, 10 + (FOOTER_BTN_H + FOOTER_GAP) * 2)
-  f.revertButton:ClearAllPoints()
-  f.revertButton:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 13, 10 + FOOTER_BTN_H + FOOTER_GAP)
-  f.resetButton:ClearAllPoints()
-  f.resetButton:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 13, 10)
+  -- Size to the page. Height varies by viewer — Buff Bars carries two rows nothing else does — so
+  -- this is computed rather than a constant that would clip one of them. The buttons region is
+  -- anchored to the bottom edge, so it follows for free.
+  f:SetHeight(BODY_TOP + h + 10 + FOOTER_H)
 
   ensureSnapshot(category)
   f.UpdateRevert()
