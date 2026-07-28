@@ -102,7 +102,7 @@ end
 -- ----------------------------------------------------------------------------
 -- NE.RegisterHUDFrame(spec)
 --   spec = { name, frame, section, key, editorVisible, showTest, hideTest, onHide,
---            perCharacter, editorMenu, editorTip }
+--            perCharacter, editorSettings, editorTip }
 --
 -- The HUD-frame counterpart to RegisterPanel. RegisterPanel is for toggled WINDOWS: it wires a
 -- MoversSystem mover, which is fine for a window you drag by its title bar.
@@ -258,44 +258,54 @@ function NE.IsFrameEditorActive()
 end
 
 -- ----------------------------------------------------------------------------
--- NE.OpenFrameEditorMenu(anchor) -> true | false
+-- NE.OpenFrameEditorSettings(anchor) -> true | false
 --
--- Open the right-click settings menu a HUD frame registered through `spec.editorMenu`. Retail puts a
--- system's own settings ON the frame in Edit Mode rather than in a separate options window, and this
--- is that seam: the module supplies a MenuUtil-shaped generator, this file decides when it may open.
+-- Open the settings a HUD frame registered through `spec.editorSettings`. Retail puts a system's own
+-- settings ON the frame in Edit Mode rather than in a separate options window, and this is that seam.
 --
--- Selecting the frame first is deliberate. Right-click leaves DragonUI's own selection alone
--- (CreateUIFrame only selects on LeftButton), so without this the coordinate readout and Reset button
--- would still be describing whatever was clicked last while the menu edits something else.
+-- The field is a CALLBACK, not a menu or a panel: what a module opens when its frame is clicked is
+-- the module's business, and this file's business is only deciding when it may (CONTRACTS §4). The
+-- Cooldown Manager opens a dialog beside the frame; another module could open anything.
+--
+-- Selecting the frame first is deliberate, and matters most on right-click, which leaves DragonUI's
+-- own selection alone (CreateUIFrame only selects on LeftButton) — without this the coordinate
+-- readout and Reset button would still describe whatever was clicked last while the dialog edits
+-- something else.
 -- ----------------------------------------------------------------------------
-function NE.OpenFrameEditorMenu(anchor)
-    local generator = anchor and anchor.neEditorMenu
-    if type(generator) ~= "function" then return false end
+function NE.OpenFrameEditorSettings(anchor)
+    local open = anchor and anchor.neEditorSettings
+    if type(open) ~= "function" then return false end
     if not NE.IsFrameEditorActive() then return false end
-    if not (NE.menu and type(NE.menu.OpenContext) == "function") then return false end
 
     local dragon = NE.dragon
     if dragon and type(dragon.SelectEditorFrame) == "function" then
         pcall(dragon.SelectEditorFrame, anchor)
     end
-    NE.menu.OpenContext(generator, anchor)
+    local ok, err = pcall(open, anchor)
+    if not ok then
+        warn("editor settings failed to open: " .. tostring(err))
+        return false
+    end
     return true
 end
 
--- Wire the right-click menu and its discoverability hint onto an editor anchor.
+-- Wire the click and its discoverability hint onto an editor anchor.
 --
 -- SetScript, not HookScript: CreateUIFrame sets OnMouseDown (left-click select), OnDragStart and
 -- OnDragStop, and none of OnMouseUp / OnEnter / OnLeave — so nothing here overwrites base behaviour.
 -- This is a runtime write to a frame we own, not an edit to DragonUI (CONTRACTS §0).
-local function attachEditorMenu(anchor, spec)
-    anchor.neEditorMenu = spec.editorMenu
+--
+-- EITHER BUTTON opens it, because retail opens a system's dialog on SELECTION and left-click is what
+-- selects. Left-click is also the drag, so this fires on the release that ends one too — which is
+-- also the retail behaviour: the dialog for the thing you just moved stays with it.
+local function attachEditorSettings(anchor, spec)
+    anchor.neEditorSettings = spec.editorSettings
 
-    anchor:SetScript("OnMouseUp", function(self, button)
-        if button ~= "RightButton" then return end
-        NE.OpenFrameEditorMenu(self)
+    anchor:SetScript("OnMouseUp", function(self)
+        NE.OpenFrameEditorSettings(self)
     end)
 
-    -- A menu nobody knows is there is a menu nobody uses. The green handle is the only thing on
+    -- Settings nobody knows are there are settings nobody uses. The green handle is the only thing on
     -- screen in edit mode, so the hint goes on it.
     if spec.editorTip == false or not GameTooltip then return end
     anchor:SetScript("OnEnter", function(self)
@@ -303,7 +313,7 @@ local function attachEditorMenu(anchor, spec)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(spec.label or spec.name, 1, 1, 1)
         GameTooltip:AddLine("Drag to move.", 0.8, 0.8, 0.8)
-        GameTooltip:AddLine("Right-click for this frame's settings.", 0.4, 1, 0.4)
+        GameTooltip:AddLine("Click for this frame's settings.", 0.4, 1, 0.4)
         GameTooltip:Show()
     end)
     anchor:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -382,7 +392,7 @@ function NE.RegisterHUDFrame(spec)
     end)
 
     -- Optional: this frame's own settings, on the frame, in edit mode.
-    if type(spec.editorMenu) == "function" then attachEditorMenu(anchor, spec) end
+    if type(spec.editorSettings) == "function" then attachEditorSettings(anchor, spec) end
 
     local ok, err = pcall(dragon.RegisterEditableFrame, dragon, {
         name       = spec.name,

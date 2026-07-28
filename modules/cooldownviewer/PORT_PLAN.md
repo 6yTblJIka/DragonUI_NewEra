@@ -2555,48 +2555,81 @@ orientation / icon limit / size / opacity are right there beside it. Ours were r
 to change. The owner asked for the retail shape.
 
 **§B1's decision is not reopened.** Upstream's 6,441-line Edit Mode reimplementation stays unported;
-what changes is that DragonUI's editor now carries the *settings* as well as the *position*. The
-affordance is a **right-click on the viewer's editor handle**, because that handle is the only thing on
-screen in edit mode and it is already the thing you drag.
+what changes is that DragonUI's editor now carries the *settings* as well as the *position*.
 
-**The seam is `NE.RegisterHUDFrame`'s new `editorMenu` field** (integration/Register.lua), not the
+**The seam is `NE.RegisterHUDFrame`'s new `editorSettings` field** (integration/Register.lua), not the
 module. Every DragonUI touch — the mouse handler, the edit-mode gate, `SelectEditorFrame`,
-`EditorMode:Hide` — lives there, so `EditorMenu.lua` produces a MenuUtil-shaped generator and knows
-nothing about the host (CONTRACTS §4). That is also what makes the whole thing testable with no editor
-and no `UIDropDownMenu` present: `NE.menu.BuildRoot` walks the tree, and the click path is one script.
+`EditorMode:Hide` — lives there. The field is a **callback**, not a widget: what a module opens when its
+frame is clicked is the module's business, and the host glue's business is only deciding when it may
+(CONTRACTS §4).
 
 **Nothing in DragonUI is edited (CONTRACTS §0).** `CreateUIFrame` sets `OnMouseDown` (left-click
 select), `OnDragStart` and `OnDragStop`, and *none* of `OnMouseUp` / `OnEnter` / `OnLeave` — so ours are
 plain `SetScript` calls on a frame we asked the factory to build, overwriting nothing. Out of edit mode
-the anchor is `EnableMouse(false)`, so the menu is unreachable without the gate even existing.
+the anchor is `EnableMouse(false)`, so the settings are unreachable without the gate even existing.
 
-**Right-click also selects the frame.** `CreateUIFrame` only selects on `LeftButton`, so without this
-the editor's coordinate readout and Reset button would still describe whatever was clicked last while
-the menu edited something else.
+**Either button opens it**, because retail opens a system's dialog on *selection* and left-click is what
+selects. **Our handler also selects the frame**, which matters most on right-click: `CreateUIFrame` only
+selects on `LeftButton`, so without it the editor's coordinate readout and Reset button would describe
+whatever was clicked last while the dialog edits something else.
 
-**Two editors for one value**, which SettingsOptions.lua's header explicitly forbids. The rule is about
-*staleness*, so both halves are closed rather than the rule waived: core/Menu.lua rebuilds the tree from
-the generator on every open and re-reads every radio predicate on every click, so the menu cannot go
-stale; the page can, so every write calls `CDS.RefreshSettingsPage`, which no-ops when the tab was never
-built. The test asserts the tab's slider actually moves.
+#### The first pass was a context menu, and that was the wrong shape
 
-**Opacity steps by 5 here and by 1 on the tab** — a 51-row menu is not a control. A stored value that
-lands between two rows ticks **nothing**, which is the honest rendering: rounding to the nearest row
-would silently change a setting just by opening the menu.
+It shipped as a right-click menu: every setting a submenu of radios. It worked. Then the owner showed
+what NewEra's own 1.15 edit mode does — a small **dialog** beside the selected frame with every slider
+and dropdown visible at once — and the menu's two compromises stopped being defensible:
 
-**Reset is scoped to appearance, and says so.** DragonUI's editor panel already carries a Reset for
-placement; two differently-scoped Reset buttons a few pixels apart read as one. `All settings…` closes
-edit mode (which saves every frame's position on the way out) and opens `/cdm`, for the settings a menu
-has no business carrying: alerts, ready sounds, buff tracking, icon fit, the resets.
+* **A menu shows one setting at a time**, and hides the value you are trying to match while you pick it.
+* **A numeric setting inside a menu has to become a list of discrete rows.** That is why the menu shipped
+  opacity in steps of 5 where the tab steps 1, and why it needed a tooltip explaining that a value could
+  legitimately tick *nothing at all*. A dialog takes a real slider and both compromises simply go away.
 
-**Turning a viewer off is reversible from the same menu**, because the green handle is the *anchor* and
-`UpdateVisibility` only ever hides the *content*. Same for Visibility → Hidden. Asserted, since a menu
-whose first entry can strand you is worse than no menu.
+So `EditorMenu.lua` was replaced by `EditorPanel.lua`. The seam survived the swap unchanged, which is
+the argument for having made it a callback rather than a menu generator.
 
-Ten mutations, each failing by name and none aborting the run: the menu never attached, the edit-mode
-gate dropped, the panel never notified, values rounded to the nearest row, the frame not selected, any
-button opening it, `Hide when inactive` offered everywhere, Reset resetting nothing, the hint removed,
-and `All settings…` leaving the editor up.
+#### What the dialog is
+
+**The /cdm control kit, not a second set of widgets** (SettingsControls.lua). One new control was needed:
+`AddCompactSlider`, a one-line slider with nudge arrows. The tab's tall two-line slider is right for a
+page you scroll and wrong for a dialog that has to sit on screen next to the thing it edits without
+burying it. **The arrows are not decoration** — a drag reports continuous values on this client
+(`SetObeyStepOnDrag` is retail-only), so they are the only precise way to land on an exact value.
+
+**`FULLSCREEN_DIALOG` strata.** `CreateUIFrame` puts the editor handles at `FULLSCREEN`; a settings
+dialog that renders behind the frame it configures is not a settings dialog.
+
+**One dialog, not four.** Selecting another viewer swaps the page and retitles. Pages are built lazily
+and kept, so switching costs nothing after the first visit.
+
+**Re-read on open.** Something else may have moved these underneath it — the `/cdm` tab, a layout apply,
+a reset — and a dialog that opens on a stale value is indistinguishable from one whose settings did not
+take.
+
+**Revert vs Reset, deliberately not the same button.** *Revert Changes* goes back to how the viewer was
+when the editor was opened; *Reset to Default* goes to defaults. Conflating them is how someone loses a
+setup they spent ten minutes on. The snapshot is taken on first open per editor session and dropped when
+the editor closes — keeping it would silently arm the button with an hour-old state. Revert is disabled
+until there is something to revert, because a button that is always live and usually does nothing teaches
+you to ignore it, and this one is the undo.
+
+**Leaving edit mode takes the dialog with it**, via the viewer spec's `onHide`. `HideAllEditableFrames`
+calls that for every registered frame, so it fires whichever viewer was selected.
+
+**Two editors for one value**, which SettingsOptions.lua's header forbids. The rule is about *staleness*,
+so both halves are closed rather than the rule waived: the dialog re-reads on open, and every write it
+makes calls `CDS.RefreshSettingsPage`, which no-ops when that tab was never built. The test asserts the
+tab's slider actually moves.
+
+**Not carried:** `Scale`, the first row in NewEra's own dialog. There is no scale value in this port's
+store — `iconSize` scales the icons and nothing scales the frame — so adding it is a new stored setting
+(defaults, per-character, layout capture) plus a fix to the editor anchor, which sizes itself from the
+content's *unscaled* `GetWidth`. That is a feature, not a look change, and is left for the owner to call.
+
+Fourteen mutations, each failing by name and none aborting the run: the opener never attached, the
+edit-mode gate dropped, the tab never notified, no re-read on open, Revert going to defaults instead of
+the snapshot, snapshots surviving the session, Revert always armed, the arrows not stepping, the arrows
+not clamping, `onHide` not wired, `Hide When Inactive` offered everywhere, the title never updated, pages
+never hidden on switch, and the strata left below the handles.
 
 ## H.4. Suggested order
 

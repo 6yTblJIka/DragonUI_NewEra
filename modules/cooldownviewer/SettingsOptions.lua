@@ -12,11 +12,11 @@
 -- as long as both are rebuilt on show, and the first time one is not, the player is looking at a stale
 -- value with no way to tell. (Actions are a different matter — see the Reset section below.)
 --
--- ONE EXCEPTION, added later: EditorMenu.lua renders the per-viewer settings AGAIN, as a right-click
--- menu on the viewer's edit-mode handle — retail's shape, where a system's settings sit on the frame.
--- The rule above is about staleness, so both halves are closed rather than the rule waived: that menu
--- is rebuilt from its generator on every open (so it cannot go stale), and every write it makes calls
--- CDS.RefreshSettingsPage below (so this page cannot either).
+-- ONE EXCEPTION, added later: EditorPanel.lua renders the per-viewer settings AGAIN, as a dialog
+-- beside the frame in edit mode — retail's shape, where a system's settings sit on the frame. The rule
+-- above is about staleness, so both halves are closed rather than the rule waived: that dialog
+-- re-reads every control each time it opens, and every write it makes calls CDS.RefreshSettingsPage
+-- below, so neither view can drift from the store or from the other.
 --
 -- Frame POSITION stays with the movers (`/dui edit`) — §B1's decision, unchanged. It is the one
 -- setting that is not a value in this store.

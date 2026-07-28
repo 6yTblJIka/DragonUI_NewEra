@@ -329,6 +329,120 @@ function Column:AddSlider(o)
   return row
 end
 
+-- ── Compact slider ──────────────────────────────────────────────────────────────────────────────
+-- o = { label, desc, min, max, step, get, set, format, labelWidth }
+--
+-- One line: label, a nudge arrow, the bar, the other arrow, the value. The tab's tall two-line slider
+-- is right for a page you scroll; it is wrong for the edit-mode dialog, which sits ON the screen next
+-- to the frame it edits and has to stay small enough to see past.
+--
+-- THE ARROWS ARE NOT DECORATION. A drag on this client reports continuous values (SetObeyStepOnDrag is
+-- retail-only), so landing on an exact 65% by hand is luck. The arrows step by exactly `step`, which is
+-- the only precise way to set one of these — retail's edit-mode sliders have them for the same reason.
+
+local ARROW_W, VALUE_W, LABEL_W = 18, 44, 96
+
+function Column:AddCompactSlider(o)
+  local row = self:_row("Frame", DROPDOWN_H)
+  local minV, maxV, step = o.min or 0, o.max or 100, o.step or 1
+  local labelW = o.labelWidth or LABEL_W
+  local rowW = self.width - (self._section and ROW_INDENT or 0)
+
+  local label = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  label:SetPoint("LEFT", row, "LEFT", 2, 0)
+  label:SetWidth(labelW)
+  label:SetJustifyH("LEFT")
+  label:SetText(o.label or "")
+
+  local value = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+  value:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+  value:SetWidth(VALUE_W)
+  value:SetJustifyH("RIGHT")
+
+  local name = nextName("CSlider")
+  local sl = CreateFrame("Slider", name, row, "OptionsSliderTemplate")
+  sl:SetPoint("LEFT", row, "LEFT", labelW + ARROW_W + 6, 0)
+  sl:SetWidth(math.max(40, rowW - labelW - VALUE_W - (ARROW_W * 2) - 14))
+  sl:SetMinMaxValues(minV, maxV)
+  sl:SetValueStep(step)
+  if sl.SetObeyStepOnDrag then sl:SetObeyStepOnDrag(true) end
+
+  -- All three of the template's own FontStrings are blanked here: Low/High would collide with the
+  -- label and the value at this width, and Text sits centred above the bar with nowhere to go.
+  for _, suffix in ipairs({ "Text", "Low", "High" }) do
+    local fs = _G[name .. suffix]
+    if fs and fs.SetText then fs:SetText("") end
+  end
+
+  local function fmt(v)
+    if o.format then return o.format(v) end
+    return tostring(v)
+  end
+
+  local function refresh()
+    local cur = snap(o.get and o.get() or minV, step, minV)
+    sl._neSuppress = true
+    sl:SetValue(cur)
+    sl._neSuppress = false
+    sl._neVal = cur
+    value:SetText(fmt(cur))
+  end
+
+  local function commit(v)
+    if v < minV then v = minV elseif v > maxV then v = maxV end
+    value:SetText(fmt(v))
+    if sl._neVal ~= v then
+      sl._neVal = v
+      if o.set then o.set(v) end
+      if o.onChanged then o.onChanged(v) end
+    end
+  end
+
+  sl:SetScript("OnValueChanged", function(self, raw)
+    if self._neSuppress then return end
+    local v = snap(raw or minV, step, minV)
+    if v < minV then v = minV elseif v > maxV then v = maxV end
+    if v ~= raw then
+      self._neSuppress = true
+      self:SetValue(v)
+      self._neSuppress = false
+    end
+    commit(v)
+  end)
+
+  local function arrow(point, xOff, dir, up, down, dis)
+    local b = CreateFrame("Button", nil, row)
+    b:SetSize(ARROW_W, ARROW_W)
+    b:SetPoint(point, row, point, xOff, 0)
+    b:SetNormalTexture(up)
+    b:SetPushedTexture(down)
+    b:SetDisabledTexture(dis)
+    b:SetScript("OnClick", function()
+      -- Drive the slider rather than the store: SetValue fires OnValueChanged, which is the one
+      -- place that snaps, clamps and writes. Two paths into one setting is how they drift.
+      local cur = sl._neVal or minV
+      sl:SetValue(cur + dir * step)
+      if PlaySound then PlaySound("igMainMenuOptionCheckBoxOn") end
+    end)
+    return b
+  end
+
+  row.Left  = arrow("LEFT",  labelW + 2, -1,
+                    "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up",
+                    "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Down",
+                    "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Disabled")
+  row.Right = arrow("RIGHT", -(VALUE_W + 4), 1,
+                    "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up",
+                    "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down",
+                    "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Disabled")
+
+  tip(sl, o.label, o.desc)
+  refresh()
+  self.refreshers[#self.refreshers + 1] = refresh
+  row.Slider, row.Label, row.Value, row.Refresh = sl, label, value, refresh
+  return row
+end
+
 -- ── Dropdown ────────────────────────────────────────────────────────────────────────────────────
 -- o = { label, desc, values = { {value, label}, ... }, get, set }
 --

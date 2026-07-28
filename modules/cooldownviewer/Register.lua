@@ -76,8 +76,15 @@ local function boot()
         -- character's slot on first login, so nothing moves on upgrade.
         perCharacter = true,
         -- Retail keeps a system's settings ON the frame in Edit Mode, not in a separate options
-        -- window. EditorMenu.lua builds that menu; integration/Register.lua owns when it may open.
-        editorMenu = M.EditorMenuGenerator and M.EditorMenuGenerator(spec.category) or nil,
+        -- window. EditorPanel.lua builds that dialog; integration/Register.lua owns when it opens.
+        editorSettings = function(editorAnchor)
+          if M.ShowEditorPanel then M.ShowEditorPanel(spec.category, editorAnchor) end
+        end,
+        -- Leaving edit mode takes the dialog with it. HideAllEditableFrames calls this for every
+        -- registered frame, so it fires whichever viewer was selected — and it is idempotent.
+        onHide = function()
+          if M.HideEditorPanel then M.HideEditorPanel() end
+        end,
         defaultPoint = {
           point = "BOTTOM", relativePoint = "BOTTOM",
           -- BuffBar sits off to the side in retail's preset; the rest are centred.
@@ -305,9 +312,9 @@ end)
 --
 -- No stored VALUE is rendered in both places. A setting with two editors stays consistent only while
 -- both are rebuilt on show, and the first time one is not, the player is reading a stale control and
--- cannot tell that from a setting that failed to apply. (EditorMenu.lua later added a third view of the
--- per-viewer settings — retail's on-the-frame menu — and pays that cost explicitly: it rebuilds on
--- every open and refreshes the Settings tab on every write. See its header.)
+-- cannot tell that from a setting that failed to apply. (EditorPanel.lua later added a third view of
+-- the per-viewer settings — retail's on-the-frame dialog — and pays that cost explicitly: it re-reads
+-- every control on open and refreshes the Settings tab on every write. See its header.)
 
 NE.RegisterOptionSection({
   id    = "cooldownviewer",

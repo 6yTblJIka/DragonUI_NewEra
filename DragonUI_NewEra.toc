@@ -279,10 +279,10 @@ modules\cooldownviewer\SettingsPresets.lua
 # defines below — that is fine, it is read when the tab is first opened, not at load.
 modules\cooldownviewer\SettingsControls.lua
 modules\cooldownviewer\SettingsOptions.lua
-# Each viewer's own settings as a right-click menu on its editor handle, retail's Edit Mode shape.
-# Needs core/Menu.lua for the tree and NE.RegisterHUDFrame's `editorMenu` seam; Register.lua below
-# hands it one generator per viewer at PLAYER_LOGIN.
-modules\cooldownviewer\EditorMenu.lua
+# Each viewer's own settings as a dialog beside the frame in edit mode, retail's shape.
+# Needs the SettingsControls kit above and NE.RegisterHUDFrame's `editorSettings` seam; Register.lua
+# below hands it one opener per viewer at PLAYER_LOGIN.
+modules\cooldownviewer\EditorPanel.lua
 modules\cooldownviewer\Register.lua
 
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---
