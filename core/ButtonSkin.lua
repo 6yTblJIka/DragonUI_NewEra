@@ -21,14 +21,23 @@ local function pieceNames(postfix)
   return ATLAS .. "-Left" .. postfix, "_" .. ATLAS .. "-Center" .. postfix, ATLAS .. "-Right" .. postfix
 end
 
--- Faithful port of ThreeSliceButtonMixin:UpdateScale.
+-- Port of ThreeSliceButtonMixin:UpdateScale.
+--
+-- DOWNPORT: retail's mixin does `self.Left:SetScale(scale)`. **Texture has no SetScale on 3.3.5a** —
+-- ClassicAPI has to synthesise even GetEffectiveScale for a Region by delegating to its parent
+-- (Util/WidgetAPI.lua:205), and adds no SetScale at all. So the caps are SIZED here instead, in real
+-- pixels, and the trim branch below no longer divides back out by a scale that was never applied.
+--
+-- This never ran until the 128-RedButton sheet was shipped: Skin returns false before reaching here
+-- when the atlas is missing, and every call site wraps it in pcall — so the error would have been
+-- swallowed, leaving a button with three blank textures over its hidden native art.
 local function updateScale(btn)
   local d = btn._neThreeSlice
   if not d or not d.leftInfo or not d.rightInfo then return end
   local buttonH, buttonW = btn:GetHeight(), btn:GetWidth()
   if buttonH <= 0 or d.leftInfo.height <= 0 then return end
   local scale = buttonH / d.leftInfo.height
-  d.Left:SetScale(scale); d.Right:SetScale(scale)
+  d.Left:SetHeight(buttonH); d.Right:SetHeight(buttonH)
 
   local leftW, rightW = d.leftInfo.width * scale, d.rightInfo.width * scale
   local both = leftW + rightW
@@ -51,15 +60,15 @@ local function updateScale(btn)
     -- DOWNPORT: the texcoord trim composes the atlas sub-rect AFTER NE.tex.SetAtlas has set it.
     -- We re-resolve the atlas entry to compose the trim within the element's own rect.
     local le = NE.tex._atlasEntry(pieceNames(d.postfix or ""))
-    d.Left:SetWidth(newLeftW / scale)
-    d.Right:SetWidth(newRightW / scale)
+    d.Left:SetWidth(newLeftW)
+    d.Right:SetWidth(newRightW)
     if le then
       d.Left:SetTexCoord(le.left, le.left + (le.right - le.left) * (newLeftW / leftW), le.top, le.bottom)
     end
   else
     NE.tex.SetAtlas(d.Left, pieceNames(d.postfix or ""), false)
-    d.Left:SetWidth(d.leftInfo.width)
-    d.Right:SetWidth(d.rightInfo.width)
+    d.Left:SetWidth(leftW)
+    d.Right:SetWidth(rightW)
   end
 end
 

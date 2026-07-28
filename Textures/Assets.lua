@@ -52,6 +52,11 @@ NE.tex.RegisterLocal(1723831, P .. "Common\\1723831-uiframe-inner.blp")         
 NE.tex.RegisterLocal(1723832, P .. "Common\\1723832-uiframe-inner.blp")             -- 64x256  DXT5; !UI-Frame-Inner{Left,Right}Tile (3x256)
 NE.tex.RegisterLocal(1723833, P .. "Common\\1723833-uiframe-inner.blp")             -- 256x128 DXT5; _UI-Frame-Inner{Top,Bot}Tile band
 
+-- --- BigRedThreeSliceButton (1536801) — the red dialog button. core/ButtonSkin.lua has been written
+--     against this sheet since Sprint 0 and, without it, fail-safed to native art on every call: the
+--     LFG role buttons and the edit-mode dialog's Revert/Reset were all silently unskinned.
+NE.tex.RegisterLocal(1536801, P .. "Common\\1536801-128redbutton.blp")              -- 512x2048; caps, tile, 3 states + highlight
+
 -- --- DiamondMetal "Dialog" border — retail's clean thin dialog frame (the ESC menu and every
 --     modern dialog wear it). Core art, not a module's: the Metal family above is panel chrome and
 --     wrong on a small floating dialog, so anything dialog-shaped needs this instead.

@@ -43,6 +43,10 @@ local function newRegion(kind, layer)
   -- graceful-degrade branch no player sees.
   function r:SetHorizTile(v) self._horizTile = v end
   function r:SetVertTile(v)  self._vertTile  = v end
+  -- Getters too. Without them a "does the centre tile?" assertion could only be written with a
+  -- nil escape hatch, which passes whether it tiles or not.
+  function r:GetHorizTile() return self._horizTile and true or false end
+  function r:GetVertTile()  return self._vertTile  and true or false end
   -- Anchors are RECORDED, in the same shape frames use. Discarding them meant a texture's geometry
   -- was unassertable, which is how the icon/frame fit went unnoticed: the overlay art was registered
   -- and the icon overshot its border by four pixels with nothing able to see it.
@@ -248,8 +252,19 @@ function frameMeta:GetPushedTexture()    return stateTex(self, "pushed")    end
 function frameMeta:GetDisabledTexture()  return stateTex(self, "disabled")  end
 function frameMeta:GetHighlightTexture() return stateTex(self, "highlight") end
 function frameMeta:SetDisabledTexture() end
-function frameMeta:Enable() self._enabled = true end
-function frameMeta:Disable() self._enabled = false end
+-- Enable/Disable FIRE their scripts, as the client does. A skin that repaints on OnEnable/OnDisable
+-- (core/ButtonSkin.lua) is otherwise never asked to, so a disabled button would test as wearing the
+-- normal art while in game it wears the disabled art — or vice versa, which is worse.
+function frameMeta:Enable()
+  self._enabled = true
+  local fn = self._scripts and self._scripts.OnEnable
+  if fn then fn(self) end
+end
+function frameMeta:Disable()
+  self._enabled = false
+  local fn = self._scripts and self._scripts.OnDisable
+  if fn then fn(self) end
+end
 function frameMeta:IsEnabled() return self._enabled ~= false end
 function frameMeta:RegisterEvent(e) self._events[e] = true end
 function frameMeta:UnregisterEvent(e) self._events[e] = nil end
@@ -789,6 +804,9 @@ local FILES = {
   "core/NineSlice.lua",
   "core/NineSliceLayouts.lua",
   "Textures/Assets.lua",
+  -- ButtonSkin fail-safes to native art when its sheet is missing, and returns false to say so —
+  -- which nothing was reading. Loaded here so the red 3-slice is exercised rather than assumed.
+  "core/ButtonSkin.lua",
   "core/Tabs.lua",
   "core/ScrollbarReskin.lua",
   "core/Menu.lua",
@@ -3646,6 +3664,33 @@ do
     assertf(rowOf("essential", name) ~= nil, "the dialog carries " .. name)
   end
   assertf(panel.revertButton and panel.resetButton, "…and the Revert / Reset buttons region")
+
+  -- The red 3-slice. ButtonSkin has been written against the 128-RedButton sheet since Sprint 0 and,
+  -- with it unshipped, fail-safed to native art on every call and RETURNED FALSE to say so — which
+  -- nothing was reading, so it looked like a skin that worked.
+  -- Read defensively throughout: a regression that stops the skin part-way leaves these nil, and an
+  -- aborted run says less than a named failure does.
+  local revSlice = panel.revertButton._neThreeSlice or {}
+  local resSlice = panel.resetButton._neThreeSlice or {}
+  assertf(revSlice.Left ~= nil, "the footer buttons wear the red 3-slice")
+  local capArt = revSlice.Left and revSlice.Left:GetTexture()
+  assertf(tostring(capArt):lower():find("redbutton") ~= nil,
+          "…off a shipped sheet (" .. tostring(capArt) .. ")")
+  assertf(revSlice.Center ~= nil and revSlice.Center:GetHorizTile() == true,
+          "…with the centre tiling, or a wide button stretches its middle")
+  -- Pressed art asserted on RESET, not Revert: Revert is disabled while there is nothing to undo, and
+  -- a disabled button correctly reports the disabled art whatever the mouse is doing.
+  panel.resetButton:Enable()
+  local resDown = panel.resetButton:GetScript("OnMouseDown")
+  assertf(type(resDown) == "function", "…and the skin wired its state scripts")
+  if resDown then resDown(panel.resetButton) end
+  assertf(resSlice.postfix == "-Pressed",
+          "…so pressing one swaps all three pieces to the pressed art (" ..
+          tostring(resSlice.postfix) .. ")")
+  local resUp = panel.resetButton:GetScript("OnMouseUp")
+  if resUp then resUp(panel.resetButton) end
+  assertf(revSlice.postfix == "-Disabled",
+          "…and a disabled one wears the disabled art, which is how Revert reads as unavailable")
   -- "Cooldown Manager Settings" is NOT in that region: retail's AddExtraButtons puts a system's own
   -- extra actions at the END of the options stack, which is where NewEra's dialog carries this one.
   local settingsRow

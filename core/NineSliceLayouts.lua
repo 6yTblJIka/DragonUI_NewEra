@@ -103,6 +103,21 @@ NE.tex.RegisterAtlases({
   ["!ui-frame-diamondmetal-edgeleft-2x"]         = { file = 3056755, left = 0.001953, right = 0.251953, top = 0.000000, bottom = 1.000000, width = 64, height = 64 },
   ["!ui-frame-diamondmetal-edgeright-2x"]        = { file = 3056755, left = 0.255859, right = 0.505859, top = 0.000000, bottom = 1.000000, width = 64, height = 64 },
 
+  -- BigRedThreeSliceButton (sheet 1536801) — the red dialog button retail uses for confirm/action
+  -- rows, and what NE.buttonskin.Skin is written against. Left and Right carry the caps at their own
+  -- native widths (114 and 292 at 2x); Center is the `_`-prefixed tile between them. Three states,
+  -- plus a highlight that is one wide strip the skin re-slices itself.
+  ["128-redbutton-left"]              = { file = 1536801, left = 0.763672, right = 0.986328, top = 0.444824, bottom = 0.507324, width = 114, height = 128 },
+  ["128-redbutton-left-pressed"]      = { file = 1536801, left = 0.763672, right = 0.986328, top = 0.571777, bottom = 0.634277, width = 114, height = 128 },
+  ["128-redbutton-left-disabled"]     = { file = 1536801, left = 0.763672, right = 0.986328, top = 0.508301, bottom = 0.570801, width = 114, height = 128 },
+  ["_128-redbutton-center"]           = { file = 1536801, left = 0.000000, right = 0.125000, top = 0.000488, bottom = 0.062988, width = 64,  height = 128 },
+  ["_128-redbutton-center-pressed"]   = { file = 1536801, left = 0.000000, right = 0.125000, top = 0.127441, bottom = 0.189941, width = 64,  height = 128 },
+  ["_128-redbutton-center-disabled"]  = { file = 1536801, left = 0.000000, right = 0.125000, top = 0.063965, bottom = 0.126465, width = 64,  height = 128 },
+  ["128-redbutton-right"]             = { file = 1536801, left = 0.001953, right = 0.572266, top = 0.254395, bottom = 0.316895, width = 292, height = 128 },
+  ["128-redbutton-right-pressed"]     = { file = 1536801, left = 0.001953, right = 0.572266, top = 0.381348, bottom = 0.443848, width = 292, height = 128 },
+  ["128-redbutton-right-disabled"]    = { file = 1536801, left = 0.001953, right = 0.572266, top = 0.317871, bottom = 0.380371, width = 292, height = 128 },
+  ["128-redbutton-highlight"]         = { file = 1536801, left = 0.001953, right = 0.863281, top = 0.190918, bottom = 0.253418, width = 441, height = 128 },
+
   -- Modern dropdown trigger (sheet 5390329). `textholder` is the static body; the GRADIENT lives
   -- on the a-button arrow, which is why the states below are arrow art and the body has none.
   ["common-dropdown-textholder"]            = { file = 5390329, left = 0.001953, right = 0.107422, top = 0.636719, bottom = 0.796875, width = 54, height = 41 },

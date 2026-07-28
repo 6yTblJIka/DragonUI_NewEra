@@ -2677,6 +2677,33 @@ never applied, each of the three sheets unshipped (frame, edges, dropdown — th
 since they fail independently), the theme ignored, the modern trigger never built, the theme leaking
 into the tab, the hover state never swapping the arrow, and the bare button left without `SetText`.
 
+#### The red 3-slice button, and the bug it was hiding
+
+`core/ButtonSkin.lua` has reskinned buttons to retail's `BigRedThreeSliceButton` since Sprint 0 — off
+the `128-RedButton` sheet, which this port **never shipped**. So every call fail-safed to native art
+and returned `false` to say so, and nothing read the return: the LFG role buttons and this dialog's
+Revert/Reset were all silently unskinned. Sheet 1536801 now ships, with its ten rects (three states ×
+three pieces, plus the highlight strip).
+
+**Shipping it turned on a code path that had never once run, and it was broken.** `updateScale` is a
+port of retail's `ThreeSliceButtonMixin:UpdateScale`, which does `self.Left:SetScale(scale)` —
+**Texture has no `SetScale` on 3.3.5a.** ClassicAPI has to synthesise even `GetEffectiveScale` for a
+Region by delegating to the parent (`Util/WidgetAPI.lua:205`) and adds no `SetScale` at all. Every
+call site wraps `Skin` in `pcall`, so in game this would have thrown *after* the three textures were
+created and the native art hidden — a button wearing nothing at all, with no error in the log. The
+caps are now sized in real pixels instead, and the trim branch no longer divides back out by a scale
+that was never applied.
+
+Two harness gaps fell out of chasing it, both now closed: `Enable`/`Disable` did not fire their
+scripts (so a skin that repaints on `OnEnable`/`OnDisable` was never asked to, and a disabled button
+would have tested as wearing the normal art), and textures had `SetHorizTile` with no getter (so
+"does the centre tile?" could only be written with a nil escape hatch that passed either way — it
+did, until the getter existed).
+
+Six more mutations, each failing by name: the sheet unshipped, the left cap's rect dropped, the
+footer never skinned, the pressed state never applied, `SetScale` put back, and the centre stopping
+tiling.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**
