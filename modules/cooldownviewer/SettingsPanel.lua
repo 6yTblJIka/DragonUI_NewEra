@@ -65,6 +65,9 @@ local function build()
   if panel then return panel end
 
   local f = CreateFrame("Frame", PANEL_NAME, UIParent, "ButtonFrameTemplate")
+  -- The red 3-slice is the addon's standard button; Watch keeps this window's panel buttons
+  -- skinned as its panes are built (core/ButtonSkin.lua). Opt out per button with _neNoSkin.
+  if NE.buttonskin and NE.buttonskin.Watch then pcall(NE.buttonskin.Watch, f) end
   f:SetSize(PANEL_W, PANEL_H)
   f:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -116)
 

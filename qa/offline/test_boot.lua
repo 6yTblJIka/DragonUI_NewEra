@@ -119,6 +119,14 @@ function CreateFrame(kind, name, parent, template)
     f.Inset = inset
   end
 
+  -- UIPanelButtonTemplate's normal texture. On 3.3.5a that ONE path is the template's whole
+  -- identity at runtime, and it is what NE.buttonskin's addon-wide sweep matches on — a running
+  -- frame cannot be asked which template built it. Without this the sweep would find nothing here
+  -- and every assertion about it would pass by describing an empty tree.
+  if type(template) == "string" and template:find("UIPanelButtonTemplate", 1, true) then
+    f:SetNormalTexture("Interface\\Buttons\\UI-Panel-Button-Up")
+  end
+
   -- UIPanelScrollFrameTemplate's stock bar: a `$parentScrollBar` Slider carrying
   -- `$parentScrollUpButton` / `$parentScrollDownButton`. Modelled by GLOBAL NAME and deliberately
   -- WITHOUT a `.ScrollBar` parentKey, because that is precisely how 3.3.5a declares it — and that
@@ -236,7 +244,6 @@ function frameMeta:SetTextInsets() end
 function frameMeta:SetText(t) self._text = t end
 function frameMeta:GetText() return self._text or "" end
 function frameMeta:SetFontObject() end
-function frameMeta:SetNormalTexture() end
 function frameMeta:SetHighlightTexture() end
 function frameMeta:SetPushedTexture() end
 -- The four button state textures, MEMOIZED. They used to hand back a fresh region every call, so a
@@ -247,6 +254,9 @@ local function stateTex(self, key)
   if not self._stateTex[key] then self._stateTex[key] = newRegion("Texture") end
   return self._stateTex[key]
 end
+-- SetNormalTexture WRITES to the memoized region rather than dropping the path on the floor: the
+-- button skin's sweep predicate reads it back, and a setter that forgets makes that unanswerable.
+function frameMeta:SetNormalTexture(v)   stateTex(self, "normal"):SetTexture(v)  end
 function frameMeta:GetNormalTexture()    return stateTex(self, "normal")    end
 function frameMeta:GetPushedTexture()    return stateTex(self, "pushed")    end
 function frameMeta:GetDisabledTexture()  return stateTex(self, "disabled")  end
@@ -3665,6 +3675,24 @@ do
   end
   assertf(panel.revertButton and panel.resetButton, "…and the Revert / Reset buttons region")
 
+  -- SIDE BY SIDE, one row (owner steer). SetPoint's 3-arg shape drops its offsets into the
+  -- relTo/relPoint slots, so read them positionally rather than pretending they are anchors.
+  local function offsetsOf(btn)
+    local p = btn._points[#btn._points] or {}
+    local x, y = p[2], p[3]
+    if type(x) ~= "number" then x, y = p[4], p[5] end
+    return p[1], x, y
+  end
+  local revPt, _, revY = offsetsOf(panel.revertButton)
+  local resPt, _, resY = offsetsOf(panel.resetButton)
+  assertf(revPt == "BOTTOMLEFT" and resPt == "BOTTOMRIGHT",
+          "…as a pair, one anchored to each side (" .. tostring(revPt) .. "/" .. tostring(resPt) .. ")")
+  assertf(revY == resY and revY ~= nil,
+          "…on the SAME row, which is the whole point of the change (" ..
+          tostring(revY) .. " vs " .. tostring(resY) .. ")")
+  assertf(panel.revertButton:GetWidth() == panel.resetButton:GetWidth(),
+          "…splitting the row evenly, so neither reads as the primary action")
+
   -- The red 3-slice. ButtonSkin has been written against the 128-RedButton sheet since Sprint 0 and,
   -- with it unshipped, fail-safed to native art on every call and RETURNED FALSE to say so — which
   -- nothing was reading, so it looked like a skin that worked.
@@ -3732,6 +3760,43 @@ do
   assertf(tostring(dlgDrop.Button._body:GetTexture()):lower():find("dropdown") ~= nil
           and tostring(dlgDrop.Button._arrow:GetTexture()):lower():find("dropdown") ~= nil,
           "…with its body and arrow art actually resolving to a shipped file")
+
+  -- THE BODY IS 3-SLICED. It used to be one texture SetAllPoints — a 54x41 rounded rect with a 12px
+  -- bevel stretched across a 200x26 row, which smeared the corners sideways and squashed the bevel.
+  -- The caps carry the corners at their own aspect; only the flat middle stretches.
+  assertf(dlgDrop.Button._bodyLeft ~= nil and dlgDrop.Button._bodyRight ~= nil,
+          "…and the body is 3-sliced, not one rounded rect stretched flat")
+  local capW = dlgDrop.Button._bodyLeft:GetWidth()
+  local wantCap = 18 * (dlgDrop.Button:GetHeight() / 41)
+  assertf(math.abs(capW - wantCap) < 0.01,
+          "…its caps sized from the row height, so the corner keeps its aspect (" ..
+          tostring(capW) .. " vs " .. tostring(wantCap) .. ")")
+  assertf(capW > 0 and capW * 2 < dlgDrop.Button:GetWidth(),
+          "…and small enough that a middle run is left to stretch")
+  -- The three pieces are three DIFFERENT sub-rects of one sheet, and every one of them resolves to
+  -- the same file — so the file path cannot tell them apart, and cap widths come from a Lua constant
+  -- rather than the atlas. The texcoords are the only thing that says the slicing is real: they have
+  -- to be contiguous and left-to-right, or the button wears three copies of the same corner.
+  local lL, lR = dlgDrop.Button._bodyLeft:GetTexCoord()
+  local cL, cR = dlgDrop.Button._body:GetTexCoord()
+  local rL, rR = dlgDrop.Button._bodyRight:GetTexCoord()
+  assertf(lR == cL and cR == rL,
+          "…cut from three contiguous sub-rects (" .. table.concat(
+            { lL, lR, cL, cR, rL, rR }, " ") .. ")")
+  assertf(lL < cL and cL < rL and rR > cR,
+          "…in left-to-right order, not three copies of one corner")
+
+  -- ALIGNMENT. The control column is defined by the compact slider — its nudge arrow at labelW+2, its
+  -- value text ending 4 short of the row — and a dropdown used to line up with neither end of it.
+  local dlgSlider = rowOf("essential", "Icon Size")
+  local dropX  = select(2, offsetsOf(dlgDrop.Button))
+  local arrowX = select(2, offsetsOf(dlgSlider.Left))
+  assertf(dropX == arrowX,
+          "the dropdown starts where the slider's nudge arrow does (" ..
+          tostring(dropX) .. " vs " .. tostring(arrowX) .. ")")
+  assertf(dropX + dlgDrop.Button:GetWidth() == 343 - 4,
+          "…and ends where the slider's value text does, so the rows line up down both edges (" ..
+          tostring(dropX + dlgDrop.Button:GetWidth()) .. ")")
   -- The gradient lives on the ARROW in retail's design, so the state IS the arrow swapping atlas.
   dlgDrop.Button:RefreshArt()
   assertf(dlgDrop.Button._arrowAtlas == "common-dropdown-a-button", "…idle at rest")
@@ -3820,10 +3885,21 @@ do
           "…and the slider re-reads, or it would show a value the frame no longer uses")
   assertf(panel.revertButton._enabled == false, "…and goes quiet again once there is nothing to undo")
 
-  -- RESET is the other one, and it does mean defaults.
+  -- RESET is the other one, and it does mean defaults — behind a CONFIRM. Revert is bounded and greys
+  -- itself out when there is nothing to undo; Reset throws away every layout choice ever made for this
+  -- viewer and nothing in the addon can put it back. They now sit three pixels apart.
+  local popupsBefore = #POPUPS_SHOWN
   panel.resetButton:GetScript("OnClick")(panel.resetButton)
+  assertf(#POPUPS_SHOWN == popupsBefore + 1
+          and POPUPS_SHOWN[#POPUPS_SHOWN] == "NE_CDM_EDITOR_RESET",
+          "Reset to Default asks before it wipes anything")
+  assertf(M.GetOpt(FID, "iconPadding") == 7,
+          "…and the click alone changes nothing (" .. tostring(M.GetOpt(FID, "iconPadding")) .. ")")
+  assertf(tostring(StaticPopupDialogs["NE_CDM_EDITOR_RESET"].text):find("Essential") ~= nil,
+          "…naming the viewer it is about to reset, not asking a generic question over four of them")
+  StaticPopupDialogs["NE_CDM_EDITOR_RESET"].OnAccept()
   assertf(M.GetOpt(FID, "iconPadding") == M.DEFAULTS.iconPadding,
-          "Reset to Default puts this viewer's defaults back")
+          "…and answering it puts this viewer's defaults back")
   assertf(M.GetOpt(FID, "iconLimit") == M.PER_FRAME_DEFAULT_OVERRIDES[FID].iconLimit,
           "…including the per-frame ones, not just the shared table")
 
@@ -3859,8 +3935,11 @@ do
     local f = e.frame
     if f.Button and f.Button.GetText and f.Button:GetText() == "Position this viewer" then tabBtn = f end
   end
-  assertf(tabBtn ~= nil and tabBtn.Button._neThreeSlice == nil,
-          "…and so are its buttons, which the dialog's skin must not reach")
+  -- The BUTTON art, though, is now the addon's standard rather than the dialog's own: `buttonArt`
+  -- defaults ON, so the tab wears the same red 3-slice. That is the one part of the theme that is
+  -- deliberately NOT isolated, and it is asserted here so a future default flip cannot go unnoticed.
+  assertf(tabBtn ~= nil and tabBtn.Button._neThreeSlice ~= nil,
+          "…while its BUTTONS wear the red 3-slice, which is the addon's standard now")
 
   rowOf("essential", "Icon Limit").Slider:SetValue(9)
   assertf(tabRow.Slider:GetValue() == 9,
@@ -3932,6 +4011,74 @@ do
   for _, id in pairs(M.FRAME_ID) do M.ResetOpts(id) end
   S.SetDisplayMode("spells")
   S.HidePanel()
+end
+
+-- The red 3-slice is the addon's STANDARD button now, not the Cooldown Manager dialog's own look.
+-- Sixty-odd CreateFrame calls across a dozen modules build a plain UIPanelButtonTemplate, so the
+-- mechanism is a sweep that reads the template's art rather than sixty edits — and a sweep is exactly
+-- the kind of thing that can quietly find nothing at all.
+print("\n=== BUTTON SKIN: THE ADDON-WIDE STANDARD ===")
+do
+  local BS = NE.buttonskin
+  local function panelButton(parent)
+    local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    b:SetSize(120, 22)
+    return b
+  end
+
+  local root = CreateFrame("Frame", nil, UIParent)
+  local pane = CreateFrame("Frame", nil, root)
+  local deep = CreateFrame("Frame", nil, pane)
+
+  -- THE PREDICATE. On 3.3.5a the template's whole runtime identity is one texture path; a running
+  -- frame cannot be asked which template built it.
+  local b1 = panelButton(deep)
+  assertf(BS._isPanelButton(b1) == true,
+          "a panel button is recognised by the art the template gave it")
+  assertf(BS._isPanelButton(pane) == false, "…and the frame holding one is not")
+  local bare = CreateFrame("Button", nil, pane)
+  bare:SetSize(120, 22)
+  assertf(BS._isPanelButton(bare) == false,
+          "…nor is a bare Button, which has no panel art to replace")
+  -- The case that actually costs something if the predicate is loose. The addon is full of buttons
+  -- carrying their OWN normal texture — item slots, icon buttons, the picker's tiles — and hideNativeArt
+  -- would blank every one of them. "Has a normal texture" is not the test; "has THE panel texture" is.
+  local iconBtn = CreateFrame("Button", nil, pane)
+  iconBtn:SetSize(36, 36)
+  iconBtn:SetNormalTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+  assertf(BS._isPanelButton(iconBtn) == false,
+          "…and neither is a button wearing art of its own, which the skin would blank")
+
+  local tabStandIn = panelButton(pane); tabStandIn._nePlain = true
+  local optedOut   = panelButton(pane); optedOut._neNoSkin = true
+
+  BS.Watch(root)
+  assertf(b1._neThreeSlice ~= nil, "Watch skins panel buttons anywhere under a window")
+  assertf(tostring((b1._neThreeSlice or {}).Left and b1._neThreeSlice.Left:GetTexture()):lower()
+          :find("redbutton") ~= nil, "…with the shipped red sheet, not a blank texture")
+  assertf(tabStandIn._neThreeSlice == nil,
+          "…leaving _nePlain alone, which marks a button standing in for a tab")
+  assertf(optedOut._neThreeSlice == nil, "…and honouring _neNoSkin for anything else that must stay stock")
+  assertf(BS._isPanelButton(b1) == false,
+          "…and a skinned button no longer matches, so the sweep cannot chase its own tail")
+
+  -- LAZY PANES are the normal case, not the edge one: a window is registered before its contents
+  -- exist, and a tab's pane is built the first time it is selected. One sweep at registration would
+  -- miss most of the addon.
+  deep:Hide()
+  local late = panelButton(deep)
+  assertf(late._neThreeSlice == nil, "a button built after registration starts unskinned")
+  deep:Show()
+  assertf(late._neThreeSlice ~= nil, "…and showing the pane that holds it skins it")
+
+  -- Idempotent: Watch twice, sweep twice, nothing doubles up.
+  local hooked = #(b1._neThreeSlice.hl or {})
+  BS.Watch(root)
+  BS.SkinPanelButtons(root)
+  assertf(#(b1._neThreeSlice.hl or {}) == hooked,
+          "re-sweeping an already-skinned window adds nothing")
+
+  root:Hide()
 end
 
 -- The /necdm diagnostic is ~70 lines of formatting that nothing else touches, including the §F1

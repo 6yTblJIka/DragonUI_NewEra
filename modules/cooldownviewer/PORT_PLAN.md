@@ -2711,6 +2711,76 @@ three unskinned buttons would have been. The skin is now a theme flag (`buttonAr
 like the rest of the theme) so the `/cdm` tab's buttons keep their look. Three mutations: the kit
 never skinning, the dialog not asking, and the flag defaulting on so it leaks into the tab.
 
+#### H.3.11. Three corrections from the owner
+
+**The buttons pair up, and the destructive one asks.** Revert and Reset were stacked with a divider
+between them, which is retail's shape but costs 46px of a dialog whose whole job is to sit beside the
+frame it edits without burying it — and stacked they read as a list of two things to work down rather
+than the pair of alternatives they are. They are now one row, `(343 - 3) / 2` each, one anchored to
+each side, under the divider.
+
+That puts them three pixels apart, which is why Reset now confirms. The asymmetry between the two is
+easy to miss: Revert is *bounded* — it undoes this editor session and greys itself out when there is
+nothing to undo — while Reset throws away every layout choice ever made for that viewer and nothing in
+the addon can put it back. `StaticPopupDialogs["NE_CDM_EDITOR_RESET"]` rewrites its `text` per viewer
+at click time, so the confirm names what it is about to wipe; a generic "are you sure?" asked over four
+differently-configured viewers is the kind of prompt people learn to click through. It also bumps its
+own strata to `FULLSCREEN_DIALOG` on show — StaticPopups live at `DIALOG`, and this dialog sits above
+the editor's own handles, so left alone the confirm would open *behind* the button that raised it.
+
+**The dropdown body is a 3-slice.** `common-dropdown-textholder` is not a bar: decoded off sheet
+5390329 it is a **54×41 rounded rect with a ~12px bevelled corner and a soft outer glow**. Stretched
+to a 200×26 row — one texture, `SetAllPoints` — the corners smear into horizontal blobs and the bevel
+squashes to a blur. That is what "the dropdowns are formatted very weirdly" was looking at, and it was
+only visible because the art finally shipped. Columns 13..42 of the source are a flat vertical run, so
+an 18px cut lands well inside it on both sides: the two caps carry the corners with their width
+following the row height (`18 × h/41`), and only the middle stretches, invisibly. The arrow is a
+separate 27×27 square button in the same sheet and is now drawn square and inset, instead of
+`h-2` straddling the right cap's bevel.
+
+The same pass fixed the *alignment*, which was the other half of "weirdly": the dropdown was a fixed
+200 anchored at `labelW + 6`, so its left edge sat 4px right of the compact slider's nudge arrow and
+its right edge 37px short of the slider's value text. Down a stack of alternating rows, nothing lined
+up with anything. The control column is now defined once, by the slider, and the dropdown fills it.
+
+**The red 3-slice is the addon's standard button.** Not the Cooldown Manager's look — the addon's.
+Roughly sixty `CreateFrame(..., "UIPanelButtonTemplate")` calls across a dozen modules build the stock
+grey button, and the mechanism for this is deliberately *not* sixty edits:
+
+* `NE.buttonskin.SkinPanelButtons(root)` walks a frame tree and skins what it finds. The predicate
+  reads the **art**, because a running frame cannot be asked which template built it: on 3.3.5a
+  `UIPanelButtonTemplate`'s entire runtime identity is that it `SetNormalTexture`s
+  `Interface\Buttons\UI-Panel-Button-Up`. It is self-limiting — `Skin` clears that texture, so a
+  skinned button stops matching.
+* `NE.buttonskin.Watch(root)` keeps it true as the tree grows. A window is registered before its
+  contents exist and its panes are built on the tab that first needs them, so one sweep at
+  registration would miss most of the addon. Three passes cover it: now, next frame, and on show —
+  plus an `OnShow` hook on frames within two levels of the root, which is where panes live.
+* Twelve windows call `Watch` — auction house, bags, character, collections, encounter journal, guild,
+  LFG, professions, social, spellbook, talents, and the `/cdm` window.
+* **Opt-out** is `_nePlain` (already the codebase's marker for a plain button standing in for a tab —
+  those sit in a tab strip and would read as loose buttons in red) and `_neNoSkin` for anything else.
+* `DEFAULT_THEME.buttonArt` flips to **on**, so the `/cdm` Settings tab's buttons come along too. The
+  suite's old assertion that the tab was untouched now asserts the opposite, deliberately.
+
+This resolves the question left open when the sheet shipped: the LFG role buttons and everything else
+change to the red art, by the owner's call.
+
+**A harness gap, and a vacuous assertion, both found by mutation.** `SetNormalTexture` was a no-op in
+the stub, which would have made every assertion about the sweep pass by describing an empty tree — it
+now writes to the memoized state texture, and `CreateFrame` models the template's normal texture. And
+the predicate test only had a button with *no* normal texture, so loosening it to `return true` still
+passed; a button carrying art of its own (an item slot, an icon button — the case where a false match
+costs something, since `hideNativeArt` would blank it) is now in the test. The dropdown slicing had
+the same shape of hole: all three pieces resolve to the same file and the cap widths come from a Lua
+constant, so nothing read the atlas at all. The texcoords are asserted contiguous and left-to-right.
+
+Thirteen mutations, each failing by name: `buttonArt` defaulting off, the dropdown back to a fixed 200,
+the caps collapsed, the caps unscaled, the atlas rect covering the whole textholder, all three pieces
+using the left cap, Reset firing without confirming, the confirm text left generic, Reset back on its
+own row, the sweep ignoring `_nePlain`, the sweep not recursing, `Watch` never hooking a pane's
+`OnShow`, and the predicate matching any button.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

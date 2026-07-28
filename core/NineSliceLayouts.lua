@@ -120,7 +120,17 @@ NE.tex.RegisterAtlases({
 
   -- Modern dropdown trigger (sheet 5390329). `textholder` is the static body; the GRADIENT lives
   -- on the a-button arrow, which is why the states below are arrow art and the body has none.
+  --
+  -- THE BODY IS A 3-SLICE, NOT A STRETCH. The source is a 54x41 rounded rect with a ~12px bevelled
+  -- corner and a soft outer glow — stretching that whole rect to a 200x26 row smears the corners into
+  -- horizontal blobs and squashes the bevel to a blur. So it is sliced: the two caps keep the corners
+  -- at their own aspect (scaled by the row's height), and only the flat middle run stretches, which is
+  -- a plain vertical border and so stretches invisibly. Columns 13..42 of the source are uniform, so
+  -- the 18px cut below lands well inside the flat region on both sides.
   ["common-dropdown-textholder"]            = { file = 5390329, left = 0.001953, right = 0.107422, top = 0.636719, bottom = 0.796875, width = 54, height = 41 },
+  ["common-dropdown-textholder-left"]       = { file = 5390329, left = 0.001953, right = 0.037109, top = 0.636719, bottom = 0.796875, width = 18, height = 41 },
+  ["common-dropdown-textholder-center"]     = { file = 5390329, left = 0.037109, right = 0.072266, top = 0.636719, bottom = 0.796875, width = 18, height = 41 },
+  ["common-dropdown-textholder-right"]      = { file = 5390329, left = 0.072266, right = 0.107422, top = 0.636719, bottom = 0.796875, width = 18, height = 41 },
   ["common-dropdown-a-button"]              = { file = 5390329, left = 0.111328, right = 0.164062, top = 0.636719, bottom = 0.742188, width = 27, height = 27 },
   ["common-dropdown-a-button-hover"]        = { file = 5390329, left = 0.341797, right = 0.394531, top = 0.863281, bottom = 0.968750, width = 27, height = 27 },
   ["common-dropdown-a-button-pressed"]      = { file = 5390329, left = 0.501953, right = 0.554688, top = 0.335938, bottom = 0.441406, width = 27, height = 27 },

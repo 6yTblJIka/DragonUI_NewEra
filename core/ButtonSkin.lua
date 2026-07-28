@@ -165,3 +165,95 @@ function NE.buttonskin.Skin(btn, opts)
   btn:HookScript("OnSizeChanged", function(self) updateScale(self) end)
   return true
 end
+
+-- ── The addon-wide sweep ────────────────────────────────────────────────────────────────────────
+--
+-- The red 3-slice is the addon's STANDARD button now, and this is what makes that true without
+-- rewriting sixty CreateFrame calls. Nearly every button NewEra builds is a plain
+-- UIPanelButtonTemplate, and on 3.3.5a that template's whole identity is one texture path: it
+-- SetNormalTextures "Interface\Buttons\UI-Panel-Button-Up". So the predicate reads the art rather
+-- than guessing at the template, which is the one thing a running frame can actually be asked.
+--
+-- Self-limiting by construction: Skin() clears that normal texture, so a skinned button no longer
+-- matches, and `_neThreeSlice` short-circuits a re-skin anyway.
+--
+-- OPT-OUT is `_nePlain` (already the codebase's marker for "this is a plain button standing in for a
+-- tab" — those live in a tab strip and would read as loose buttons in red) and `_neNoSkin` for
+-- anything else that has to stay stock.
+
+local PANEL_ART = "ui-panel-button-up"
+local MAX_DEPTH = 12
+local HOOK_DEPTH = 2   -- how deep Watch hooks OnShow; see below
+
+local function isPanelButton(f)
+  if not f or f._neThreeSlice or f._nePlain or f._neNoSkin then return false end
+  if not (f.GetObjectType and f:GetObjectType() == "Button") then return false end
+  local nt = f.GetNormalTexture and f:GetNormalTexture()
+  local path = nt and nt.GetTexture and nt:GetTexture()
+  if type(path) ~= "string" then return false end
+  return string.find(string.lower(path), PANEL_ART, 1, true) ~= nil
+end
+
+NE.buttonskin._isPanelButton = isPanelButton   -- test seam
+
+-- Skin every panel button under `root`. Returns how many it skinned this pass.
+function NE.buttonskin.SkinPanelButtons(root, depth)
+  if not (root and root.GetChildren) then return 0 end
+  depth = (depth or 0) + 1
+  if depth > MAX_DEPTH then return 0 end
+  local n = 0
+  local kids = { root:GetChildren() }
+  for i = 1, #kids do
+    local c = kids[i]
+    if c and not c._neNoSkin then
+      if isPanelButton(c) and NE.buttonskin.Skin(c) then n = n + 1 end
+      n = n + NE.buttonskin.SkinPanelButtons(c, depth)
+    end
+  end
+  return n
+end
+
+-- Keep `root` skinned as it grows. A window is registered before its contents exist, and panes are
+-- built lazily on the tab that first needs them, so ONE sweep at registration would miss most of the
+-- addon. Three passes cover it: now, next frame (after the caller finishes building), and on show.
+--
+-- OnShow is also hooked on frames near the top of the tree — that is where tab panes live, and a pane
+-- built on first selection is shown immediately after, which is the moment its buttons appear. The
+-- depth cap keeps that to a couple of dozen hooks per window instead of one per frame.
+function NE.buttonskin.Watch(root)
+  if not root or root._neSkinWatched then return end
+  root._neSkinWatched = true
+
+  local function sweep()
+    NE.buttonskin.SkinPanelButtons(root)
+    NE.buttonskin._HookShown(root, 0)
+  end
+  root._neSkinSweep = sweep
+
+  sweep()
+  if C_Timer and C_Timer.After then C_Timer.After(0, sweep) end
+  if root.HookScript then
+    root:HookScript("OnShow", function()
+      sweep()
+      if C_Timer and C_Timer.After then C_Timer.After(0, sweep) end
+    end)
+  end
+end
+
+function NE.buttonskin._HookShown(frame, depth)
+  if depth >= HOOK_DEPTH or not (frame and frame.GetChildren) then return end
+  local kids = { frame:GetChildren() }
+  for i = 1, #kids do
+    local c = kids[i]
+    if c and c.HookScript and not c._neSkinShowHooked then
+      c._neSkinShowHooked = true
+      c:HookScript("OnShow", function(self)
+        NE.buttonskin.SkinPanelButtons(self)
+        if C_Timer and C_Timer.After then
+          C_Timer.After(0, function() NE.buttonskin.SkinPanelButtons(self) end)
+        end
+      end)
+    end
+    NE.buttonskin._HookShown(c, depth + 1)
+  end
+end

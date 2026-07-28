@@ -259,6 +259,9 @@ local function createWindow()
   -- DOWNPORT: bare Frame, not template-inherited — see the comment in modules/guild/Window.lua's
   -- createWindow() for why (the AH module's template-inheritance approach left f.portrait unset).
   local f = CreateFrame("Frame", FRAME_NAME, UIParent)
+  -- The red 3-slice is the addon's standard button; Watch keeps this window's panel buttons
+  -- skinned as its panes are built (core/ButtonSkin.lua). Opt out per button with _neNoSkin.
+  if NE.buttonskin and NE.buttonskin.Watch then pcall(NE.buttonskin.Watch, f) end
   -- Width 620 -> 465 (owner steer 2026-07-17: "narrower by 1/4", 620 * 0.75).
   f:SetSize(465, 560)
   f:SetPoint("LEFT", UIParent, "LEFT", 16, 0)

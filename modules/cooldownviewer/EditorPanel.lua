@@ -32,12 +32,16 @@ local M  = NE.cooldownviewer
 -- 20px content inset each side, and the buttons region at the bottom.
 local ROW_W, ROW_H, ROW_GAP = 343, 32, 2
 local LABEL_W   = 100
-local CONTROL_W = 200
 local CONTENT_X = 20
 local PANEL_W   = ROW_W + (CONTENT_X * 2)
 local BODY_TOP  = 43         -- title at TOP -15, options at its BOTTOM -12
 local BTN_H     = 28
-local FOOTER_H  = 15 + BTN_H + 2 + 16 + BTN_H   -- reset, divider, revert, from the bottom up
+-- Revert and Reset sit SIDE BY SIDE on one row (owner steer). Stacked, they cost 46px of a dialog
+-- that has to sit on screen next to the frame it edits, and they read as a list of two things to
+-- work down rather than the pair of alternatives they are.
+local BTN_GAP   = 3
+local BTN_W     = math.floor((ROW_W - BTN_GAP) / 2)
+local FOOTER_H  = 15 + BTN_H + 10               -- button row, divider above it
 local SIDE_GAP  = 12         -- clearance between the dialog and the frame it edits
 
 -- Same value/label pairs, in the same order, as the /cdm Settings tab.
@@ -107,6 +111,28 @@ local function revert(category)
   M.SetCategoryEnabled(category, snap._enabled)
 end
 
+-- The Reset confirm. `text` is rewritten per viewer at click time so the confirm names what it is
+-- about to wipe — a generic "are you sure?" over four differently-configured viewers is the kind of
+-- prompt people learn to click through.
+--
+-- STRATA, not decoration: StaticPopup frames sit at DIALOG, and this dialog is at FULLSCREEN_DIALOG
+-- (it has to clear the editor's own handles, which CreateUIFrame puts at FULLSCREEN). Left alone the
+-- confirm would open BEHIND the thing that raised it, which reads as the button having done nothing.
+StaticPopupDialogs = StaticPopupDialogs or {}
+StaticPopupDialogs["NE_CDM_EDITOR_RESET"] = {
+  text = "Reset this viewer to its default layout?",
+  button1 = YES or "Yes",
+  button2 = NO or "No",
+  OnAccept = function()
+    if not current then return end
+    M.ResetOpts(M.FRAME_ID[current])
+    M.RefreshEditorPanel()
+  end,
+  OnShow = function(self) if self.SetFrameStrata then self:SetFrameStrata("FULLSCREEN_DIALOG") end end,
+  OnHide = function(self) if self.SetFrameStrata then self:SetFrameStrata("DIALOG") end end,
+  timeout = 0, whileDead = 1, hideOnEscape = 1,
+}
+
 -- ── One viewer's page ───────────────────────────────────────────────────────────────────────────
 
 local function buildPage(category)
@@ -130,12 +156,10 @@ local function buildPage(category)
     sliderH     = ROW_H,
     dropH       = ROW_H,
     labelW      = LABEL_W,
-    controlW    = CONTROL_W,
+    -- controlW deliberately unset: the dropdowns FILL the control column, so their left edge lands on
+    -- the compact slider's nudge arrow and their right edge on its value text. A fixed 200 lined up
+    -- with neither.
     dropdownArt = true,
-    -- Matches the Revert/Reset pair below it, which the dialog skins itself. The extra-button slot
-    -- sits directly above them, so an unskinned row there is more obviously wrong than none of them
-    -- being skinned would be.
-    buttonArt   = true,
     buttonH     = BTN_H + 4,
     buttonArtH  = BTN_H,
   })
@@ -164,7 +188,7 @@ local function buildPage(category)
   })
 
   col:AddDropdown({
-    label = "Orientation", values = ORIENTATION, width = 140,
+    label = "Orientation", values = ORIENTATION,
     get = getter("orientation"), set = set("orientation"),
   })
   col:AddCompactSlider({
@@ -174,7 +198,7 @@ local function buildPage(category)
     get = getter("iconLimit"), set = set("iconLimit"),
   })
   col:AddDropdown({
-    label = "Icon Direction", values = DIRECTION, width = 140,
+    label = "Icon Direction", values = DIRECTION,
     get = getter("iconDirection"), set = set("iconDirection"),
   })
   col:AddCompactSlider({
@@ -192,7 +216,7 @@ local function buildPage(category)
     get = getter("opacity"), set = set("opacity"),
   })
   col:AddDropdown({
-    label = "Visibility", values = VISIBILITY, width = 140,
+    label = "Visibility", values = VISIBILITY,
     desc  = "When this viewer is on screen at all. Hidden still leaves the editor handle here.",
     get = getter("visibleSetting"), set = set("visibleSetting"),
   })
@@ -225,7 +249,7 @@ local function buildPage(category)
   -- Bar-only, exactly as retail exposes them (the BuffBar system alone).
   if spec and spec.bar then
     col:AddDropdown({
-      label = "Bar Content", values = BAR_CONTENT, width = 140,
+      label = "Bar Content", values = BAR_CONTENT,
       get = getter("barContent"), set = set("barContent"),
     })
     col:AddCompactSlider({
@@ -301,10 +325,10 @@ local function ensurePanel()
   close:SetScript("OnClick", function() M.HideEditorPanel() end)
   f.CloseButton = close
 
-  -- Buttons region, retail's shape: Revert (180 wide), a divider, then the full-width Reset. Built
-  -- once and pointed at whichever viewer is showing — two buttons differing only in which category
-  -- they act on would be two copies of this block. "Cooldown Manager Settings" is NOT here; retail
-  -- puts a system's extra actions at the end of the options stack, and so does buildPage.
+  -- Buttons region: Revert and Reset as a pair on one row, under a divider. Built once and pointed at
+  -- whichever viewer is showing — two buttons differing only in which category they act on would be
+  -- two copies of this block. "Cooldown Manager Settings" is NOT here; retail puts a system's extra
+  -- actions at the end of the options stack, and so does buildPage.
   local function footerButton(label, w, onClick)
     local b = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     b:SetSize(w, BTN_H)
@@ -314,22 +338,30 @@ local function ensurePanel()
     return b
   end
 
-  f.revertButton = footerButton("Revert Changes", 180, function(category)
-    revert(category)
-    M.RefreshEditorPanel()
-  end)
-  f.revertButton:SetPoint("BOTTOMLEFT", CONTENT_X, 15 + BTN_H + 2 + 16)
-
   f.buttonsDivider = f:CreateTexture(nil, "ARTWORK")
   f.buttonsDivider:SetTexture("Interface\\FriendsFrame\\UI-FriendsFrame-OnlineDivider")
   f.buttonsDivider:SetSize(330, 16)
   f.buttonsDivider:SetPoint("BOTTOM", 0, 15 + BTN_H + 1)
 
-  f.resetButton = footerButton("Reset to Default", 330, function(category)
-    M.ResetOpts(M.FRAME_ID[category])
+  f.revertButton = footerButton("Revert Changes", BTN_W, function(category)
+    revert(category)
     M.RefreshEditorPanel()
   end)
-  f.resetButton:SetPoint("BOTTOMLEFT", CONTENT_X, 15)
+  f.revertButton:SetPoint("BOTTOMLEFT", CONTENT_X, 15)
+
+  -- Reset CONFIRMS. Revert is bounded — it undoes this editor session and the button greys itself out
+  -- when there is nothing to undo — but Reset throws away every layout choice ever made for this
+  -- viewer, and nothing in the addon can put it back. The two now sit a few pixels apart, so the one
+  -- that is not reversible asks.
+  f.resetButton = footerButton("Reset to Default", BTN_W, function(category)
+    local spec = specFor(category)
+    StaticPopupDialogs["NE_CDM_EDITOR_RESET"].text =
+      "Reset " .. ((spec and spec.label) or category) ..
+      " to its default layout?\n\nThis viewer's position, size, orientation and visibility all go " ..
+      "back to stock. Nothing else is affected, and it cannot be undone."
+    StaticPopup_Show("NE_CDM_EDITOR_RESET")
+  end)
+  f.resetButton:SetPoint("BOTTOMRIGHT", -CONTENT_X, 15)
 
   -- Revert is disabled until there IS something to revert. A button that is always live and usually
   -- does nothing teaches you to ignore it, and this one is the undo.

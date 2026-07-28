@@ -92,10 +92,12 @@ local DEFAULT_THEME = {
   checkH     = CHECK_H,
   sliderH    = DROPDOWN_H,
   dropH      = DROPDOWN_H,
-  labelW     = 96,          -- compact slider only; the tab's dropdown right-anchors instead
-  controlW   = nil,         -- nil = the tab's behaviour (fill the row / o.width)
+  labelW     = 96,          -- the control column's left edge (compact slider + art dropdown)
+  controlW   = nil,         -- fixed control width; nil = fill the control column
   dropdownArt = false,      -- true = the modern textholder + arrow, instead of a red panel button
-  buttonArt   = false,      -- true = the BigRedThreeSlice skin on AddButton rows
+  -- The BigRedThreeSlice is the addon's standard button (core/ButtonSkin.lua), so this is ON by
+  -- default and the flag exists to opt a row OUT, not in.
+  buttonArt   = true,
   buttonH     = nil,        -- row height for AddButton; nil = BUTTON_H
   buttonArtH  = nil,        -- the button's own height inside that row; nil = 22
 }
@@ -479,17 +481,49 @@ end
 -- below are arrow art, and the body has none. Built from a bare Button rather than reskinning
 -- UIPanelButtonTemplate: fighting a template's own art for a look this different is more code than
 -- the four textures it takes to draw it.
+-- The body is THREE textures, not one. See the atlas note in core/NineSliceLayouts.lua: the source is
+-- a 54x41 rounded rect with a 12px bevel, and stretching that to a 200x26 row smeared the corners
+-- sideways and squashed the bevel — which is exactly what "the dropdowns are formatted very weirdly"
+-- was looking at. The caps keep the corner aspect (their width follows the row height), and only the
+-- flat middle stretches, which is a plain vertical border run and so stretches invisibly.
+local BODY_CAP_W, BODY_CAP_H = 18, 41   -- native size of one cap in the atlas
+
+local function bodyPieces(btn, h)
+  local capW = BODY_CAP_W * (h / BODY_CAP_H)
+  btn._bodyLeft:SetWidth(capW)
+  btn._bodyRight:SetWidth(capW)
+end
+
 local function buildModernTrigger(row, name, w, h)
   local btn = CreateFrame("Button", name, row)
   btn:SetSize(w, h)
 
-  local body = btn:CreateTexture(nil, "BACKGROUND")
-  body:SetAllPoints()
-  NE.tex.SetAtlas(body, "common-dropdown-textholder", false)
+  local left = btn:CreateTexture(nil, "BACKGROUND")
+  left:SetPoint("TOPLEFT")
+  left:SetPoint("BOTTOMLEFT")
+  NE.tex.SetAtlas(left, "common-dropdown-textholder-left", false)
 
+  local right = btn:CreateTexture(nil, "BACKGROUND")
+  right:SetPoint("TOPRIGHT")
+  right:SetPoint("BOTTOMRIGHT")
+  NE.tex.SetAtlas(right, "common-dropdown-textholder-right", false)
+
+  local body = btn:CreateTexture(nil, "BACKGROUND")
+  body:SetPoint("TOPLEFT",     left,  "TOPRIGHT")
+  body:SetPoint("BOTTOMRIGHT", right, "BOTTOMLEFT")
+  NE.tex.SetAtlas(body, "common-dropdown-textholder-center", false)
+
+  btn._bodyLeft, btn._bodyRight = left, right
+  bodyPieces(btn, h)
+  -- The caps are sized from the height, so they have to follow it. Dialog rows are fixed today, but a
+  -- theme that changed dropH would otherwise silently keep the old cap width.
+  btn:HookScript("OnSizeChanged", function(self) bodyPieces(self, self:GetHeight()) end)
+
+  -- Square, and inset far enough to sit INSIDE the field rather than straddling the right cap's
+  -- bevel. The atlas is 27x27; anything non-square here skews the chevron.
   local arrow = btn:CreateTexture(nil, "ARTWORK")
-  arrow:SetSize(h - 2, h - 2)
-  arrow:SetPoint("RIGHT", btn, "RIGHT", -2, 0)
+  arrow:SetSize(h - 6, h - 6)
+  arrow:SetPoint("RIGHT", btn, "RIGHT", -4, 0)
   NE.tex.SetAtlas(arrow, "common-dropdown-a-button", false)
 
   local text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -528,8 +562,15 @@ function Column:AddDropdown(o)
 
   local btn
   if th.dropdownArt then
-    btn = buildModernTrigger(row, nextName("Drop"), th.controlW or o.width or 200, th.dropH - 6)
-    btn:SetPoint("LEFT", row, "LEFT", th.labelW + 6, 0)
+    -- FILL THE CONTROL COLUMN. It used to be a fixed 200 anchored at labelW+6, which put a dropdown's
+    -- left edge 4px right of the compact slider's nudge arrow and its right edge 37px short of the
+    -- slider's value text — so in a stack of alternating rows nothing lined up with anything. The
+    -- column is defined once, by the slider: it starts where the slider's left arrow starts
+    -- (labelW + 2) and ends where the slider's value ends (the row, less 4).
+    local rowW = self.width - (self._section and ROW_INDENT or 0)
+    local w = th.controlW or o.width or (rowW - th.labelW - 6)
+    btn = buildModernTrigger(row, nextName("Drop"), w, th.dropH - 6)
+    btn:SetPoint("LEFT", row, "LEFT", th.labelW + 2, 0)
   else
     btn = CreateFrame("Button", nextName("Drop"), row, "UIPanelButtonTemplate")
     btn:SetSize(o.width or 130, 22)

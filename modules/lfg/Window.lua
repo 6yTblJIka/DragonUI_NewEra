@@ -482,6 +482,9 @@ local function createWindow()
   if L.frame then return L.frame end
 
   local f = CreateFrame("Frame", FRAME_NAME, UIParent)
+  -- The red 3-slice is the addon's standard button; Watch keeps this window's panel buttons
+  -- skinned as its panes are built (core/ButtonSkin.lua). Opt out per button with _neNoSkin.
+  if NE.buttonskin and NE.buttonskin.Watch then pcall(NE.buttonskin.Watch, f) end
   f:SetSize(563, 428)
   f:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -116)
   f:SetFrameStrata("DIALOG")

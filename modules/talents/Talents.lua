@@ -543,6 +543,9 @@ local function buildWindow()
   if T.frame then return T.frame end
 
   local f = CreateFrame("Frame", "NE_TalentFrame", UIParent)
+  -- The red 3-slice is the addon's standard button; Watch keeps this window's panel buttons
+  -- skinned as its panes are built (core/ButtonSkin.lua). Opt out per button with _neNoSkin.
+  if NE.buttonskin and NE.buttonskin.Watch then pcall(NE.buttonskin.Watch, f) end
   f:SetSize(TALENT_W, TALENT_H)
   f:SetPoint("TOP", UIParent, "TOP", 0, FRAME_TOP_OFFSET)
   -- HIGH + toplevel so an enlarged window stays above the action/spell bars (which sit in MEDIUM);

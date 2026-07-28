@@ -644,6 +644,9 @@ local function createWindow()
   -- 100% of its chrome (body/streaks/nineslice/portrait) manually on a plain frame, which is the
   -- proven-working pattern.
   local f = CreateFrame("Frame", FRAME_NAME, UIParent)
+  -- The red 3-slice is the addon's standard button; Watch keeps this window's panel buttons
+  -- skinned as its panes are built (core/ButtonSkin.lua). Opt out per button with _neNoSkin.
+  if NE.buttonskin and NE.buttonskin.Watch then pcall(NE.buttonskin.Watch, f) end
   f:SetSize(990, 582)   -- owner steer: ~30% larger than the first pass
   f:SetPoint("LEFT", UIParent, "LEFT", 16, 0)
   f:SetFrameStrata("DIALOG")
