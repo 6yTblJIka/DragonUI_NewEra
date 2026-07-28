@@ -2517,6 +2517,36 @@ harness.
 `trackedAura`, `equipAssign`, `alerts`, `sounds`. Appearance has never been among them, so import/export
 does not carry icons-per-row on any setting of this box.
 
+### H.3.9. Layouts carry appearance, behind their own checkbox
+
+§H.3.8 closed by noting that `CDS.SnapshotState` captured five leaves and appearance was not among
+them, so a share string carried *what* you track but not *how it looks*. The owner asked for that,
+gated.
+
+**Capture is unconditional; applying is the gate.** A share string always carries appearance — a few
+hundred bytes — so the decision belongs to whoever *applies* it, not whoever exported it. The new
+"Layouts include appearance" checkbox is off by default: an imported layout that silently resizes and
+reorients four viewers is how "load a layout" stops being an action anyone trusts.
+
+**Captured RESOLVED, not as a table copy.** What the exporting character sees is the account-wide
+table with their own per-character overrides on top (§H.3.8), so copying either half alone would export
+something nobody is looking at. Resolving through `GetOpt` also keeps the per-character bucket out of
+share strings entirely — its keys are a character name and a realm, meaningless on another account.
+
+**Applied through `SetOpt`**, not by assigning the leaf: `SetOpt` is what knows whether this character
+writes to its own bucket or the shared one, and it re-applies each viewer as it goes.
+
+**Revert is not governed by the box.** `CDS.RestoreState(snap, opts)` takes `opts.appearance` —
+true forces, false forces skip, nil follows the setting — and Revert passes true. Its contract is to
+put things back exactly, and the box may have been ticked for the apply and unticked before the undo;
+a revert that left a resized viewer behind is a partial undo, which is no undo.
+
+**The codec needed no change**, because the serializer is generic over tables — a claim worth checking
+rather than assuming, so the round-trip test now asserts the appearance leaf survives it.
+
+Five mutations, each failing by name: capture removed, the box ignored in both directions, appearance
+never applied, Revert no longer forcing it, and the option defaulting on.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

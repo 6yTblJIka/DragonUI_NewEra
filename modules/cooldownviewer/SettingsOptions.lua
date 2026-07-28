@@ -264,6 +264,20 @@ local function build(parent)
     get   = function() return M.IsPerCharacterFrames() end,
     set   = function(v) M.SetPerCharacterFrames(v) end,
   })
+  c:AddCheckbox({
+    label = "Layouts include appearance",
+    -- Governs APPLYING, not saving. A share string always carries appearance, so this is the
+    -- recipient's decision rather than the author's — and it is off by default because an imported
+    -- layout that silently resizes and reorients four viewers is how "load a layout" stops being an
+    -- action anyone trusts.
+    desc  = "Off, loading or importing a layout changes only what you track — lists, tracked buffs, "
+            .. "trinkets, alerts and sounds. On, it also applies the orientation, icons per row, "
+            .. "size, padding and opacity the layout was saved with.|n|nLayouts always SAVE "
+            .. "appearance either way, so this only decides what happens when one is applied. Revert "
+            .. "always puts appearance back, whatever this says.",
+    get   = function() return M.LayoutsIncludeAppearance() end,
+    set   = function(v) M.SetLayoutsIncludeAppearance(v) end,
+  })
 
   -- ── Buff tracking. The buff viewers have no curated list: any player buff shorter than the
   -- auto-track window shows automatically, which is what makes trinket, potion and proc buffs work

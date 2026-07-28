@@ -3189,6 +3189,44 @@ do
   assertf(S.RestoreState(snap), "restore accepts the snapshot")
   assertf(not inUtility(moved), "…and puts the edit back")
 
+  -- ── APPEARANCE in a layout, behind its own checkbox ────────────────────────────────────────────
+  -- A layout has always meant "what I track". Appearance is now captured too, but applying it is the
+  -- RECIPIENT's decision: a share string that silently resized and reoriented four viewers is how
+  -- "load a layout" stops being an action anyone trusts.
+  local EID = M.FRAME_ID.essential
+  M.ResetOpts(EID)
+  M.SetLayoutsIncludeAppearance(false)
+  assertf(M.LayoutsIncludeAppearance() == false, "layouts leave appearance alone by default")
+
+  M.SetOpt(EID, "iconLimit", 5)
+  local look = S.SnapshotState()
+  assertf(look.frames and look.frames[EID] and look.frames[EID].iconLimit == 5,
+          "a snapshot CAPTURES appearance even with the box off — the string always carries it")
+  assertf(look.frames[EID].orientation ~= nil,
+          "…resolved key by key, so what it carries is what the author actually sees")
+
+  M.SetOpt(EID, "iconLimit", 9)
+  assertf(S.RestoreState(look), "restoring with the box off")
+  assertf(M.GetOpt(EID, "iconLimit") == 9,
+          "…leaves appearance exactly where it was, which is the default promise")
+
+  M.SetLayoutsIncludeAppearance(true)
+  assertf(S.RestoreState(look), "restoring with the box on")
+  assertf(M.GetOpt(EID, "iconLimit") == 5, "…applies the appearance the layout was saved with")
+
+  -- Revert is not governed by the box. Its contract is to put things back exactly, and the box may
+  -- have been flipped between the apply and the undo.
+  M.SetOpt(EID, "iconLimit", 4)
+  local beforeApply = S.SnapshotState()
+  M.SetOpt(EID, "iconLimit", 12)
+  S.RestoreState(beforeApply, { appearance = false })
+  assertf(M.GetOpt(EID, "iconLimit") == 12, "an explicit skip beats the setting")
+  S.RestoreState(beforeApply, { appearance = true })
+  assertf(M.GetOpt(EID, "iconLimit") == 4, "…and an explicit force beats it the other way, which is what Revert passes")
+
+  M.SetLayoutsIncludeAppearance(false)
+  M.ResetOpts(EID)
+
   -- ── Named layouts ──
   assertf(#P.Names() == 0, "no layouts to start with")
   assertf(P.SaveAs("Raid"), "saving a layout")
@@ -3207,6 +3245,7 @@ do
   assertf(P.Apply("PvP") and inUtility(moved), "applying the second brings the edit back")
 
   -- One-step undo. It reverts the APPLY, and it restores the selected-layout name with it.
+  --
   assertf(S.CanRevert(), "an apply arms Revert")
   assertf(S.Revert(), "revert runs")
   assertf(not inUtility(moved), "…undoing the apply")
@@ -3237,6 +3276,13 @@ do
       and #back.customLists.utility.PRIEST == #origList.utility.PRIEST
   end
   assertf(sameShape, "…with the nested per-class spell lists intact")
+  -- Appearance survives the codec too. The serializer is generic over tables, so this needed no
+  -- codec change — which is exactly the kind of claim worth checking rather than assuming.
+  assertf(type(back.frames) == "table"
+          and type(back.frames[M.FRAME_ID.essential]) == "table"
+          and back.frames[M.FRAME_ID.essential].iconLimit
+              == S.SnapshotState().frames[M.FRAME_ID.essential].iconLimit,
+          "…and the appearance leaf, through the same untouched serializer")
 
   -- Bad input never errors and never executes. Each of these is a distinct failure path.
   local _, e1 = P.Decode("")                    assertf(e1 ~= nil, "empty paste is rejected with a reason")
@@ -3246,6 +3292,25 @@ do
   -- table still has to fail, because we never evaluate it.
   local ok4 = P.Decode("NECDM1" .. "cmV0dXJuIHtjbGFzcz0iUFJJRVNUIn0=")
   assertf(ok4 == nil, "a payload that is valid Lua is still not executed")
+
+  -- ── Revert restores appearance regardless of the box ───────────────────────────────────────────
+  -- Last in this block, because it necessarily churns the selected layout and the assertions above
+  -- read that. Revert's contract is to put things back EXACTLY: the box may have been ticked for the
+  -- apply and unticked before the undo, and a revert that left a resized viewer behind would be a
+  -- partial undo, which is no undo at all.
+  M.SetLayoutsIncludeAppearance(true)
+  M.SetOpt(M.FRAME_ID.essential, "iconLimit", 6)
+  P.SaveAs("Looks Different")
+  M.SetOpt(M.FRAME_ID.essential, "iconLimit", 2)
+  assertf(P.Apply("Looks Different"), "applying a layout saved with a different appearance")
+  assertf(M.GetOpt(M.FRAME_ID.essential, "iconLimit") == 6, "…changes appearance while the box is on")
+  M.SetLayoutsIncludeAppearance(false)   -- the flip Revert has to survive
+  assertf(S.Revert(), "revert runs after the box was turned off")
+  assertf(M.GetOpt(M.FRAME_ID.essential, "iconLimit") == 2,
+          "…and still puts appearance back, because a partial undo is not an undo")
+  P.Delete("Looks Different")
+  M.SetLayoutsIncludeAppearance(false)
+  M.ResetOpts(M.FRAME_ID.essential)
 
   -- A length prefix that runs past the end of the payload. This is the one bad-input case that
   -- string.sub's clamping would otherwise let through SILENTLY: `t1;s5:class` + `s99:PRIEST` parses

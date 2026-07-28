@@ -84,8 +84,29 @@ function CDS.DeepCopy(v)
   return out
 end
 
--- The five editable leaves plus the class the snapshot was taken on. `class` is not decoration: it
--- is what makes an imported string verifiable, and it is the key the spell lists are stored under.
+-- Appearance, captured RESOLVED rather than as a copy of a stored table.
+--
+-- What the exporting character actually sees is the account-wide table with their own per-character
+-- overrides on top (§H.3.8), so a raw copy of either half alone would export something nobody is
+-- looking at. Resolving through GetOpt also keeps the per-character bucket out of share strings
+-- entirely — its keys are a character name and a realm, and they mean nothing on another account.
+--
+-- Every frame gets every key, including the two bar-only ones. They resolve to their defaults on an
+-- icon viewer and nothing reads them there, and a loop with no exceptions in it is worth more than
+-- the few dozen bytes a per-frame key list would save.
+local function snapshotFrames()
+  local out = {}
+  for _, frameID in pairs(M.FRAME_ID or {}) do
+    local t = {}
+    for key in pairs(M.DEFAULTS or {}) do t[key] = M.GetOpt(frameID, key) end
+    out[frameID] = t
+  end
+  return out
+end
+
+-- The five editable leaves plus appearance, plus the class the snapshot was taken on. `class` is not
+-- decoration: it is what makes an imported string verifiable, and it is the key the spell lists are
+-- stored under.
 function CDS.SnapshotState()
   local cd = cdLeaf(true)
   if not cd then return nil end
@@ -101,6 +122,8 @@ function CDS.SnapshotState()
     equipAssign = CDS.DeepCopy(lay.equipAssign) or {},
     alerts      = CDS.DeepCopy(cd.alerts) or {},
     sounds      = CDS.DeepCopy(cd.sounds) or {},
+    -- Always captured, never conditionally applied. See M.LayoutsIncludeAppearance.
+    frames      = snapshotFrames(),
   }
 end
 
@@ -111,10 +134,27 @@ end
 -- InvalidateCuratedCache matters here. GetActiveSpellList caches the resolved curated list, and
 -- replacing customLists underneath it would otherwise leave the viewers rendering the previous
 -- layout until something else happened to dirty the cache.
-function CDS.RestoreState(snap)
+-- `opts.appearance` — true to force, false to force skip, nil to follow the player's setting. Revert
+-- passes true: an undo's contract is to put things back exactly as they were, including a change the
+-- setting happened to allow at the time and would not allow now.
+function CDS.RestoreState(snap, opts)
   if type(snap) ~= "table" then return false end
   local cd = cdLeaf(true)
   if not cd then return false end
+
+  local wantAppearance = (opts and opts.appearance)
+  if wantAppearance == nil then
+    wantAppearance = M.LayoutsIncludeAppearance and M.LayoutsIncludeAppearance()
+  end
+  if wantAppearance and type(snap.frames) == "table" then
+    -- Through SetOpt, not by assigning the table: SetOpt is what knows whether this character writes
+    -- to its own bucket or to the shared one (§H.3.8), and it re-applies each viewer as it goes.
+    for frameID, vals in pairs(snap.frames) do
+      if type(vals) == "table" then
+        for key, value in pairs(vals) do M.SetOpt(frameID, key, value) end
+      end
+    end
+  end
 
   -- Applied to the ACTIVE talent group only. A layout is something you chose for how you are playing
   -- right now; writing it into both groups would undo the other spec's setup as a side effect of
@@ -154,7 +194,9 @@ function CDS.Revert()
   if not undoSnap then return false end
   local snap, cur = undoSnap, undoCurrent
   undoSnap, undoCurrent = nil, nil
-  CDS.RestoreState(snap)
+  -- Unconditionally, including appearance. Revert undoes what the apply DID, and the setting may
+  -- have been flipped in between — leaving a resized viewer behind would make undo partial.
+  CDS.RestoreState(snap, { appearance = true })
   setCurrent(cur)
   if CDS.RefreshLayoutDropdown then CDS.RefreshLayoutDropdown() end
   if CDS.RefreshRevertState then CDS.RefreshRevertState() end

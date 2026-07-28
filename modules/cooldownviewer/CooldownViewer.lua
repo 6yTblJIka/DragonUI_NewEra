@@ -260,6 +260,24 @@ local function charFrames(create)
 end
 M._charFrames = charFrames
 
+-- Do saved layouts carry APPEARANCE as well as lists? Off by default, and separate from everything
+-- else on purpose.
+--
+-- A layout has always meant "what I track": spell lists, tracked auras, trinket placement, alerts and
+-- sounds. Appearance is a different kind of thing, and an imported layout that silently resizes and
+-- reorients four viewers is how "load a layout" stops being an action people trust. Capture is
+-- unconditional — a share string always carries appearance, costing a few hundred bytes — so the
+-- decision belongs to whoever APPLIES it rather than to whoever exported it.
+function M.LayoutsIncludeAppearance()
+  local cd = store(false)
+  return (cd and cd.layoutsIncludeAppearance) and true or false
+end
+
+function M.SetLayoutsIncludeAppearance(v)
+  local cd = store(true)
+  if cd then cd.layoutsIncludeAppearance = v and true or false end
+end
+
 function M.SetPerCharacterFrames(v)
   local cd = store(true)
   if cd then cd.perCharacterFrames = v and true or false end
