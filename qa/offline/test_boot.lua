@@ -2370,6 +2370,45 @@ do
   group = 1
   M.InvalidateCuratedCache()
 
+  -- ── and it clears only THIS CLASS ──────────────────────────────────────────────────────────────
+  -- The store is one shared DragonUI profile, keyed by class the whole way down —
+  -- customLists[category][CLASS], trackedAura[CLASS], seenAura[CLASS]. ResetTracking used to blank
+  -- specLayouts and seenAura WHOLE, so a Priest pressing reset cleared the Warlock and the Druid too.
+  -- Reported from the game as "the reset character button actually resets all characters".
+  --
+  -- The assertions that matter are about a class the player is NOT logged in as. That is the whole
+  -- test: the old behaviour passed every same-class check there is.
+  M.SetCustomList("essential", "WARLOCK", { { spellID = 686, enabled = true } })
+  M.SetAuraAssignment("WARLOCK", 980, "icon", "Curse of Agony")
+  M.NoteSeenAura(603, "Haunt", "i", 12)          -- lands under PRIEST, the logged-in class
+  local cdStore = M._store(true)
+  cdStore.seenAura = cdStore.seenAura or {}
+  cdStore.seenAura.WARLOCK = { [17962] = { spellID = 17962, name = "Conflagrate", dur = 10 } }
+
+  M.ResetTracking()
+
+  local wlList = M.GetCustomList("essential", "WARLOCK")
+  assertf(wlList ~= nil and wlList[1] and wlList[1].spellID == 686,
+          "another class's spell list survives this class's reset")
+  local keptAura = false
+  for _, e in ipairs(M.GetTrackedAuraList("WARLOCK") or {}) do
+    if e.spellID == 980 then keptAura = true end
+  end
+  assertf(keptAura, "…and its aura assignments")
+  assertf(cdStore.seenAura.WARLOCK and cdStore.seenAura.WARLOCK[17962] ~= nil,
+          "…and its seen-aura registry")
+
+  -- …while this class IS genuinely reset, which is the half a scoping fix makes easy to lose.
+  assertf(M.GetCustomList("essential", "PRIEST") == nil,
+          "the logged-in class's list is still cleared, or the fix is just a no-op")
+  local mySeen = false
+  for _, e in ipairs(M.GetSeenAuraList("PRIEST") or {}) do if e.spellID == 603 then mySeen = true end end
+  assertf(not mySeen, "…and so is its seen registry")
+
+  M.SetCustomList("essential", "WARLOCK", nil)
+  M.SetAuraAssignment("WARLOCK", 980, nil, "Curse of Agony")
+  cdStore.seenAura.WARLOCK = nil
+
   -- The bucket must NOT be the saved-preset table. It was, in the first draft: `cd.layouts` is
   -- SettingsPresets' own key, so ResetTracking silently deleted every layout the player had saved.
   local cd = M._store(true)

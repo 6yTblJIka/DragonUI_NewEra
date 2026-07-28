@@ -1096,19 +1096,59 @@ end
 -- pointless — every rank shares one cooldown and the viewer resolves the displayed rank live — and
 -- a stale snapshot also masks newly-curated defaults. Positions/scale live in DragonUI's mover
 -- store, NOT here, so this never touches layout.
+-- Reset THIS CHARACTER's lists, and nobody else's.
+--
+-- It used to blank `cd.specLayouts` and `cd.seenAura` whole. Every table under them is keyed by
+-- CLASS — customLists[category][CLASS], trackedAura[CLASS], seenAura[CLASS] — because the store is
+-- one shared DragonUI profile, not one per character. So a wipe took every class with it: a Priest
+-- pressing "reset" cleared the Warlock, the Druid and the Mage as well. Reported from the game as
+-- "the reset character button actually resets all characters", and that is exactly what it was.
+--
+-- STILL every layout BUCKET, not just the active one. That half was right and stays: the player is
+-- asking for a clean slate, not a clean slate in one talent group. What changes is that each bucket
+-- now loses only this class's slice of itself.
 function M.ResetTracking()
   local cd = store(true)
   if not cd then return end
-  -- EVERY layout bucket, not just the active one. "Reset spell and buff lists" that silently left the
-  -- other spec's lists sitting there would be the more surprising reading by far — the player is
-  -- asking for a clean slate, not for a clean slate in one talent group. The legacy top-level keys go
-  -- too, so a reset on a store that has not been migrated yet cannot resurrect them.
-  cd.specLayouts = {}
-  for _, k in ipairs(LAYOUT_KEYS) do cd[k] = nil end
-  -- Observed history goes too. It is not a choice the player made, but leaving it would mean "reset
-  -- tracking" left rows behind that the player could not account for — and the catalog keeps the
-  -- picker populated either way, so nothing is lost but the record of one character's procs.
-  cd.seenAura = {}
+  local _, class = UnitClass("player")
+  if not class then return end
+
+  -- Force the one-time migration first. It nils the legacy top-level keys itself, so afterwards
+  -- there is exactly one home for a layout and this function has one shape to handle rather than
+  -- two. (The old code deleted those keys outright for the same reason, unscoped.)
+  if M._layoutBucket then M._layoutBucket(true) end
+
+  -- Trinket placement is keyed by "item:<itemID>" with NO class dimension, so it cannot be sliced
+  -- the way the others can. Scoped instead to the tokens this character can actually see — the
+  -- trinkets it has equipped — which leaves another character's placements alone. A token for an
+  -- item nobody has equipped is unreachable in the picker anyway.
+  local myTokens = {}
+  for _, e in ipairs((M.GetEquipActiveItems and M.GetEquipActiveItems()) or {}) do
+    if e.token then myTokens[e.token] = true end
+  end
+
+  local function scrub(bucket)
+    if type(bucket) ~= "table" then return end
+    -- customLists is keyed CATEGORY first, class second, so this walks the categories and takes one
+    -- class out of each rather than dropping the category tables themselves.
+    for _, byClass in pairs(bucket.customLists or {}) do
+      if type(byClass) == "table" then byClass[class] = nil end
+    end
+    if type(bucket.trackedAura) == "table" then bucket.trackedAura[class] = nil end
+    if type(bucket.equipAssign) == "table" then
+      for token in pairs(myTokens) do bucket.equipAssign[token] = nil end
+    end
+  end
+
+  for _, bucket in pairs(cd.specLayouts or {}) do scrub(bucket) end
+  scrub(cd)   -- belt and braces: a store that somehow still carries the flat legacy tables
+
+  -- Observed history goes too, for this class only. It is not a choice the player made, but leaving
+  -- it would mean "reset tracking" left rows behind that the player could not account for — and the
+  -- catalog keeps the picker populated either way, so nothing is lost but the record of one
+  -- character's procs.
+  if type(cd.seenAura) == "table" then cd.seenAura[class] = nil end
+
   M.InvalidateCuratedCache()
   M.ForEachViewer(function(v) if v.Rebuild and v:IsShown() then v:Rebuild() end end)
 end

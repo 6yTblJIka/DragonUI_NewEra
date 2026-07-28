@@ -285,9 +285,13 @@ local function build(parent)
     .. "changes.")
   c:AddButton({
     label = "Reset spell and buff lists",
-    desc  = "Restore the curated defaults and the auto-track window, clearing per-character spell "
-            .. "lists, aura assignments and trinket placement. Alerts, sounds and positions are not "
-            .. "affected.",
+    -- Says CLASS, not "character". The store is one shared DragonUI profile keyed by class, so this
+    -- is the honest scope: another class is untouched, and another character of the SAME class reads
+    -- the same lists and will see them reset too. Claiming "per-character" is what the old copy did,
+    -- while the code behind it reset every class at once.
+    desc  = "Restore the curated defaults and the auto-track window for THIS CLASS, clearing its "
+            .. "spell lists, aura assignments and trinket placement. Other classes, alerts, sounds "
+            .. "and positions are not affected.",
     onClick = function() StaticPopup_Show("NE_CDM_RESET_TRACKING") end,
   })
   c:AddButton({

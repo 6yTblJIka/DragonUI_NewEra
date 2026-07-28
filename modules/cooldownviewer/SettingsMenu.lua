@@ -328,7 +328,9 @@ end
 -- Both resets are destructive and irreversible (there is no undo store until 4b-5), so both confirm.
 StaticPopupDialogs = StaticPopupDialogs or {}
 StaticPopupDialogs["NE_CDM_RESET_TRACKING"] = {
-  text = "Reset the Cooldown Manager spell and buff lists to their defaults?\n\nAlerts, sounds and frame positions are not affected.",
+  -- Names the scope in the confirm too. This is the last thing read before an irreversible action,
+  -- and it used to say nothing about WHOSE lists — while the code behind it cleared every class.
+  text = "Reset this class's Cooldown Manager spell and buff lists to their defaults?\n\nOther classes, alerts, sounds and frame positions are not affected.",
   button1 = YES or "Yes",
   button2 = NO or "No",
   OnAccept = function()

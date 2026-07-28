@@ -2432,6 +2432,35 @@ textures returned a fresh region per call (so "did this button get retextured" w
 `UIPanelScrollFrameTemplate` supplied no slider — modelled now by global name and deliberately
 **without** a `.ScrollBar` parentKey, because that absence is the bug.
 
+### H.3.6. In-game fault: the per-character reset was resetting every character
+
+Reported as "the reset character button in the settings actually resets all characters", and that is
+exactly what it did.
+
+The store is **one shared DragonUI profile**, keyed by class all the way down —
+`customLists[<category>][<CLASS>]`, `trackedAura[<CLASS>]`, `seenAura[<CLASS>]`. That class key is the
+only thing separating one character's data from another's. `M.ResetTracking` blanked
+`cd.specLayouts = {}` and `cd.seenAura = {}` **whole**, taking every class with it: a Priest pressing
+reset cleared the Warlock, the Druid and the Mage as well.
+
+Now scoped. Each layout bucket loses only this class's slice — the "every bucket, not just the active
+talent group" half was right and is unchanged. The one-time migration is forced first, so the legacy
+flat keys are gone by the time the scrub runs and there is one shape to handle rather than two.
+
+**`equipAssign` could not be sliced the same way**: it is keyed `"item:<itemID>"` with no class
+dimension at all. Scoped instead to the tokens this character can actually reach — the trinkets it has
+equipped — which leaves another character's placements alone. A token for an item nobody has equipped
+is unreachable in the picker regardless.
+
+**The copy was wrong too, in the same direction.** The button promised "clearing per-character spell
+lists" and the confirm popup named no scope whatever, which is the last thing read before an
+irreversible action. Both now say *this class*, which is the honest word: another class is untouched,
+and another character of the same class shares these lists and will see them reset.
+
+Three mutations, each failing by name: the unscoped wipe restored verbatim, `seenAura` blanked whole
+again, and `customLists` left alone — the last proving the fix did not quietly turn the reset into a
+no-op, which is the failure mode a scoping change invites.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**
