@@ -2824,6 +2824,46 @@ Eight mutations, each failing by name: the popup left at `FULLSCREEN_DIALOG`, th
 restoring the shared frame, each placement branch pinned back to the frame, the catcher never armed,
 armed with nothing open, never disarmed on close, and sitting on top of the list instead of under it.
 
+#### H.3.13. The confirm again, and the tab loses its per-viewer half
+
+**The strata fix above was aimed at the wrong frame.** `DragonUI_EditorPanel` — the coordinate
+readout, `TOOLTIP` level 200, `core/api.lua:971` — is not what covers the confirm. **Exit Edit Mode**
+and **Reset All Positions** are separate frames on `UIParent` at `TOOLTIP` level **1000**
+(`modules/editor_mode.lua:190, 210`), so 300 cleared something nobody was complaining about and the
+popup was still unreadable. It now READS the level off those frames and adds 10, because a constant
+picked to beat 1000 is a constant that stops working the next time DragonUI moves theirs, and nothing
+would say so. The test models `DragonUIExitEditorButton` for exactly this reason: without it, "the
+confirm is above the edit-mode buttons" is a comparison against nothing.
+
+**The per-viewer settings leave the `/cdm` Settings tab (owner steer).** They had been in two places
+since the dialog shipped — thirteen controls rendered twice, held together by a refresh contract that
+this file's own header calls out as the thing not to do. The dialog is the better half: you are
+looking at the frame while you change its layout, rather than at a list of numbers in a window that
+covers it. So the tab's four viewer sections are gone, and with them `buildViewerSection`, the
+`ORIENTATION` / `DIRECTION` / `VISIBILITY` / `BAR_CONTENT` lists, and `EditorPanel`'s `notifyPanel` —
+which was not merely dead but ran on every tick of a slider drag.
+
+What replaces them is one **Viewer layout** section of four buttons. Each opens edit mode with that
+viewer selected *and its dialog already up*, through the same seam a click on the handle uses — since
+this is now the only route from the tab to those settings, landing the player in edit mode to go
+hunting for the right handle would be a worse tab than the one it replaced.
+
+The tab keeps everything that was never per-viewer: buffed-spell glow, icon fit, talent specs, buff
+tracking, resets.
+
+**Six tests moved rather than being deleted, because the behaviour did not go away.** Step snapping,
+write-once-per-step, checkbox row-versus-box and dropdown ordering were all asserted against the tab's
+copies of these controls. They now sit in the dialog block, against `AddCompactSlider` — a genuinely
+different commit path from `AddSlider` — while the tab's own widget kinds keep their coverage through
+the controls it still has (`Icon inset` for the tall slider, `Glow while buffed` for the checkbox,
+`Show them as` for the plain dropdown). The theme-isolation assertions moved the same way, and the
+tab's absence of per-viewer settings is asserted **by control name over every viewer**, not by the
+sections being gone — the latter would still pass with the controls re-homed under another header.
+
+Four mutations, each failing by name: the popup level hardcoded again, the popup clearing only the
+coordinate panel, the viewer link stopping at edit mode, and a per-viewer section reappearing on the
+tab.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

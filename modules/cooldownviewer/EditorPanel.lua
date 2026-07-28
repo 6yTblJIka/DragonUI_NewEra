@@ -19,10 +19,12 @@
 -- slider is right for a page you scroll and wrong for a dialog that has to sit on the screen next to
 -- the thing it edits without burying it.
 --
--- TWO EDITORS FOR ONE VALUE, which SettingsOptions.lua's header forbids. The rule is about STALENESS,
--- so both halves are closed rather than the rule waived: this dialog re-reads every control through
--- col:Refresh() each time it opens, and every write it makes calls CDS.RefreshSettingsPage, which
--- re-reads the tab's controls and no-ops when that tab was never built.
+-- THIS IS NOW THE ONLY EDITOR FOR THESE VALUES. For a while it was the second one, with the /cdm
+-- Settings tab rendering the same thirteen controls and a refresh contract holding the two together —
+-- which SettingsOptions.lua's header forbids for good reason. The owner's call was to delete the
+-- duplicate rather than keep syncing it, so those sections left the tab and what stands in their place
+-- is four buttons that open this. The dialog still re-reads every control through col:Refresh() on
+-- open, because a layout apply or a reset can still move a value underneath it.
 
 local NE = DragonUI_NewEra
 local M  = NE.cooldownviewer
@@ -59,11 +61,12 @@ local pages   = {}           -- category -> { body, col, dirtyCheck }
 local current                -- category currently shown
 local snapshots = {}         -- category -> the values Revert goes back to, per editor session
 
--- The /cdm Settings tab is the other view onto these values. No-ops when it was never built.
-local function notifyPanel()
-  local CDS = NE.cooldownviewersettings
-  if CDS and CDS.RefreshSettingsPage then CDS.RefreshSettingsPage() end
-end
+-- THE TAB IS NO LONGER A SECOND VIEW ONTO THESE VALUES. It was, and every write here called
+-- CDS.RefreshSettingsPage to stop the two drifting; the owner's call was to remove the duplicate
+-- rather than keep syncing it, so the tab now carries only settings this dialog does not. That makes
+-- the notify dead weight on a path that runs on every tick of a slider drag, so it is gone. If a
+-- per-viewer control is ever added back to the tab, this is the contract it has to restore —
+-- SettingsOptions.lua's header is where that rule is written down.
 
 local function specFor(category)
   for _, s in ipairs(M.VIEWER_SPECS or {}) do
@@ -116,14 +119,33 @@ end
 -- prompt people learn to click through.
 --
 -- STRATA, not decoration. A confirm has to be the topmost thing on screen or it is not a confirm, and
--- edit mode stacks three things above where StaticPopups live (DIALOG):
+-- edit mode stacks four things above where StaticPopups live (DIALOG):
 --   * the editor handles, which addon.CreateUIFrame puts at FULLSCREEN;
 --   * this dialog, at FULLSCREEN_DIALOG so it clears them;
---   * DragonUI's own Exit Edit Mode / Reset All Positions panel, at TOOLTIP frame level 200
---     (DragonUI/core/api.lua:971) — which is what the confirm first opened behind.
--- TOOLTIP is the top strata, so clearing that panel means going above it by LEVEL. Restored on hide,
--- because StaticPopup frames are shared and the next dialog to use this slot is not ours.
-local POPUP_STRATA, POPUP_LEVEL = "TOOLTIP", 300
+--   * DragonUI's coordinate panel, TOOLTIP frame level 200 (DragonUI/core/api.lua:971);
+--   * Exit Edit Mode and Reset All Positions — separate frames on UIParent, TOOLTIP frame level
+--     **1000** (DragonUI/modules/editor_mode.lua:190, 210).
+-- The first attempt at this cleared the coordinate panel and stopped there, so the confirm still
+-- opened under the two buttons that matter. TOOLTIP is already the top strata, so this is a LEVEL
+-- question — and the level is READ rather than hardcoded, because a number picked to beat 1000 today
+-- is a number that silently stops working the next time DragonUI moves theirs.
+local POPUP_STRATA = "TOOLTIP"
+local EDIT_MODE_FRAMES = {
+  "DragonUIExitEditorButton", "DragonUIResetAllButton", "DragonUI_EditorPanel",
+}
+
+local function popupLevel()
+  local lvl = 300
+  for _, name in ipairs(EDIT_MODE_FRAMES) do
+    local f = _G[name]
+    if f and f.GetFrameStrata and f.GetFrameLevel and f:GetFrameStrata() == POPUP_STRATA then
+      local l = (f:GetFrameLevel() or 0) + 10
+      if l > lvl then lvl = l end
+    end
+  end
+  return lvl
+end
+M._popupLevel = popupLevel   -- test seam
 StaticPopupDialogs = StaticPopupDialogs or {}
 StaticPopupDialogs["NE_CDM_EDITOR_RESET"] = {
   text = "Reset this viewer to its default layout?",
@@ -139,7 +161,7 @@ StaticPopupDialogs["NE_CDM_EDITOR_RESET"] = {
     self._neStrata = self._neStrata or self:GetFrameStrata()
     self._neLevel  = self._neLevel  or self:GetFrameLevel()
     self:SetFrameStrata(POPUP_STRATA)
-    self:SetFrameLevel(POPUP_LEVEL)
+    self:SetFrameLevel(popupLevel())
   end,
   OnHide = function(self)
     if not self.SetFrameStrata then return end
@@ -185,7 +207,6 @@ local function buildPage(category)
   local function set(key)
     return function(v)
       M.SetOpt(frameID, key, v)
-      notifyPanel()
       if panel and panel.UpdateRevert then panel.UpdateRevert() end
     end
   end
@@ -198,7 +219,6 @@ local function buildPage(category)
     get   = function() return M.IsCategoryEnabled(category) end,
     set   = function(v)
       M.SetCategoryEnabled(category, v)
-      notifyPanel()
       if panel and panel.UpdateRevert then panel.UpdateRevert() end
     end,
   })
@@ -459,7 +479,6 @@ function M.RefreshEditorPanel()
   local page = current and pages[current]
   if not page then return end
   page.col:Refresh()
-  notifyPanel()
   if panel and panel.UpdateRevert then panel.UpdateRevert() end
 end
 

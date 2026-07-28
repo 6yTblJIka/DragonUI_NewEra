@@ -3465,9 +3465,9 @@ do
   assertf(not panel.layoutButton:IsShown() and not panel.revertButton:IsShown(),
           "…and the layout footer, which does not cover viewer geometry")
 
-  -- Find a control by the section it lives in plus its own label. Scoping by section matters: "Icon
-  -- size" exists four times, once per viewer, and an unscoped search would silently always answer with
-  -- Essential's — so a test meaning to prove Buff Bars' slider works would prove nothing.
+  -- Find a control by the section it lives in plus its own label. Scoped by section because labels
+  -- repeat across sections, and an unscoped search silently answers with the first match — so a test
+  -- meaning to prove one control works can end up proving nothing about it at all.
   local function findRow(sectionTitle, labelText)
     for _, e in ipairs(col.entries) do
       local f = e.frame
@@ -3483,68 +3483,74 @@ do
     return nil
   end
 
-  -- ── Sliders ──
-  local size = findRow("Essential Cooldowns", "Icon size")
-  assertf(size ~= nil, "Essential has an Icon size slider")
-  size.Slider:SetValue(150)
-  assertf(M.GetOpt("CooldownViewerEssential", "iconSize") == 150, "moving it writes the viewer's opt")
-  assertf(size.Value:GetText() == "150%", "…and the row shows the value with its unit")
+  -- ── NO PER-VIEWER SETTINGS (owner steer) ──
+  -- Every one of these used to have a section here AND a row in the edit-mode dialog. The dialog is
+  -- the better place — you are looking at the frame while you change it — so the duplication was
+  -- resolved by removing this half, not by keeping both in sync. Asserted by NAME, over every viewer,
+  -- because "the section is gone" would still pass with the controls re-homed under some other header.
+  for _, spec in ipairs(M.VIEWER_SPECS or {}) do
+    assertf(findSection(spec.label) == nil,
+            "the tab no longer carries a section for " .. spec.label)
+  end
+  for _, label in ipairs({ "Icon size", "Icons per row", "Icon padding", "Opacity", "Orientation",
+                           "Icon direction", "Visibility", "Show timer", "Show tooltips",
+                           "Hide when inactive", "Bar content", "Bar width" }) do
+    assertf(findRow(nil, label) == nil,
+            "…nor a " .. label .. " control anywhere on it, which the dialog now owns")
+  end
 
-  -- SetObeyStepOnDrag is retail-only, so the step is applied on the way in. 137 is inside the 140 step.
-  size.Slider:SetValue(137)
-  assertf(M.GetOpt("CooldownViewerEssential", "iconSize") == 140, "a between-steps value snaps to a step")
-  assertf(size.Slider:GetValue() == 140, "…and the thumb re-seats on the snapped value")
+  -- ── Sliders ── (the tall two-line kind; the dialog's compact one is asserted in its own block)
+  local inset = findRow("Icon fit", "Icon inset")
+  assertf(inset ~= nil, "Icon fit keeps its Icon inset slider, which is not per-viewer")
+  inset.Slider:SetValue(3)
+  assertf(M.GetIconInsetExtra() == 3, "moving it writes the setting")
+  assertf(inset.Value:GetText() == "3%", "…and the row shows the value with its unit")
 
-  -- A drag fires OnValueChanged continuously, and every write re-runs the viewer's RefreshLayout, which
-  -- relays out every icon. Only a change that crosses into the next step may write.
+  -- SetObeyStepOnDrag is retail-only, so the step is applied on the way in.
+  inset.Slider:SetValue(2.4)
+  assertf(M.GetIconInsetExtra() == 2, "a between-steps value snaps to a step")
+  assertf(inset.Slider:GetValue() == 2, "…and the thumb re-seats on the snapped value")
+
+  -- A drag fires OnValueChanged continuously, and every write re-runs the icons' fit. Only a change
+  -- that crosses into the next step may write.
   local writes = 0
-  local realSetOpt = M.SetOpt
-  M.SetOpt = function(...) writes = writes + 1; return realSetOpt(...) end
-  local onValue = size.Slider:GetScript("OnValueChanged")
-  onValue(size.Slider, 142)
-  onValue(size.Slider, 138)
+  local realInset = M.SetIconInsetExtra
+  M.SetIconInsetExtra = function(...) writes = writes + 1; return realInset(...) end
+  local onValue = inset.Slider:GetScript("OnValueChanged")
+  onValue(inset.Slider, 2.2)
+  onValue(inset.Slider, 1.6)
   assertf(writes == 0, "a drag that stays inside one step writes nothing (" .. writes .. ")")
-  onValue(size.Slider, 148)
+  onValue(inset.Slider, 3.1)
   assertf(writes == 1, "…and crossing into the next step writes exactly once (" .. writes .. ")")
-  M.SetOpt = realSetOpt
+  M.SetIconInsetExtra = realInset
 
   -- ── Checkboxes ──
-  local timer = findRow("Essential Cooldowns", "Show timer")
-  local was = M.GetOpt("CooldownViewerEssential", "showTimer") and true or false
+  local glow = findRow("Buffed spells", "Glow while buffed")
+  local was = M.IsBuffGlowEnabled() and true or false
   -- Clicking the ROW, not the box: the label is the bigger target and has to work.
-  timer:GetScript("OnClick")(timer)
-  assertf((M.GetOpt("CooldownViewerEssential", "showTimer") and true or false) ~= was,
+  glow:GetScript("OnClick")(glow)
+  assertf((M.IsBuffGlowEnabled() and true or false) ~= was,
           "clicking a checkbox row flips the setting")
-  assertf((timer.Check:GetChecked() and true or false) ~= was, "…and repaints the box")
+  assertf((glow.Check:GetChecked() and true or false) ~= was, "…and repaints the box")
   -- The box's own path. UICheckButtonTemplate flips its state before OnClick runs on the real client;
   -- the stub has no template, so the flip is done here to reproduce what the handler is handed.
-  timer.Check:SetChecked(was)
-  timer.Check:GetScript("OnClick")(timer.Check)
-  assertf((M.GetOpt("CooldownViewerEssential", "showTimer") and true or false) == was,
+  glow.Check:SetChecked(was)
+  glow.Check:GetScript("OnClick")(glow.Check)
+  assertf((M.IsBuffGlowEnabled() and true or false) == was,
           "…and clicking the box itself agrees with it")
 
-  -- ── Dropdowns ──
-  local vis = findRow("Essential Cooldowns", "Visibility")
-  local root = NE.menu.BuildRoot(vis.MenuGenerator)
-  assertf(#root.children == 3, "Visibility offers three choices")
-  -- ORDERED, not sorted: alphabetical would put Hidden second. "Always / In Combat / Hidden" is a
-  -- progression, which is the whole reason the kit takes an array where the options tab takes a map.
-  assertf(root.children[1].text == "Always" and root.children[2].text == "In Combat",
+  -- ── Dropdowns ── (the tab's plain trigger; the dialog's art trigger is asserted in its own block)
+  local dest = findRow("Buff tracking", "Show them as")
+  local root = NE.menu.BuildRoot(dest.MenuGenerator)
+  assertf(#root.children == 3, "the auto-track destination offers three choices")
+  -- ORDERED, not sorted: alphabetical would lead with "Bars only". Widest first is the progression,
+  -- which is the whole reason the kit takes an array where the options tab takes a map.
+  assertf(root.children[1].text == "Icons and bars" and root.children[2].text == "Icons only",
           "…in the order written, not alphabetised")
-  root:Child("In Combat"):Invoke()
-  assertf(M.GetOpt("CooldownViewerEssential", "visibleSetting") == "incombat",
-          "choosing one writes the viewer's opt")
-  assertf(vis.Button:GetText() == "In Combat", "…and the button relabels to the choice")
-
-  -- ── Which controls each viewer gets ──
-  -- Hide When Inactive is only OFFERED where it does something: retail's Essential/Utility templates
-  -- do not set allowHideWhenInactive, so UpdateShownState ignores it there. The options tab used to ship
-  -- the control with a description explaining it was inert.
-  assertf(findRow("Essential Cooldowns", "Hide when inactive") == nil,
-          "Essential has no Hide when inactive control, because it would do nothing")
-  assertf(findRow("Buff Icons", "Hide when inactive") ~= nil, "…but Buff Icons does")
-  assertf(findRow("Buff Bars", "Bar width") ~= nil, "the bar-only settings appear on Buff Bars")
-  assertf(findRow("Buff Icons", "Bar width") == nil, "…and nowhere else")
+  root:Child("Bars only"):Invoke()
+  assertf(M.AutoTrackDest() == "bar", "choosing one writes the setting")
+  assertf(dest.Button:GetText() == "Bars only", "…and the button relabels to the choice")
+  root:Child("Icons and bars"):Invoke()
 
   -- ── Collapsible sections ──
   local track = findSection("Buff tracking")
@@ -3560,9 +3566,9 @@ do
   -- A layout apply, a reset, or DragonUI's master toggle can all move a value underneath this page. A
   -- control that only ever wrote would drift, and a stale checkbox reads exactly like a setting that
   -- failed to apply.
-  M.SetOpt("CooldownViewerEssential", "iconSize", 90)
+  M.SetIconInsetExtra(1)
   S.RefreshSettingsPage()
-  assertf(size.Slider:GetValue() == 90 and size.Value:GetText() == "90%",
+  assertf(inset.Slider:GetValue() == 1 and inset.Value:GetText() == "1%",
           "a change made elsewhere shows up on the next page refresh")
 
   -- ── The settings tab leaves the grids alone ──
@@ -3612,17 +3618,21 @@ do
   assertf(panel:IsShown() and S.GetDisplayMode() == "settings",
           "its button opens /cdm on the Settings tab")
 
-  -- ── "Position this viewer" (Phase 6: §G.4's last undecided item) ──
+  -- ── The way to a viewer's settings (Phase 6: §G.4's last undecided item) ──
+  -- One button per viewer, in place of the four sections that used to hold their controls. This is the
+  -- only route from this tab to those settings now, so it has to land ON them, not merely in edit mode.
   S.SetDisplayMode("settings")
-  local posRow
-  for _, e in ipairs(col.entries) do
-    local f = e.frame
-    if f.Button and f.Button:GetText() == "Position this viewer"
-      and e.section and e.section.title == "Essential Cooldowns" then
-      posRow = f
+  local function linkRow(label)
+    for _, e in ipairs(col.entries) do
+      local f = e.frame
+      if f.Button and f.Button.GetText and f.Button:GetText() == label
+        and e.section and e.section.title == "Viewer layout" then return f end
     end
   end
-  assertf(posRow ~= nil, "each viewer section carries a Position this viewer button")
+  for _, spec in ipairs(M.VIEWER_SPECS or {}) do
+    assertf(linkRow(spec.label) ~= nil, "Viewer layout carries a button for " .. spec.label)
+  end
+  local posRow = linkRow("Essential Cooldowns")
 
   -- In combat it must refuse AND leave the window up. Hiding the panel first and then failing would
   -- take away the only place the reason could be read.
@@ -3652,6 +3662,14 @@ do
   assertf(DragonUI._selected ~= M.viewers.essential, "…and NOT the viewer frame hung off it")
   assertf(M.viewers.essential.editorAnchor == anchor, "…which is what .editorAnchor points at")
   assertf(not S.panel:IsShown(), "…and closes the settings window, which would cover the viewer")
+  -- AND LANDS ON THE SETTINGS. Since the per-viewer controls left this tab, this button is the only
+  -- route to them from here; dropping the player into edit mode to go hunting for the right handle
+  -- would be a worse tab than the one it replaced.
+  assertf(M.IsEditorPanelShown(), "…and opens that viewer's settings, not just edit mode")
+  local _, epPages = M._editorPanel()
+  assertf(epPages.essential and epPages.essential.body:IsShown(),
+          "…showing the page for the viewer whose button was clicked")
+  M.HideEditorPanel()
   DragonUI.EditorMode:Hide()
 
   -- A missing editor is a returned reason, not an error: some DragonUI builds have no EditorMode.
@@ -3681,6 +3699,13 @@ do
   -- than the "I cannot tell where this is, centre it" fallback.
   anchor._center = { 300, 400 }
   anchor:SetSize(200, 60)
+  -- DragonUI's Exit Edit Mode button, modelled because the confirm has to clear it: UIParent, TOOLTIP,
+  -- frame level 1000 (DragonUI/modules/editor_mode.lua:190). Without it here the level assertion below
+  -- would have nothing to beat and would pass at any number — which is the exact shape of the mistake
+  -- it exists to catch.
+  local duExit = CreateFrame("Button", "DragonUIExitEditorButton", UIParent)
+  duExit:SetFrameStrata("TOOLTIP")
+  duExit:SetFrameLevel(1000)
 
   -- Find a control by its label, in one viewer's page. By label rather than by index: an index passes
   -- just as well when the wrong row moved into that slot.
@@ -3885,6 +3910,40 @@ do
           tostring(before[4]) .. "," .. tostring(before[5]) .. " → " ..
           tostring(after[4]) .. "," .. tostring(after[5]) .. ")")
 
+  -- A drag fires OnValueChanged continuously, and every write re-runs the viewer's RefreshLayout,
+  -- which relays out every icon. Only a change that crosses into the next step may write. This used to
+  -- be asserted on the TAB's slider; the tab has no per-viewer slider now, and the compact one has its
+  -- own commit path, so it is asserted where the code actually is.
+  local sizeRow = rowOf("essential", "Icon Size")
+  sizeRow.Slider:SetValue(150)
+  assertf(M.GetOpt(FID, "iconSize") == 150, "the compact slider writes too")
+  assertf(sizeRow.Value:GetText() == "150%", "…showing the value with its unit")
+  sizeRow.Slider:SetValue(137)
+  assertf(M.GetOpt(FID, "iconSize") == 140, "…snapping a between-steps value onto a step")
+  assertf(sizeRow.Slider:GetValue() == 140, "…and re-seating the thumb on it")
+  local sizeWrites = 0
+  local realSetOpt = M.SetOpt
+  M.SetOpt = function(...) sizeWrites = sizeWrites + 1; return realSetOpt(...) end
+  local onSize = sizeRow.Slider:GetScript("OnValueChanged")
+  onSize(sizeRow.Slider, 142)
+  onSize(sizeRow.Slider, 138)
+  assertf(sizeWrites == 0, "a drag that stays inside one step writes nothing (" .. sizeWrites .. ")")
+  onSize(sizeRow.Slider, 148)
+  assertf(sizeWrites == 1, "…and crossing into the next step writes exactly once (" .. sizeWrites .. ")")
+  M.SetOpt = realSetOpt
+
+  -- The checkbox row, likewise moved. Clicking the ROW, not the box: the label is the bigger target.
+  local timerRow = rowOf("essential", "Show Timer")
+  local timerWas = M.GetOpt(FID, "showTimer") and true or false
+  timerRow:GetScript("OnClick")(timerRow)
+  assertf((M.GetOpt(FID, "showTimer") and true or false) ~= timerWas,
+          "clicking a checkbox row flips the setting")
+  assertf((timerRow.Check:GetChecked() and true or false) ~= timerWas, "…and repaints the box")
+  timerRow.Check:SetChecked(timerWas)
+  timerRow.Check:GetScript("OnClick")(timerRow.Check)
+  assertf((M.GetOpt(FID, "showTimer") and true or false) == timerWas,
+          "…and clicking the box itself agrees with it")
+
   -- THE ARROWS. A drag reports continuous values on this client (SetObeyStepOnDrag is retail-only),
   -- so they are the only way to land on an exact value — not decoration.
   limit.Right:GetScript("OnClick")(limit.Right)
@@ -3938,6 +3997,12 @@ do
   local oroot = NE.menu.BuildRoot(orient.MenuGenerator)
   assertf(oroot:Child("Horizontal") ~= nil and oroot:Child("Vertical") ~= nil,
           "the Orientation dropdown offers both values")
+  -- ORDERED, not sorted. Alphabetical would put Hidden second in Visibility; "Always / In Combat /
+  -- Hidden" is a progression, which is why the kit takes an array where the options tab takes a map.
+  local vroot = NE.menu.BuildRoot(rowOf("essential", "Visibility").MenuGenerator)
+  assertf(vroot.children[1].text == "Always" and vroot.children[2].text == "In Combat"
+          and vroot.children[3].text == "Hidden",
+          "…and Visibility lists its three in the order written, not alphabetised")
   oroot:Child("Vertical"):Invoke()
   assertf(M.GetOpt(FID, "orientation") == "vertical", "…and picking one writes it")
   assertf(orient.Button:GetText() == "Vertical", "…and the button re-reads to show it")
@@ -3992,15 +4057,23 @@ do
           "…and the click alone changes nothing (" .. tostring(M.GetOpt(FID, "iconPadding")) .. ")")
   assertf(tostring(StaticPopupDialogs["NE_CDM_EDITOR_RESET"].text):find("Essential") ~= nil,
           "…naming the viewer it is about to reset, not asking a generic question over four of them")
-  -- ABOVE EVERYTHING. Edit mode stacks three things over a StaticPopup's home strata, the top one
-  -- being DragonUI's own Exit Edit Mode panel at TOOLTIP level 200 (core/api.lua:971) — which is what
-  -- this confirm first opened behind. TOOLTIP is the top strata, so clearing it is a LEVEL question.
+  -- ABOVE EVERYTHING. Edit mode stacks four things over a StaticPopup's home strata, and the top pair
+  -- are Exit Edit Mode / Reset All Positions at TOOLTIP level 1000. The first fix here went to 300,
+  -- which cleared a DIFFERENT frame — DragonUI's coordinate panel at TOOLTIP 200 — and left the
+  -- confirm just as unreadable. So the level is READ off theirs, not picked.
   local pop = CreateFrame("Frame", nil, UIParent)
   pop:SetFrameStrata("DIALOG"); pop:SetFrameLevel(1)
   StaticPopupDialogs["NE_CDM_EDITOR_RESET"].OnShow(pop)
-  assertf(pop:GetFrameStrata() == "TOOLTIP" and pop:GetFrameLevel() > 200,
-          "…on top of DragonUI's own edit-mode buttons, which sit at TOOLTIP 200 (" ..
-          tostring(pop:GetFrameStrata()) .. " " .. tostring(pop:GetFrameLevel()) .. ")")
+  assertf(pop:GetFrameStrata() == "TOOLTIP" and pop:GetFrameLevel() > duExit:GetFrameLevel(),
+          "…on top of DragonUI's own edit-mode buttons (" ..
+          tostring(pop:GetFrameStrata()) .. " " .. tostring(pop:GetFrameLevel()) ..
+          " vs " .. tostring(duExit:GetFrameLevel()) .. ")")
+  -- READ, not hardcoded: a number chosen to beat 1000 is a number that stops working the moment
+  -- DragonUI moves theirs, and nothing would say so.
+  duExit:SetFrameLevel(4000)
+  assertf(M._popupLevel() > 4000,
+          "…and it follows if DragonUI raises theirs (" .. tostring(M._popupLevel()) .. ")")
+  duExit:SetFrameLevel(1000)
   StaticPopupDialogs["NE_CDM_EDITOR_RESET"].OnHide(pop)
   assertf(pop:GetFrameStrata() == "DIALOG" and pop:GetFrameLevel() == 1,
           "…and puts the shared popup frame back, since the next dialog in that slot is not ours")
@@ -4018,40 +4091,33 @@ do
   assertf(rowOf("essential", "Icon Size").Slider:GetValue() == 150,
           "reopening re-reads every control, so it never opens on a stale value")
 
+  -- THE OTHER HALF OF THE THEME ASSERTION: one kit, two sets of metrics, and the tab kept its own.
+  -- These used to be read off the tab's copy of these very controls; there is no such copy now, so
+  -- they read the tab's surviving widgets of the same KINDS — which is what the theme governs.
   S.SetDisplayMode("settings")
   S.EnsureSettingsPage()
-  local tabRow
-  for _, e in ipairs((S.settingsColumn or {}).entries or {}) do
-    local f = e.frame
-    if f.Slider and f.Label and f.Label:GetText() == "Icons per row"
-      and e.section and e.section.title == "Essential Cooldowns" then
-      tabRow = f
+  local function tabRowLabelled(label)
+    for _, e in ipairs((S.settingsColumn or {}).entries or {}) do
+      local f = e.frame
+      if f.Label and f.Label.GetText and f.Label:GetText() == label then return f end
     end
   end
-  assertf(tabRow ~= nil, "the Settings tab renders the same value as a slider")
-  -- The other half of the theme assertion: the tab kept every default it had.
-  local tabDrop
-  for _, e in ipairs((S.settingsColumn or {}).entries or {}) do
-    if e.frame.Button and e.frame.Label and e.frame.Label.GetText
-      and e.frame.Label:GetText() == "Orientation" then tabDrop = e.frame end
-  end
+  local tabDrop = tabRowLabelled("Show them as")
   assertf(tabDrop ~= nil and tabDrop.Button.RefreshArt == nil,
-          "…and the tab's dropdown is untouched by the dialog's theme")
+          "the tab's dropdown is untouched by the dialog's theme")
+  local tabSlider = tabRowLabelled("Icon inset")
+  assertf(tabSlider ~= nil and tabSlider.Slider ~= nil and tabSlider.Left == nil,
+          "…and its sliders are still the tall two-line kind, without the dialog's nudge arrows")
   local tabBtn
   for _, e in ipairs((S.settingsColumn or {}).entries or {}) do
     local f = e.frame
-    if f.Button and f.Button.GetText and f.Button:GetText() == "Position this viewer" then tabBtn = f end
+    if f.Button and f.Button.GetText and f.Button:GetText() == "Buff Bars" then tabBtn = f end
   end
   -- The BUTTON art, though, is now the addon's standard rather than the dialog's own: `buttonArt`
   -- defaults ON, so the tab wears the same red 3-slice. That is the one part of the theme that is
   -- deliberately NOT isolated, and it is asserted here so a future default flip cannot go unnoticed.
   assertf(tabBtn ~= nil and tabBtn.Button._neThreeSlice ~= nil,
           "…while its BUTTONS wear the red 3-slice, which is the addon's standard now")
-
-  rowOf("essential", "Icon Limit").Slider:SetValue(9)
-  assertf(tabRow.Slider:GetValue() == 9,
-          "…and a dialog write refreshes it, so the two views cannot disagree (" ..
-          tostring(tabRow.Slider:GetValue()) .. ")")
 
   -- THE CLICK PATH.
   assertf(type(anchor.neEditorSettings) == "function", "the viewer's anchor carries its own opener")

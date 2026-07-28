@@ -7,19 +7,23 @@
 -- WHAT MOVED, AND WHAT DID NOT. The DragonUI options section keeps exactly two things: the master
 -- enable toggle (that panel is where a player goes to turn a module OFF, and it is read-only to us —
 -- CONTRACTS §0, we register a section, we do not own the window) and a button that opens this one.
--- Everything else — the ten per-viewer settings, the two bar-only settings and buff auto-tracking — is
--- here, once. No stored VALUE is rendered in two windows: two views onto one store stay in sync only
--- as long as both are rebuilt on show, and the first time one is not, the player is looking at a stale
--- value with no way to tell. (Actions are a different matter — see the Reset section below.)
+-- No stored VALUE is rendered in two windows: two views onto one store stay in sync only as long as
+-- both are rebuilt on show, and the first time one is not, the player is looking at a stale value with
+-- no way to tell. (Actions are a different matter — see the Reset section below.)
 --
--- ONE EXCEPTION, added later: EditorPanel.lua renders the per-viewer settings AGAIN, as a dialog
--- beside the frame in edit mode — retail's shape, where a system's settings sit on the frame. The rule
--- above is about staleness, so both halves are closed rather than the rule waived: that dialog
--- re-reads every control each time it opens, and every write it makes calls CDS.RefreshSettingsPage
--- below, so neither view can drift from the store or from the other.
+-- THE PER-VIEWER SETTINGS ARE NOT HERE ANY MORE. They were, and for a while they were in two places at
+-- once: EditorPanel.lua renders them as a dialog beside the frame in edit mode, which is retail's
+-- shape and the better one — you are looking at the frame while you change its layout, instead of at a
+-- list of numbers in a window that covers it. That duplication was held together by a refresh contract
+-- (owner steer: remove it). What remains here is everything the dialog does NOT carry, which is
+-- everything that is not per-viewer: buffed-spell glow, icon fit, talent specs, buff tracking, resets.
 --
--- Frame POSITION stays with the movers (`/dui edit`) — §B1's decision, unchanged. It is the one
--- setting that is not a value in this store.
+-- What is left in this tab's place is one section of buttons, one per viewer, each of which opens edit
+-- mode WITH that viewer selected and its dialog already up. The affordance is the same; the settings
+-- are one click further and beside the thing they change.
+--
+-- Frame POSITION was always the movers' (`/dui edit`) — §B1's decision, unchanged — so the viewers'
+-- settings and their position now live in the same place, which is what retail does.
 --
 -- THE PAGE IS NOT A CATEGORY. It is a second scroll child beside `panel.content`, swapped in by
 -- SetDisplayMode (§G.10's option (a)). The alternative — a "category" whose renderer draws controls —
@@ -39,27 +43,25 @@ local CDS = NE.cooldownviewersettings
 local PAGE_W = 330
 
 -- Ordered, unlike the options tab's value->label maps: those go to AceGUI, which sorts them, and a
--- radio menu has to pick its own order. "Always / In Combat / Hidden" reads as a progression.
-local ORIENTATION = { { "horizontal", "Horizontal" }, { "vertical", "Vertical" } }
-local DIRECTION   = { { "right", "Right" }, { "left", "Left" } }
-local VISIBILITY   = { { "always", "Always" }, { "incombat", "In Combat" }, { "hidden", "Hidden" } }
-local BAR_CONTENT  = { { "iconAndName", "Icon and Name" }, { "iconOnly", "Icon Only" },
-                       { "nameOnly", "Name Only" } }
-local TRACK_DEST   = { { "both", "Icons and bars" }, { "icon", "Icons only" }, { "bar", "Bars only" } }
+-- radio menu has to pick its own order. The per-viewer lists that used to sit here went with the
+-- controls that read them; EditorPanel.lua carries its own copies.
+local TRACK_DEST = { { "both", "Icons and bars" }, { "icon", "Icons only" }, { "bar", "Bars only" } }
 
 local function pct(v) return tostring(v) .. "%" end
-local function px(v)  return tostring(v) .. " px" end
 
 local function say(msg)
   if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cff1784d1Cooldown Manager|r " .. msg) end
 end
 
--- ── "Position this viewer" ──────────────────────────────────────────────────────────────────────
+-- ── "Position and configure" ────────────────────────────────────────────────────────────────────
 -- The last unported piece of upstream's panel: its cog menu carried an "Edit Mode" entry that hid the
 -- window and toggled retail Edit Mode (Panel.lua:211). §G.4 left it as "drop it or route it at
 -- /dui edit" and never decided. Routed, and improved on: because DragonUI's editor can be told which
--- frame to select, the affordance belongs per viewer rather than once globally — the button that sits
--- under Buff Bars' sliders opens the editor with Buff Bars selected, coordinates and Reset included.
+-- frame to select, the affordance belongs per viewer rather than once globally.
+--
+-- It now opens the viewer's SETTINGS DIALOG too, not just the editor. Since the per-viewer controls
+-- left this tab, this button is the only route from here to them, and dropping the player into edit
+-- mode to go hunting for the right handle would be a worse tab than the one it replaced.
 --
 -- The panel closes only on SUCCESS. Hiding first and then failing (no editor, or in combat) would take
 -- the window away and leave the player with nothing to show why.
@@ -80,109 +82,35 @@ local function positionViewer(category)
   end
   -- Editor mode covers the screen and the viewer being positioned may sit under this window.
   if CDS.HidePanel then CDS.HidePanel() end
+  -- Then its settings, through the same seam a click on the handle uses — so the frame is selected and
+  -- the dialog placed exactly as it would have been.
+  local anchor = frame.editorAnchor
+  if anchor and NE.OpenFrameEditorSettings then
+    NE.OpenFrameEditorSettings(anchor)
+  end
 end
 CDS.PositionViewer = positionViewer   -- test seam
 
--- ── One viewer's block ──────────────────────────────────────────────────────────────────────────
+-- ── Where the per-viewer settings went ──────────────────────────────────────────────────────────
+--
+-- One row per viewer, and no settings. Every control this section used to hold — Enabled, orientation,
+-- icon direction, visibility, icons per row, icon size, icon padding, opacity, show timer, show
+-- tooltips, hide when inactive, and the two bar-only ones — is in the edit-mode dialog, next to the
+-- frame it changes. Rendering them here as well is the exact duplication this file's header rules out.
 
-local function buildViewerSection(col, spec)
-  local frameID = M.FRAME_ID[spec.category]
+local function buildViewerLinks(col)
+  col:AddSection("Viewer layout", true)
+  col:AddText("Each viewer's own settings — size, spacing, orientation, visibility, what its icons "
+    .. "show — live on the frame, in edit mode, where you can see what you are changing. These open "
+    .. "edit mode with that viewer selected and its settings already up. Closes this window; not "
+    .. "available in combat.")
 
-  local function get(key) return M.GetOpt(frameID, key) end
-  local function set(key)
-    return function(v) M.SetOpt(frameID, key, v) end
-  end
-
-  col:AddSection(spec.label, spec.category == "essential")
-  col:AddText(spec.desc)
-
-  col:AddCheckbox({
-    label = "Enabled",
-    desc  = "Show this cooldown viewer.",
-    get   = function() return M.IsCategoryEnabled(spec.category) end,
-    set   = function(v) M.SetCategoryEnabled(spec.category, v) end,
-  })
-
-  col:AddDropdown({
-    label = "Orientation", values = ORIENTATION,
-    desc  = "Lay the icons out in a row or a column.",
-    get = function() return get("orientation") end, set = set("orientation"),
-  })
-  col:AddDropdown({
-    label = "Icon direction", values = DIRECTION,
-    desc  = "Which way the row grows as icons are added.",
-    get = function() return get("iconDirection") end, set = set("iconDirection"),
-  })
-  col:AddDropdown({
-    label = "Visibility", values = VISIBILITY,
-    desc  = "When this viewer is on screen at all.",
-    get = function() return get("visibleSetting") end, set = set("visibleSetting"),
-  })
-
-  col:AddSlider({
-    label = "Icons per row", min = 1, max = 20, step = 1,
-    desc  = "How many icons before the layout wraps. Vertical orientation reads this as icons per "
-            .. "column.",
-    get = function() return get("iconLimit") end, set = set("iconLimit"),
-  })
-  col:AddSlider({
-    label = "Icon size", min = 50, max = 200, step = 10, format = pct,
-    get = function() return get("iconSize") end, set = set("iconSize"),
-  })
-  col:AddSlider({
-    label = "Icon padding", min = 0, max = 14, step = 1, format = px,
-    desc  = "Gap between icons. Retail offsets this by -4, so the low end overlaps slightly — that "
-            .. "is the stock look, not a bug.",
-    get = function() return get("iconPadding") end, set = set("iconPadding"),
-  })
-  col:AddSlider({
-    label = "Opacity", min = 50, max = 100, step = 1, format = pct,
-    get = function() return get("opacity") end, set = set("opacity"),
-  })
-
-  col:AddCheckbox({
-    label = "Show timer",
-    desc  = "Draw the countdown number on each icon.",
-    get   = function() return get("showTimer") and true or false end,
-    set   = set("showTimer"),
-  })
-  col:AddCheckbox({
-    label = "Show tooltips",
-    desc  = "Show a tooltip when hovering an icon.",
-    get   = function() return get("showTooltips") and true or false end,
-    set   = set("showTooltips"),
-  })
-
-  -- Hide When Inactive is only OFFERED where it does something. Retail's Essential/Utility templates
-  -- do not set allowHideWhenInactive, so UpdateShownState ignores the setting there and those viewers
-  -- always show every known cooldown. The options tab shipped the control anyway with a description
-  -- saying it had no effect; a control that explains why it is inert is worse than no control.
-  if get("allowHideWhenInactive") then
-    col:AddCheckbox({
-      label = "Hide when inactive",
-      desc  = "Show a slot only while its aura is active.",
-      get   = function() return get("hideWhenInactive") and true or false end,
-      set   = set("hideWhenInactive"),
-    })
-  end
-
-  col:AddButton({
-    label = "Position this viewer",
-    desc  = "Opens DragonUI's editor mode with this viewer selected, so you can drag it and read its "
-            .. "coordinates. Closes this window; not available in combat.",
-    width = 180,
-    onClick = function() positionViewer(spec.category) end,
-  })
-
-  -- Bar-only, exactly as retail exposes them (the BuffBar system alone).
-  if spec.bar then
-    col:AddDropdown({
-      label = "Bar content", values = BAR_CONTENT, width = 140,
-      get = function() return get("barContent") end, set = set("barContent"),
-    })
-    col:AddSlider({
-      label = "Bar width", min = 50, max = 200, step = 5, format = pct,
-      get = function() return get("barWidthScale") end, set = set("barWidthScale"),
+  for _, spec in ipairs(M.VIEWER_SPECS or {}) do
+    col:AddButton({
+      label   = spec.label,
+      desc    = spec.desc,
+      width   = 200,
+      onClick = function() positionViewer(spec.category) end,
     })
   end
 end
@@ -197,15 +125,12 @@ local function build(parent)
 
   local c = Kit.New(parent, PAGE_W)
 
-  c:AddText("Everything the Cooldown Manager can be told to do. Position is the one setting that is not "
-    .. "stored here — each viewer's \"Position this viewer\" button hands it to DragonUI's editor mode, "
-    .. "which owns frame placement (/dui edit). While you are in there, right-click a viewer for the "
-    .. "same layout settings without coming back to this window.",
+  c:AddText("Everything the Cooldown Manager can be told to do that is not about one viewer's layout. "
+    .. "Layout and position both live on the frame itself, in edit mode (/dui edit) — click a viewer "
+    .. "there for its own settings, or use the buttons just below to go straight to one.",
     { font = "GameFontHighlightSmall" })
 
-  for _, spec in ipairs(M.VIEWER_SPECS or {}) do
-    buildViewerSection(c, spec)
-  end
+  buildViewerLinks(c)
 
   -- ── Buffed spells. Retail tints the swipe gold while a spell's own buff is on you; that setter is
   -- WoD+, so ours haloes the icon instead (PORT_PLAN §H.2 8c) — which then frees the timer to show
