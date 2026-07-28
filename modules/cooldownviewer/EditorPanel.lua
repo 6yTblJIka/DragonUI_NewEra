@@ -115,9 +115,15 @@ end
 -- about to wipe — a generic "are you sure?" over four differently-configured viewers is the kind of
 -- prompt people learn to click through.
 --
--- STRATA, not decoration: StaticPopup frames sit at DIALOG, and this dialog is at FULLSCREEN_DIALOG
--- (it has to clear the editor's own handles, which CreateUIFrame puts at FULLSCREEN). Left alone the
--- confirm would open BEHIND the thing that raised it, which reads as the button having done nothing.
+-- STRATA, not decoration. A confirm has to be the topmost thing on screen or it is not a confirm, and
+-- edit mode stacks three things above where StaticPopups live (DIALOG):
+--   * the editor handles, which addon.CreateUIFrame puts at FULLSCREEN;
+--   * this dialog, at FULLSCREEN_DIALOG so it clears them;
+--   * DragonUI's own Exit Edit Mode / Reset All Positions panel, at TOOLTIP frame level 200
+--     (DragonUI/core/api.lua:971) — which is what the confirm first opened behind.
+-- TOOLTIP is the top strata, so clearing that panel means going above it by LEVEL. Restored on hide,
+-- because StaticPopup frames are shared and the next dialog to use this slot is not ours.
+local POPUP_STRATA, POPUP_LEVEL = "TOOLTIP", 300
 StaticPopupDialogs = StaticPopupDialogs or {}
 StaticPopupDialogs["NE_CDM_EDITOR_RESET"] = {
   text = "Reset this viewer to its default layout?",
@@ -128,8 +134,18 @@ StaticPopupDialogs["NE_CDM_EDITOR_RESET"] = {
     M.ResetOpts(M.FRAME_ID[current])
     M.RefreshEditorPanel()
   end,
-  OnShow = function(self) if self.SetFrameStrata then self:SetFrameStrata("FULLSCREEN_DIALOG") end end,
-  OnHide = function(self) if self.SetFrameStrata then self:SetFrameStrata("DIALOG") end end,
+  OnShow = function(self)
+    if not self.SetFrameStrata then return end
+    self._neStrata = self._neStrata or self:GetFrameStrata()
+    self._neLevel  = self._neLevel  or self:GetFrameLevel()
+    self:SetFrameStrata(POPUP_STRATA)
+    self:SetFrameLevel(POPUP_LEVEL)
+  end,
+  OnHide = function(self)
+    if not self.SetFrameStrata then return end
+    self:SetFrameStrata(self._neStrata or "DIALOG")
+    self:SetFrameLevel(self._neLevel or 1)
+  end,
   timeout = 0, whileDead = 1, hideOnEscape = 1,
 }
 
@@ -374,19 +390,29 @@ local function ensurePanel()
   return f
 end
 
--- Anchor beside the frame being edited, on whichever side has room. Skipped once the player has
+-- Place beside the frame being edited, on whichever side has room. Skipped once the player has
 -- dragged the dialog somewhere themselves.
+--
+-- ANCHORED TO UIParent, NOT TO THE FRAME, and that is the whole point. A relative point kept the
+-- dialog glued to the viewer's edge — so dragging Icon Size or Icon Limit resized the viewer and the
+-- dialog SLID SIDEWAYS under the cursor, mid-drag, which is unusable. The position is resolved once,
+-- here, into screen coordinates; the dialog then stays where it was put until another frame is
+-- selected. The trade is that a viewer which grows a lot can end up overlapping its own dialog, and
+-- a dialog that holds still is worth more than one that never touches the frame.
 local function place(f, anchor)
   if f._moved then return end
   f:ClearAllPoints()
-  local cx = anchor and anchor.GetCenter and select(1, anchor:GetCenter())
   local sw = (UIParent and UIParent:GetWidth()) or 1024
-  if not cx then
+  local cx = anchor and anchor.GetCenter and select(1, anchor:GetCenter())
+  local left  = anchor and anchor.GetLeft  and anchor:GetLeft()
+  local right = anchor and anchor.GetRight and anchor:GetRight()
+  local top   = anchor and anchor.GetTop   and anchor:GetTop()
+  if not (cx and left and right and top) then
     f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
   elseif cx > sw / 2 then
-    f:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -SIDE_GAP, 0)
+    f:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", left - SIDE_GAP, top)
   else
-    f:SetPoint("TOPLEFT", anchor, "TOPRIGHT", SIDE_GAP, 0)
+    f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", right + SIDE_GAP, top)
   end
 end
 

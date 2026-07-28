@@ -261,6 +261,66 @@ function NE.menu.Close(level)
   if b and b.CloseAll then b.CloseAll(level or 1) end
 end
 
+-- ── Click-away to dismiss ───────────────────────────────────────────────────────────────────────
+--
+-- An open menu had exactly two ways out: pick a row, or press Escape. Clicking anywhere else left it
+-- hanging, which is not how any other menu in the game behaves — Blizzard's own dropdowns are
+-- dismissed by the click that lands outside them.
+--
+-- Nothing in the dropdown backend does this for us. ClassicAPI's C_DropDownList frames sit at
+-- FULLSCREEN_DIALOG with SetToplevel, and the only auto-close they carry is the mouse-off timer that
+-- applies to menus opened in MENU mode from a parent that is itself hovered — not to a menu opened by
+-- clicking a button. So the dismiss is a full-screen mouse catcher, parked ONE frame level under the
+-- open list: the list still takes its own clicks, and everything else on screen hits the catcher.
+--
+-- The click is CONSUMED, which is deliberate and is what Blizzard's dropdowns do — clicking away from
+-- an open menu should close it, not close it and also press whatever was underneath.
+
+local catcher
+
+local function ensureCatcher()
+  if catcher then return catcher end
+  local f = CreateFrame("Frame", "NE_MenuClickCatcher", UIParent)
+  f:SetAllPoints(UIParent)
+  f:EnableMouse(true)
+  f:Hide()
+  f:SetScript("OnMouseDown", function(self)
+    self:Hide()
+    NE.menu.Close(1)
+  end)
+  catcher = f
+  return f
+end
+
+-- Arm the catcher for whatever is open now. Called after a toggle, so it also has to notice that the
+-- toggle CLOSED the menu — ToggleAnchored is a toggle, and arming a catcher over a screen with no
+-- menu on it would eat one click for nothing.
+local function armCatcher()
+  local b = backend()
+  local list = b and _G[b.prefix .. "1"]
+  if not (list and list.IsShown and list:IsShown()) then
+    if catcher then catcher:Hide() end
+    return
+  end
+  local f = ensureCatcher()
+  -- STRICTLY below the list, which means clamping the LIST up rather than the catcher down: at equal
+  -- frame levels the click resolves by creation order, and a catcher that ties with the menu it is
+  -- protecting would sometimes swallow the row the player was aiming at.
+  local lvl = list:GetFrameLevel() or 2
+  if lvl < 1 then list:SetFrameLevel(1); lvl = 1 end
+  f:SetFrameStrata(list:GetFrameStrata())
+  f:SetFrameLevel(lvl - 1)
+  f:Show()
+  -- The menu can close without going through us — a row picked, Escape, CloseAll from elsewhere — and
+  -- a catcher left up would silently eat the next click anywhere on screen.
+  if not list._neCatcherHooked then
+    list._neCatcherHooked = true
+    list:HookScript("OnHide", function() if catcher then catcher:Hide() end end)
+  end
+end
+
+NE.menu._catcher = function() return catcher end   -- test seam
+
 -- Open a cursor-anchored context menu. Always opens: closing first means right-clicking a second
 -- item while the first item's menu is up switches to it instead of just dismissing.
 function NE.menu.OpenContext(generator, owner, ...)
@@ -272,6 +332,7 @@ function NE.menu.OpenContext(generator, owner, ...)
   b.CloseAll(1)
   b.Initialize(f, initLevel, "MENU")
   b.Toggle(1, nil, f, "cursor", 0, 0)
+  armCatcher()
   return f
 end
 
@@ -299,6 +360,7 @@ function NE.menu.ToggleAnchored(generator, anchor, spec, owner, ...)
 
   b.Initialize(f, initLevel, "MENU")
   b.Toggle(1, nil, f, anchor, f.xOffset, f.yOffset)
+  armCatcher()
   return f
 end
 

@@ -2781,6 +2781,49 @@ using the left cap, Reset firing without confirming, the confirm text left gener
 own row, the sweep ignoring `_nePlain`, the sweep not recursing, `Watch` never hooking a pane's
 `OnShow`, and the predicate matching any button.
 
+#### H.3.12. Three more from the same pass
+
+**The confirm opened behind the edit-mode buttons.** Edit mode stacks three things over `DIALOG`,
+where StaticPopups live: the editor handles at `FULLSCREEN` (`addon.CreateUIFrame`), this dialog at
+`FULLSCREEN_DIALOG` to clear them, and DragonUI's own Exit Edit Mode / Reset All Positions panel at
+**`TOOLTIP` frame level 200** (`DragonUI/core/api.lua:971`). `TOOLTIP` is the top strata, so clearing
+that last one is a *level* question, not a strata one — the confirm goes to `TOOLTIP`/300 on show and
+puts the shared popup frame back on hide, since the next dialog to use that slot is not ours.
+
+(The "Error Messages" title above the confirm in the report is not ours either: it is DragonUI's own
+editor handle for `UIErrorsFrame`, which parks at screen centre-top under where the popup lands.)
+
+**The dialog slid sideways while a slider was being dragged.** `place` anchored it *to* the viewer —
+`SetPoint("TOPLEFT", anchor, "TOPRIGHT", ...)` — so Icon Size or Icon Limit resized the frame and the
+dialog moved out from under the cursor mid-drag. It now resolves the position into `UIParent`
+coordinates once, on open, and holds still until another frame is selected. The trade is that a viewer
+which grows a lot can end up overlapping its own dialog; a dialog that holds still is worth more.
+
+**Menus close on a click outside.** They had two ways out — pick a row, or Escape — and nothing in the
+backend supplies a third: ClassicAPI's `C_DropDownList` frames carry only the mouse-off timer that
+applies to menus opened in `MENU` mode from a hovered parent, not to one opened by clicking a button.
+So `core/Menu.lua` grew a full-screen mouse catcher, armed by both `OpenContext` and `ToggleAnchored`,
+parked **strictly one frame level under** the open list so the menu keeps its own clicks. It disarms
+from the list's `OnHide`, which covers every other way a menu closes (a row picked, Escape, a
+`CloseAll` from elsewhere) — a catcher left up would silently eat the next click anywhere on screen.
+The click is consumed, which is what Blizzard's dropdowns do.
+
+**The level clamp was wrong, and the test caught it before the game did.** The first version clamped
+the *catcher* up (`math.max(1, lvl - 1)`), which ties with a list at level 1 — and at equal levels the
+click resolves by creation order, so the catcher would sometimes have swallowed the row the player was
+aiming at. It clamps the *list* up instead.
+
+Three harness gaps closed alongside, each of which would have made an assertion vacuous: the dropdown
+stub's `Toggle` never showed or hid anything (so "is a menu open?" was unanswerable, and a catcher
+armed over an empty screen tested identically to one that was not); frames had no `GetLeft`/`GetTop`,
+so a placement resolving screen coordinates could only ever take its "I cannot measure this" fallback;
+and `UIParent` was 0×0, so a branch on which half of the screen a frame sits in always went the same
+way — which is exactly why the first mutation of the new placement came back green.
+
+Eight mutations, each failing by name: the popup left at `FULLSCREEN_DIALOG`, the popup never
+restoring the shared frame, each placement branch pinned back to the frame, the catcher never armed,
+armed with nothing open, never disarmed on close, and sitting on top of the list instead of under it.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

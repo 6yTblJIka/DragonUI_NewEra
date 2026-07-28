@@ -222,6 +222,13 @@ function frameMeta:GetCenter()
   if c then return c[1], c[2] end
   return nil
 end
+-- The four edges, derived from that centre and the frame's own size. Without them, code that resolves
+-- a placement into SCREEN coordinates could only ever take its "I cannot measure this" fallback — so
+-- the branch that actually runs in game would be the one branch never tested.
+function frameMeta:GetLeft()   local c = self._center; return c and (c[1] - (self._w or 0) / 2) or nil end
+function frameMeta:GetRight()  local c = self._center; return c and (c[1] + (self._w or 0) / 2) or nil end
+function frameMeta:GetTop()    local c = self._center; return c and (c[2] + (self._h or 0) / 2) or nil end
+function frameMeta:GetBottom() local c = self._center; return c and (c[2] - (self._h or 0) / 2) or nil end
 function frameMeta:LockHighlight() self._locked = true end
 function frameMeta:UnlockHighlight() self._locked = false end
 function frameMeta:SetBackdrop() end
@@ -399,6 +406,9 @@ format, gsub, strmatch, strsplit = string.format, string.gsub, string.match, nil
 abs, floor, ceil, max, min, sqrt = math.abs, math.floor, math.ceil, math.max, math.min, math.sqrt
 
 UIParent = CreateFrame("Frame", "UIParent")
+-- A real screen size. It defaulted to 0x0, and code that asks "is this frame on the left half or the
+-- right half?" then always answers the same way — so one of the two branches could never run here.
+UIParent:SetSize(1024, 768)
 -- ClassicAPI's SearchBoxTemplate seeds the edit box with this string as its placeholder, so any
 -- code reading the box back sees "Search" until the player types. That is a real behaviour, not
 -- decoration — it dimmed the whole settings grid once.
@@ -691,7 +701,13 @@ function C_UIDropDownMenu_AddButton(info, level)
   rows[#rows + 1] = copy
 
   local listName = "C_DropDownList" .. level
-  local list = _G[listName] or CreateFrame("Frame", listName)
+  local list = _G[listName]
+  if not list then
+    list = CreateFrame("Frame", listName)
+    -- Born hidden, as ClassicAPI's are (Templates/C_UIDropDownMenu.lua:40). Frames in this harness
+    -- default to shown, which would have made the first toggle below HIDE the menu.
+    list:Hide()
+  end
   list.numButtons = #rows
 
   local bn = listName .. "Button" .. #rows
@@ -707,12 +723,26 @@ function C_UIDropDownMenu_Initialize(frame, init, displayMode, level, menuList)
   if init then init(frame, level, menuList) end
 end
 
+-- The list's SHOWN state is modelled, because it is the one thing the click-away catcher keys off:
+-- Toggle really toggles, and CloseAll really hides. Without it "is a menu open?" is unanswerable
+-- offline, and a catcher that armed itself over an empty screen — eating the player's next click
+-- anywhere — would test exactly the same as one that did not.
+local function ddList(level) return _G["C_DropDownList" .. (level or 1)] end
+
 function C_ToggleDropDownMenu(level, value, frame, anchor, x, y, menuList)
   frame = frame or DragonUI_NewEra.menu._frame   -- global on purpose: the NE local is declared below
   C_UIDropDownMenu_Initialize(frame, frame.initialize, nil, level or 1, menuList)
+  local list = ddList(level)
+  if list then if list:IsShown() then list:Hide() else list:Show() end end
 end
 
-function C_CloseDropDownMenus(level) ddReset(level or 1) end
+function C_CloseDropDownMenus(level)
+  ddReset(level or 1)
+  for l = (level or 1), 8 do
+    local list = ddList(l)
+    if list then list:Hide() end
+  end
+end
 
 -- The destructive cog entries route through a confirm popup rather than firing on click. Record
 -- which one was raised; a test then calls its OnAccept, which is the path the player takes.
@@ -3647,6 +3677,10 @@ do
   local S   = NE.cooldownviewersettings
   local FID = M.FRAME_ID.essential
   local anchor = DragonUI.EditableFrames["CooldownViewerEssential"].frame
+  -- Give the handle a real place on screen, so the placement below runs its measuring branch rather
+  -- than the "I cannot tell where this is, centre it" fallback.
+  anchor._center = { 300, 400 }
+  anchor:SetSize(200, 60)
 
   -- Find a control by its label, in one viewer's page. By label rather than by index: an index passes
   -- just as well when the wrong row moved into that slot.
@@ -3819,11 +3853,37 @@ do
           "…and its rows are retail's 32px (" .. tostring(heightOf(pgsT.essential.col, "Show Timer")) .. ")")
   assertf(dlgCheck.Check:GetWidth() == 32, "…with retail Edit Mode's 32px checkbox")
 
+  -- THE DIALOG HOLDS STILL. It used to be anchored TO the viewer, so dragging Icon Size or Icon Limit
+  -- resized the viewer and slid the dialog sideways out from under the cursor, mid-drag. The position
+  -- resolves into UIParent coordinates once, on open.
+  local anchorPt, anchorRel = panel:GetPoint(1)
+  assertf(anchorRel == UIParent,
+          "the dialog is placed against the screen, not pinned to the frame it edits (" ..
+          tostring(anchorPt) .. ")")
+  -- Both sides, because the placement picks one of two branches on which half of the screen the frame
+  -- sits in — and a test that only ever lands in one of them leaves the other free to break.
+  assertf(anchorPt == "TOPLEFT",
+          "…to the RIGHT of a frame on the left half of the screen (" .. tostring(anchorPt) .. ")")
+  anchor._center = { 800, 400 }
+  M.ShowEditorPanel("essential", anchor)
+  local rightPt, rightRel = panel:GetPoint(1)
+  assertf(rightPt == "TOPRIGHT" and rightRel == UIParent,
+          "…and to its LEFT when the frame is on the right half (" .. tostring(rightPt) .. ")")
+  anchor._center = { 300, 400 }
+  M.ShowEditorPanel("essential", anchor)
+  local before = { panel:GetPoint(1) }
+
   -- A slider writes through, and the frame follows without a reload.
   local limit = rowOf("essential", "Icon Limit")
   limit.Slider:SetValue(5)
   assertf(M.GetOpt(FID, "iconLimit") == 5, "dragging a slider writes the setting")
   assertf(M.viewers.essential.iconLimit == 5, "…and the viewer re-lays out at once")
+  local after = { panel:GetPoint(1) }
+  assertf(before[1] == after[1] and before[2] == after[2]
+          and before[4] == after[4] and before[5] == after[5],
+          "…and the dialog does not move while you drag (" ..
+          tostring(before[4]) .. "," .. tostring(before[5]) .. " → " ..
+          tostring(after[4]) .. "," .. tostring(after[5]) .. ")")
 
   -- THE ARROWS. A drag reports continuous values on this client (SetObeyStepOnDrag is retail-only),
   -- so they are the only way to land on an exact value — not decoration.
@@ -3836,6 +3896,41 @@ do
   for _ = 1, 8 do limit.Left:GetScript("OnClick")(limit.Left) end
   assertf(M.GetOpt(FID, "iconLimit") == 1, "…stopping at the minimum (" ..
           tostring(M.GetOpt(FID, "iconLimit")) .. ")")
+
+  -- CLICK AWAY TO DISMISS. An open menu had two ways out — pick a row, or Escape — and clicking
+  -- anywhere else left it hanging, which no other menu in the game does. The dismiss is a full-screen
+  -- mouse catcher parked one level under the open list, so the list keeps its own clicks.
+  do
+    local drop = rowOf("essential", "Visibility")
+    NE.menu.Close(1)
+    drop.Button:GetScript("OnClick")(drop.Button)
+    local list = _G.C_DropDownList1
+    assertf(list ~= nil and list:IsShown(), "clicking a dropdown opens its menu")
+    local catch = NE.menu._catcher()
+    assertf(catch ~= nil and catch:IsShown(), "…and arms a click catcher over the rest of the screen")
+    assertf(catch:GetFrameStrata() == list:GetFrameStrata()
+            and catch:GetFrameLevel() < list:GetFrameLevel(),
+            "…UNDER the list, or the menu's own rows would stop taking clicks (" ..
+            tostring(catch:GetFrameLevel()) .. " vs " .. tostring(list:GetFrameLevel()) .. ")")
+    catch:GetScript("OnMouseDown")(catch)
+    assertf(not list:IsShown(), "clicking outside closes the menu")
+    assertf(not catch:IsShown(), "…and puts the catcher away with it")
+
+    -- The menu also closes without going through the catcher — a row picked, Escape, a CloseAll from
+    -- somewhere else. A catcher left armed over an empty screen eats the next click ANYWHERE.
+    drop.Button:GetScript("OnClick")(drop.Button)
+    assertf(NE.menu._catcher():IsShown(), "reopening arms it again")
+    NE.menu.Close(1)
+    assertf(not NE.menu._catcher():IsShown(),
+            "…and closing the menu any other way disarms it, so it cannot eat a later click")
+
+    -- ToggleAnchored is a TOGGLE: the second click closes. Arming over a screen with no menu on it
+    -- would cost the player a click for nothing.
+    drop.Button:GetScript("OnClick")(drop.Button)
+    drop.Button:GetScript("OnClick")(drop.Button)
+    assertf(not _G.C_DropDownList1:IsShown() and not NE.menu._catcher():IsShown(),
+            "…and a toggle that closed the menu arms nothing")
+  end
 
   -- A dropdown is a button that opens a radio menu (§G.11: no retail dropdown template here), so the
   -- assertion goes through its generator rather than its art.
@@ -3897,6 +3992,18 @@ do
           "…and the click alone changes nothing (" .. tostring(M.GetOpt(FID, "iconPadding")) .. ")")
   assertf(tostring(StaticPopupDialogs["NE_CDM_EDITOR_RESET"].text):find("Essential") ~= nil,
           "…naming the viewer it is about to reset, not asking a generic question over four of them")
+  -- ABOVE EVERYTHING. Edit mode stacks three things over a StaticPopup's home strata, the top one
+  -- being DragonUI's own Exit Edit Mode panel at TOOLTIP level 200 (core/api.lua:971) — which is what
+  -- this confirm first opened behind. TOOLTIP is the top strata, so clearing it is a LEVEL question.
+  local pop = CreateFrame("Frame", nil, UIParent)
+  pop:SetFrameStrata("DIALOG"); pop:SetFrameLevel(1)
+  StaticPopupDialogs["NE_CDM_EDITOR_RESET"].OnShow(pop)
+  assertf(pop:GetFrameStrata() == "TOOLTIP" and pop:GetFrameLevel() > 200,
+          "…on top of DragonUI's own edit-mode buttons, which sit at TOOLTIP 200 (" ..
+          tostring(pop:GetFrameStrata()) .. " " .. tostring(pop:GetFrameLevel()) .. ")")
+  StaticPopupDialogs["NE_CDM_EDITOR_RESET"].OnHide(pop)
+  assertf(pop:GetFrameStrata() == "DIALOG" and pop:GetFrameLevel() == 1,
+          "…and puts the shared popup frame back, since the next dialog in that slot is not ours")
   StaticPopupDialogs["NE_CDM_EDITOR_RESET"].OnAccept()
   assertf(M.GetOpt(FID, "iconPadding") == M.DEFAULTS.iconPadding,
           "…and answering it puts this viewer's defaults back")
