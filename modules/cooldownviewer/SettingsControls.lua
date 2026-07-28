@@ -95,6 +95,9 @@ local DEFAULT_THEME = {
   labelW     = 96,          -- compact slider only; the tab's dropdown right-anchors instead
   controlW   = nil,         -- nil = the tab's behaviour (fill the row / o.width)
   dropdownArt = false,      -- true = the modern textholder + arrow, instead of a red panel button
+  buttonArt   = false,      -- true = the BigRedThreeSlice skin on AddButton rows
+  buttonH     = nil,        -- row height for AddButton; nil = BUTTON_H
+  buttonArtH  = nil,        -- the button's own height inside that row; nil = 22
 }
 
 function Kit.New(parent, width, theme)
@@ -578,15 +581,21 @@ end
 -- o = { label, desc, onClick, width }
 
 function Column:AddButton(o)
-  local row = self:_row("Frame", BUTTON_H)
+  local th = self.theme
+  local row = self:_row("Frame", th.buttonH or BUTTON_H)
 
   local btn = CreateFrame("Button", nextName("Button"), row, "UIPanelButtonTemplate")
-  btn:SetSize(o.width or 200, 22)
+  btn:SetSize(o.width or 200, th.buttonArtH or 22)
   btn:SetPoint("LEFT", row, "LEFT", 2, 0)
   btn:SetText(o.label or "")
   btn:SetScript("OnClick", function()
     if o.onClick then o.onClick() end
   end)
+
+  -- The red 3-slice, where the theme asks for it. A button built by this kit sits next to buttons the
+  -- edit-mode dialog builds itself and skins, and one unskinned row among them is more obviously wrong
+  -- than none of them being skinned would be.
+  if th.buttonArt and NE.button and NE.button.Skin then pcall(NE.button.Skin, btn) end
 
   tip(btn, o.label, o.desc)
   row.Button = btn

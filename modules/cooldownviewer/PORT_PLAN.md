@@ -2704,6 +2704,13 @@ Six more mutations, each failing by name: the sheet unshipped, the left cap's re
 footer never skinned, the pressed state never applied, `SetScale` put back, and the centre stopping
 tiling.
 
+**One button was missed on that pass:** "Cooldown Manager Settings" is built by the control kit
+(`Column:AddButton`), not by the dialog, so the dialog's own `NE.button.Skin` call never reached it —
+and it sat directly above two buttons that *were* skinned, which is far more obviously wrong than
+three unskinned buttons would have been. The skin is now a theme flag (`buttonArt`, off by default,
+like the rest of the theme) so the `/cdm` tab's buttons keep their look. Three mutations: the kit
+never skinning, the dialog not asking, and the flag defaulting on so it leaks into the tab.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

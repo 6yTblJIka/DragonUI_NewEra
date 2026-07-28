@@ -132,6 +132,12 @@ local function buildPage(category)
     labelW      = LABEL_W,
     controlW    = CONTROL_W,
     dropdownArt = true,
+    -- Matches the Revert/Reset pair below it, which the dialog skins itself. The extra-button slot
+    -- sits directly above them, so an unskinned row there is more obviously wrong than none of them
+    -- being skinned would be.
+    buttonArt   = true,
+    buttonH     = BTN_H + 4,
+    buttonArtH  = BTN_H,
   })
 
   local function get(key) return M.GetOpt(frameID, key) end

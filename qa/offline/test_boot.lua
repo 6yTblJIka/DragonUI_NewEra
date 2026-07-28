@@ -3699,6 +3699,10 @@ do
       and e.frame.Button:GetText() == "Cooldown Manager Settings" then settingsRow = e.frame end
   end
   assertf(settingsRow ~= nil, "…and the way out sits at the end of the options stack, as retail does")
+  -- It sits directly above Revert/Reset, which the dialog skins itself, so it has to match them: one
+  -- unskinned button in a stack of three is more obviously wrong than three unskinned ones.
+  assertf(settingsRow.Button._neThreeSlice ~= nil,
+          "…wearing the same red 3-slice as the two buttons under it")
 
   -- ART. The dialog wears retail's DialogBorderTranslucentTemplate — black 0.8 under the DiamondMetal
   -- "Dialog" nineslice — NOT PanelChrome's portrait frame, which is window chrome: on a small
@@ -3850,6 +3854,13 @@ do
   end
   assertf(tabDrop ~= nil and tabDrop.Button.RefreshArt == nil,
           "…and the tab's dropdown is untouched by the dialog's theme")
+  local tabBtn
+  for _, e in ipairs((S.settingsColumn or {}).entries or {}) do
+    local f = e.frame
+    if f.Button and f.Button.GetText and f.Button:GetText() == "Position this viewer" then tabBtn = f end
+  end
+  assertf(tabBtn ~= nil and tabBtn.Button._neThreeSlice == nil,
+          "…and so are its buttons, which the dialog's skin must not reach")
 
   rowOf("essential", "Icon Limit").Slider:SetValue(9)
   assertf(tabRow.Slider:GetValue() == 9,
