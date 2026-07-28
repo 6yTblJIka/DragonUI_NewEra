@@ -1819,6 +1819,32 @@ if sp then
   local ip1, irel1 = sp.InsetBg:GetPoint(1)
   assertf(ip1 == "TOPLEFT" and irel1 == sp.Inset, "…covering the Inset rect exactly")
 
+  -- THE BUTTON STRIP. The Inset's bottom edge and the scroll body's both key off one FOOTER_H, so
+  -- they cannot be raised independently and leave the layout/Revert buttons overlapping the border
+  -- again. ButtonFrameTemplate's own Inset bottom is 26; anything at or below that is the strip
+  -- back at its original height.
+  local function bottomY(frame)
+    for i = frame:GetNumPoints(), 1, -1 do
+      local p, a, b, _, d = frame:GetPoint(i)
+      -- SetPoint has two shapes — (point, relTo, relPoint, x, y) and the short (point, x, y) — and
+      -- the stub records arguments positionally rather than normalising them. Read whichever this
+      -- particular call used; guessing one shape silently yields nil for the other.
+      if p == "BOTTOMRIGHT" then
+        if type(a) == "number" then return b end
+        return d
+      end
+    end
+  end
+  local insetBottom, scrollBottom = bottomY(sp.Inset), bottomY(sp.scroll)
+  assertf(insetBottom == 36,
+          "the button strip is 36px tall — the template's 26 plus the owner's 10 (" ..
+          tostring(insetBottom) .. ")")
+  assertf(scrollBottom == insetBottom + 8,
+          ("…and the scroll body clears it by its own pad, not by a second hardcoded number (%s vs %s)")
+            :format(tostring(scrollBottom), tostring(insetBottom)))
+  assertf(sp.layoutButton:GetHeight() + 6 < insetBottom,
+          "…leaving the layout button clear of the Inset's bottom border, which is the point")
+
   local esc = false
   for _, n in ipairs(UISpecialFrames) do if n == "NE_CooldownViewerSettings" then esc = true end end
   assertf(esc, "registered with UISpecialFrames for ESC-close")

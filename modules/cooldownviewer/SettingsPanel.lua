@@ -39,6 +39,14 @@ local PANEL_NAME = "NE_CooldownViewerSettings"
 local PANEL_W, PANEL_H = 399, 609
 local PANEL_SCALE = 1.3
 
+-- Height of the button strip below the Inset, measured from the frame's bottom edge.
+-- ButtonFrameTemplate anchors its Inset at BOTTOMRIGHT y=26; this is that +10, on the owner's
+-- request, because the layout and Revert buttons sat tight against the Inset's bottom border.
+-- Both the Inset and the scroll body key off this, so the strip has ONE height rather than two
+-- numbers that have to be remembered together.
+local FOOTER_H = 36
+local SCROLL_BOTTOM_PAD = 8   -- the scroll body's own clearance inside the Inset
+
 -- Which side tab a viewer category belongs to. Essential/Utility are spellbook-driven; the buff
 -- viewers are aura-driven. Nothing maps to "settings" — that tab is not a list of anything.
 local CATEGORY_TO_MODE = {
@@ -150,6 +158,10 @@ local function build()
   -- builds f.Bg fresh at the default subLevel instead of re-texturing the template's at -6. That is
   -- what put the two on the wrong sides of each other.)
   if f.Inset then
+    -- Lift the Inset's bottom edge to make the button strip FOOTER_H tall. Only the BOTTOMRIGHT
+    -- point is re-set: SetPoint replaces an existing anchor of the same name, so the template's
+    -- TOPLEFT stays exactly where it was and this cannot drift from it.
+    f.Inset:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -6, FOOTER_H)
     if f.Inset.Bg then f.Inset.Bg:Hide() end   -- the template's own old-ClassicAPI marble
     local ibg = f:CreateTexture(nil, "BACKGROUND", nil, 1)
     ibg:SetPoint("TOPLEFT",     f.Inset, "TOPLEFT",     0, 0)
@@ -265,7 +277,7 @@ local function build()
   -- WowScrollBox anywhere in the source to have to replace.
   f.scroll = CreateFrame("ScrollFrame", PANEL_NAME .. "Scroll", f, "UIPanelScrollFrameTemplate")
   f.scroll:SetPoint("TOPLEFT", 17, -72)
-  f.scroll:SetPoint("BOTTOMRIGHT", -30, 34)   -- clears the footer row below
+  f.scroll:SetPoint("BOTTOMRIGHT", -30, FOOTER_H + SCROLL_BOTTOM_PAD)   -- clears the footer row below
   f.content = CreateFrame("Frame", nil, f.scroll)
   f.content:SetSize(330, 1)
   f.scroll:SetScrollChild(f.content)
