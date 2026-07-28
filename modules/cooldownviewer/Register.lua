@@ -69,6 +69,12 @@ local function boot()
         frame   = frame,
         section = "widgets",
         key     = "ne" .. spec.id,
+        -- PER CHARACTER. DragonUI's profile is shared across the account, so without this all four
+        -- viewers sit wherever the last character to touch them left them. Where these belong is
+        -- downstream of WHAT they show, and that is per class already — a Warlock's buff bars have
+        -- no reason to inherit a Priest's placement. Existing shared positions are seeded into each
+        -- character's slot on first login, so nothing moves on upgrade.
+        perCharacter = true,
         defaultPoint = {
           point = "BOTTOM", relativePoint = "BOTTOM",
           -- BuffBar sits off to the side in retail's preset; the rest are centred.

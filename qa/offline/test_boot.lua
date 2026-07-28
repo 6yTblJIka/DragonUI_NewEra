@@ -382,6 +382,10 @@ BOOKTYPE_SPELL = "spell"
 MAX_TOTEMS = 4
 
 function UnitClass(u) return "Priest", "PRIEST" end
+-- Identity, for anything keyed per character. Both are reassignable so a test can "log in" as
+-- someone else without a second harness run.
+function UnitName(u) return "Testpriest" end
+function GetRealmName() return "Test Realm" end
 function UnitRace(u) return "Human", "Human" end
 function UnitExists(u) return u == "player" end
 -- Live aura tables, keyed by unit. Each entry uses the 3.3.5a return order, which is what makes
@@ -973,8 +977,50 @@ assertf(util:IsShown() == true, "re-enabling shows it")
 
 print("\n=== EDIT MODE ===")
 local edEss = DragonUI.EditableFrames["CooldownViewerEssential"]
-assertf(edEss.configPath[1] == "widgets" and edEss.configPath[2] == "neCooldownViewerEssential",
-        "configPath wired (" .. edEss.configPath[1] .. "." .. edEss.configPath[2] .. ")")
+-- PER CHARACTER. DragonUI's profile is shared across the account, so a bare key means every
+-- character shares one placement — the last one to touch it wins. configPath is the only thing the
+-- editor takes from us, so varying the key is the whole mechanism.
+assertf(edEss.configPath[1] == "widgets"
+        and edEss.configPath[2] == "neCooldownViewerEssential-Testpriest-Test Realm",
+        "configPath wired per character (" .. edEss.configPath[1] .. "." .. edEss.configPath[2] .. ")")
+
+do
+  -- The key builder in isolation, including the two ways it must NOT produce a per-character key.
+  assertf(NE.FramePositionKey("neThing", nil) == "neThing",
+          "a frame that does not ask keeps the shared key, so nothing else moves")
+  assertf(NE.FramePositionKey("neThing", true) == "neThing-Testpriest-Test Realm",
+          "…and one that asks gets name and realm")
+  local realName = UnitName
+  UnitName = function() return nil end
+  assertf(NE.FramePositionKey("neThing", true) == "neThing",
+          "…falling back to the shared key when the client cannot name the player yet")
+  UnitName = realName
+
+  -- A DIFFERENT character must not read the first one's position. This is the assertion the whole
+  -- change exists for, and the one a shared key passes only by accident.
+  UnitName = function() return "Testlock" end
+  assertf(NE.FramePositionKey("neThing", true) ~= "neThing-Testpriest-Test Realm",
+          "another character resolves to another slot entirely")
+  UnitName = realName
+
+  -- MIGRATION. Someone upgrading into this must not watch their viewers jump to the default; that
+  -- reads as data loss, not as a feature. The shared entry is left in place on purpose — every other
+  -- character still needs it as their own seed.
+  profile.widgets = profile.widgets or {}
+  profile.widgets.neMigrateTest = { anchor = "TOPLEFT", posX = 11, posY = -22 }
+  local mFrame = CreateFrame("Frame", nil, UIParent)
+  NE.RegisterHUDFrame({ name = "NEMigrateTest", frame = mFrame, section = "widgets",
+                        key = "neMigrateTest", perCharacter = true })
+  local seeded = profile.widgets["neMigrateTest-Testpriest-Test Realm"]
+  assertf(seeded ~= nil and seeded.posX == 11 and seeded.posY == -22,
+          "an existing shared position seeds this character's slot on first registration")
+  assertf(profile.widgets.neMigrateTest ~= nil,
+          "…and the shared entry stays, or the first character to log in takes it from everyone else")
+  assertf(seeded ~= profile.widgets.neMigrateTest,
+          "…as a COPY, so moving it on one character does not drag the others' seed with it")
+  profile.widgets.neMigrateTest = nil
+  profile.widgets["neMigrateTest-Testpriest-Test Realm"] = nil
+end
 assertf(edEss.editorVisible() == true, "always offered in edit mode")
 
 -- THE bug this whole round-trip existed to catch: the registered frame must be a CreateUIFrame

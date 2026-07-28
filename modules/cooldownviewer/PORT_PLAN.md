@@ -2461,6 +2461,28 @@ Three mutations, each failing by name: the unscoped wipe restored verbatim, `see
 again, and `customLists` left alone — the last proving the fix did not quietly turn the reset into a
 no-op, which is the failure mode a scoping change invites.
 
+### H.3.7. Viewer positions are per character
+
+Owner request: moving the viewers in `/dui edit` should save per character. It did not — DragonUI's
+profile is shared across the account (the same fact behind §H.3.6), so all four viewers sat wherever
+the last character to touch them left them.
+
+**Done by KEY, not by a parallel store.** DragonUI's editor takes exactly one thing from us — the
+`configPath = { section, key }` it reads and writes `profile[section][key]` through. Varying the key
+therefore buys per-character positions with no change to DragonUI at all (CONTRACTS §0).
+`NE.FramePositionKey` appends name and realm, and it is **opt-in per frame**: a module that wants one
+placement across the account keeps it by saying nothing. Only the four Cooldown Manager viewers ask.
+The fallback when the client cannot yet name the player is the shared key — a shared position is a
+mild surprise, a position filed under `-nil` is one nothing will ever read back.
+
+**Migration matters more than the feature here.** A character upgrading into this must not watch its
+viewers jump to the default; that reads as data loss. The existing shared entry seeds each character's
+slot on first registration, as a **copy**, and is deliberately left in place — deleting it would hand
+the upgrade to whoever logged in first and a default layout to everybody else.
+
+Four mutations, each failing by name: the viewers no longer asking, the key builder ignoring the flag,
+the seed skipped, and the seed moving the shared entry instead of copying it.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

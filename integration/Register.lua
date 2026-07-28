@@ -126,6 +126,47 @@ end
 -- legacy configPath shape (core/movers.lua:358-366).
 -- ----------------------------------------------------------------------------
 
+-- ----------------------------------------------------------------------------
+-- NE.FramePositionKey(key, perCharacter) -> the profile key a HUD frame's position is stored under.
+--
+-- DragonUI's profile is shared across characters — that is what makes its class-keyed stores work at
+-- all — so a position saved under a bare key is a position every character on the account shares.
+-- For a HUD element that is often right (a unit frame belongs where you like unit frames); for the
+-- Cooldown Manager viewers it is not, because what a Priest wants tracked and where a Warlock wants
+-- it are different questions and the answer to the second follows the first.
+--
+-- Done by KEY rather than by a parallel store, because the key is the ONLY thing DragonUI's editor
+-- takes from us: it reads and writes profile[section][key] itself through configPath. Varying the key
+-- therefore buys per-character positions with no change to DragonUI at all (CONTRACTS §0).
+--
+-- Falls back to the shared key when the client cannot yet name the player. A shared position is a
+-- mild surprise; a position filed under "-nil" is one nothing will ever read back.
+function NE.FramePositionKey(key, perCharacter)
+    if not (key and perCharacter) then return key end
+    local name = UnitName and UnitName("player")
+    if not name or name == "" then return key end
+    local realm = GetRealmName and GetRealmName()
+    if realm and realm ~= "" then return key .. "-" .. name .. "-" .. realm end
+    return key .. "-" .. name
+end
+
+-- Seed a per-character position slot from the shared one, once.
+--
+-- A character upgrading into per-character positions must not watch its viewers jump back to the
+-- default — that reads as data loss, not as a feature. The shared entry is deliberately LEFT IN
+-- PLACE: every other character still needs it as their own seed, and deleting it would hand the
+-- upgrade to whoever logged in first and a default layout to everybody else.
+local function seedPerCharacterPosition(section, sharedKey, key)
+    if key == sharedKey then return end
+    local dragon = NE.dragon
+    local profile = dragon and dragon.db and dragon.db.profile
+    local sect = profile and profile[section]
+    if not (sect and sect[sharedKey]) or sect[key] then return end
+    local copy = {}
+    for k, v in pairs(sect[sharedKey]) do copy[k] = v end
+    sect[key] = copy
+end
+
 function NE.ApplySavedFramePosition(frame, section, key)
     local dragon = NE.dragon
     local profile = dragon and dragon.db and dragon.db.profile
@@ -204,9 +245,13 @@ function NE.RegisterHUDFrame(spec)
         return
     end
 
-    local section = spec.section or "widgets"
-    local key     = spec.key or spec.name
-    local content = spec.frame
+    local section   = spec.section or "widgets"
+    local sharedKey = spec.key or spec.name
+    -- Opt-in per frame, not a blanket change: a module that wants one placement across the account
+    -- keeps it by saying nothing.
+    local key       = NE.FramePositionKey(sharedKey, spec.perCharacter)
+    seedPerCharacterPosition(section, sharedKey, key)
+    local content   = spec.frame
 
     -- DragonUI's CreateUIFrame labels the editor handle with `addon.L[frameName]`. AceLocale's
     -- read metatable fires a non-breaking error for any key its locale doesn't define, so every
