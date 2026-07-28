@@ -80,8 +80,7 @@ local PROF_MAP = {
   ["Inscription"]    = { kit = "Inscription",   icon = 4620676, fill = "skillbar_fill_flipbook_inscription" },
   ["Jewelcrafting"]  = { kit = "Jewelcrafting", icon = 4620677, fill = "skillbar_fill_flipbook_jewelcrafting" },
   ["Prospecting"]    = { kit = "Jewelcrafting", icon = 4620677, fill = "skillbar_fill_flipbook_jewelcrafting" },
-  ["First Aid"]      = { kit = nil,              icon = "Interface\\Icons\\Spell_Holy_SealOfSacrifice",
-                         fill = "skillbar_fill_flipbook_skinning" },
+  ["First Aid"]      = { kit = nil,              icon = "Interface\\Icons\\Spell_Holy_SealOfSacrifice", fill = "skillbar_fill_flipbook_skinning" },
 }
 
 local function infoFromName(name)
@@ -148,19 +147,26 @@ flipDriver:SetScript("OnUpdate", function(_, dt)
 end)
 flipDriver:Hide()
 
--- tc = { l, r, t, b }; rows/cols/frames describe the sprite grid; duration in seconds.
+-- -- tc = { l, r, t, b }; rows/cols/frames describe the sprite grid; duration in seconds.
 -- first = index of the first NON-black frame to animate from (defaults to 1 — cell 0 is black).
 local function startFlip(tex, tc, rows, cols, frames, duration, first)
   first = first or 1
   local cellW = (tc.r - tc.l) / cols
   local cellH = (tc.b - tc.t) / rows
   for i = #flipActive, 1, -1 do if flipActive[i].tex == tex then table.remove(flipActive, i) end end
-  -- Seed the texcoord on the first non-black frame so we never flash cell 0.
+  
   local col0 = first % cols
   local row0 = math.floor(first / cols)
-  tex:SetTexCoord(
-    tc.l + col0 * cellW,      tc.l + (col0 + 1) * cellW,
-    tc.t + row0 * cellH,      tc.t + (row0 + 1) * cellH)
+  local u0 = tc.l + col0 * cellW
+  local u1 = tc.l + (col0 + 1) * cellW
+  local v0 = tc.t + row0 * cellH
+  local v1 = tc.t + (row0 + 1) * cellH
+  
+  local frac = tex._frac or 1
+  u1 = u0 + (u1 - u0) * frac
+  
+  tex:SetTexCoord(u0, u1, v0, v1)
+  
   flipActive[#flipActive + 1] = {
     tex = tex, l = tc.l, t = tc.t, cols = cols, frames = frames,
     duration = duration, elapsed = 0, first = first,
@@ -1029,7 +1035,7 @@ function C.UpdateRank()
 
     rb.Fill:ClearAllPoints()
     rb.Fill:SetPoint("TOPLEFT", rb, "TOPLEFT", 5, -3) 
-    rb.Fill:SetHeight(18)                             
+    rb.Fill:SetHeight(19)                             
     rb.Fill:SetWidth(w)
     rb.Fill._frac = frac
     rb.Fill:SetShown(frac > 0)
@@ -1047,7 +1053,7 @@ function C.UpdateRank()
 
       if frames > 2 then
         if atlasChanged or not rb._flipping then
-          startFlip(rb.Fill, tc, rows, cols, frames, 2.0, staticFrame)
+          startFlip(rb.Fill, tc, rows, cols, frames, 7.8, staticFrame)
           rb._flipping = true
         end
       else
@@ -1078,8 +1084,17 @@ function C.UpdateRank()
       if themed and entry and frac > 0 and frac < 1 then
         local srcFile = entry.file and (NE.tex and NE.tex.localFiles and NE.tex.localFiles[entry.file]) or entry.file
         rb.Flare:SetTexture(srcFile)
-        rb.Flare:SetTexCoord(FLARE_U0, FLARE_U1, entry.top, math.min(1, entry.top + FLARE_H))
-        rb.Flare:SetSize(53, 16)
+
+        local maxFlareW = 53
+        local fw = math.min(maxFlareW, w)
+        local fracW = fw / maxFlareW
+        local uSpan = FLARE_U1 - FLARE_U0
+        local cropU0 = FLARE_U1 - (uSpan * fracW)
+
+        rb.Flare:ClearAllPoints()
+        rb.Flare:SetPoint("RIGHT", rb.Fill, "RIGHT", 0, 0)
+        rb.Flare:SetSize(fw, 16)
+        rb.Flare:SetTexCoord(cropU0, FLARE_U1, entry.top, math.min(1, entry.top + FLARE_H))
         rb.Flare:Show()
       else
         rb.Flare:Hide()
