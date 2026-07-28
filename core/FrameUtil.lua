@@ -246,9 +246,11 @@ end
 function NE.FrameUtil.WirePanelSounds(frame, openKit, closeKit, fallbackOpen, fallbackClose)
   if not frame or frame._neSoundWatcher then return end
   local function play(kit, fallback)
-    if not kit then return end
-    local ok, willPlay = pcall(PlaySound, kit)
-    if not (ok and willPlay) and fallback then pcall(PlaySound, fallback) end
+    if kit then
+      local ok, willPlay = pcall(PlaySound, kit)
+      if ok and willPlay then return end
+    end
+    if fallback then pcall(PlaySound, fallback) end
   end
   local w = CreateFrame("Frame", nil, frame)
   w:SetScript("OnShow", function() play(openKit,  fallbackOpen)  end)
