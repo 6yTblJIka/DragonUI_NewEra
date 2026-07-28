@@ -114,62 +114,119 @@ local function revert(category)
   M.SetCategoryEnabled(category, snap._enabled)
 end
 
--- The Reset confirm. `text` is rewritten per viewer at click time so the confirm names what it is
--- about to wipe — a generic "are you sure?" over four differently-configured viewers is the kind of
--- prompt people learn to click through.
+-- ── The Reset confirm ───────────────────────────────────────────────────────────────────────────
 --
--- STRATA, not decoration. A confirm has to be the topmost thing on screen or it is not a confirm, and
--- edit mode stacks four things above where StaticPopups live (DIALOG):
---   * the editor handles, which addon.CreateUIFrame puts at FULLSCREEN;
---   * this dialog, at FULLSCREEN_DIALOG so it clears them;
---   * DragonUI's coordinate panel, TOOLTIP frame level 200 (DragonUI/core/api.lua:971);
---   * Exit Edit Mode and Reset All Positions — separate frames on UIParent, TOOLTIP frame level
---     **1000** (DragonUI/modules/editor_mode.lua:190, 210).
--- The first attempt at this cleared the coordinate panel and stopped there, so the confirm still
--- opened under the two buttons that matter. TOOLTIP is already the top strata, so this is a LEVEL
--- question — and the level is READ rather than hardcoded, because a number picked to beat 1000 today
--- is a number that silently stops working the next time DragonUI moves theirs.
-local POPUP_STRATA = "TOOLTIP"
-local EDIT_MODE_FRAMES = {
-  "DragonUIExitEditorButton", "DragonUIResetAllButton", "DragonUI_EditorPanel",
-}
+-- OUR OWN FRAME, INSIDE THE DIALOG. It was a StaticPopup, and it kept opening underneath DragonUI's
+-- Exit Edit Mode / Reset All Positions buttons — which sit on UIParent at TOOLTIP frame level 1000
+-- (DragonUI/modules/editor_mode.lua:190, 210) and park at screen centre, exactly where a StaticPopup
+-- lands. Two attempts at out-stacking them failed in game (first aiming at the wrong frame, then
+-- reading the level at show time), so the fight is not worth having: a confirm parented to THIS DIALOG
+-- draws inside the dialog's own stacking, above it by construction, and appears beside the viewer
+-- being edited rather than in the middle of the screen where those buttons live. There is nothing left
+-- for it to lose to.
+--
+-- It is also MODAL to the dialog — a blocker fills the panel behind it — because the question is about
+-- the very settings underneath, and letting someone go on nudging sliders behind an unanswered "are
+-- you sure?" invites answering it about a different state than the one they read.
+--
+-- The text is rewritten per viewer at ask time. A generic "are you sure?" over four
+-- differently-configured viewers is the kind of prompt people learn to click through.
 
-local function popupLevel()
-  local lvl = 300
-  for _, name in ipairs(EDIT_MODE_FRAMES) do
-    local f = _G[name]
-    if f and f.GetFrameStrata and f.GetFrameLevel and f:GetFrameStrata() == POPUP_STRATA then
-      local l = (f:GetFrameLevel() or 0) + 10
-      if l > lvl then lvl = l end
-    end
+local CONFIRM_W = PANEL_W - 60
+local CONFIRM_BTN_W = 110
+
+local function ensureConfirm(f)
+  if f.confirm then return f.confirm end
+
+  -- Fills the dialog, eats every click meant for the controls behind. Below the confirm, above
+  -- everything else the panel holds.
+  local blocker = CreateFrame("Frame", nil, f)
+  blocker:SetAllPoints(f)
+  blocker:EnableMouse(true)
+  blocker:SetFrameLevel(f:GetFrameLevel() + 10)
+  blocker:Hide()
+  local dim = blocker:CreateTexture(nil, "BACKGROUND")
+  dim:SetAllPoints()
+  dim:SetTexture(0, 0, 0, 0.55)
+
+  local c = CreateFrame("Frame", "NE_CDMEditorConfirm", f)
+  c:SetWidth(CONFIRM_W)
+  c:SetPoint("CENTER", f, "CENTER", 0, 0)
+  c:SetFrameLevel(blocker:GetFrameLevel() + 10)
+  c:EnableMouse(true)
+  c:Hide()
+
+  -- Same chrome as the dialog it sits in: black under the DiamondMetal "Dialog" nineslice. Opaque
+  -- rather than the dialog's 0.8, so the controls it is asking about do not read through it.
+  local bg = c:CreateTexture(nil, "BACKGROUND", nil, -5)
+  bg:SetTexture(0, 0, 0, 0.95)
+  bg:SetPoint("TOPLEFT", 7, -7)
+  bg:SetPoint("BOTTOMRIGHT", -7, 7)
+  c.Bg = bg
+  if NE.nineslice and NE.nineslice.ApplyLayout then
+    pcall(NE.nineslice.ApplyLayout, c, "Dialog")
   end
-  return lvl
-end
-M._popupLevel = popupLevel   -- test seam
-StaticPopupDialogs = StaticPopupDialogs or {}
-StaticPopupDialogs["NE_CDM_EDITOR_RESET"] = {
-  text = "Reset this viewer to its default layout?",
-  button1 = YES or "Yes",
-  button2 = NO or "No",
-  OnAccept = function()
-    if not current then return end
-    M.ResetOpts(M.FRAME_ID[current])
+
+  c.Text = c:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+  c.Text:SetPoint("TOPLEFT", c, "TOPLEFT", 18, -20)
+  c.Text:SetPoint("TOPRIGHT", c, "TOPRIGHT", -18, -20)
+  c.Text:SetJustifyH("CENTER")
+
+  local function confirmButton(label, w, onClick)
+    local b = CreateFrame("Button", nil, c, "UIPanelButtonTemplate")
+    b:SetSize(w, BTN_H)
+    b:SetText(label)
+    b:SetScript("OnClick", onClick)
+    if NE.button and NE.button.Skin then pcall(NE.button.Skin, b) end
+    return b
+  end
+
+  c.YesButton = confirmButton(YES or "Yes", CONFIRM_BTN_W, function()
+    local cat = c._category
+    M.HideConfirm()
+    if not cat then return end
+    M.ResetOpts(M.FRAME_ID[cat])
     M.RefreshEditorPanel()
-  end,
-  OnShow = function(self)
-    if not self.SetFrameStrata then return end
-    self._neStrata = self._neStrata or self:GetFrameStrata()
-    self._neLevel  = self._neLevel  or self:GetFrameLevel()
-    self:SetFrameStrata(POPUP_STRATA)
-    self:SetFrameLevel(popupLevel())
-  end,
-  OnHide = function(self)
-    if not self.SetFrameStrata then return end
-    self:SetFrameStrata(self._neStrata or "DIALOG")
-    self:SetFrameLevel(self._neLevel or 1)
-  end,
-  timeout = 0, whileDead = 1, hideOnEscape = 1,
-}
+  end)
+  c.YesButton:SetPoint("BOTTOMRIGHT", c, "BOTTOM", -4, 16)
+
+  c.NoButton = confirmButton(NO or "No", CONFIRM_BTN_W, function() M.HideConfirm() end)
+  c.NoButton:SetPoint("BOTTOMLEFT", c, "BOTTOM", 4, 16)
+
+  c.Blocker = blocker
+  f.confirm = c
+  return c
+end
+
+-- Ask about `category`. Public so the test can drive the same path the button does.
+function M.ShowConfirmReset(category)
+  if not (panel and category) then return false end
+  local c = ensureConfirm(panel)
+  local spec = specFor(category)
+  c._category = category
+  c.Text:SetText("Reset " .. ((spec and spec.label) or category) ..
+    " to its default layout?\n\nThis viewer's position, size, orientation and visibility all go back " ..
+    "to stock. Nothing else is affected, and it cannot be undone.")
+  -- Sized to the wrapped text. The floor covers the offline harness, whose FontString cannot measure.
+  local textH = math.max(60, (c.Text.GetStringHeight and c.Text:GetStringHeight() or 0) + 4)
+  c:SetHeight(20 + textH + 18 + BTN_H + 16)
+  c.Blocker:Show()
+  c:Show()
+  return true
+end
+
+function M.HideConfirm()
+  local c = panel and panel.confirm
+  if not c then return end
+  c._category = nil
+  c:Hide()
+  c.Blocker:Hide()
+end
+
+M.IsConfirmShown = function()
+  local c = panel and panel.confirm
+  return (c and c:IsShown()) and true or false
+end
 
 -- ── One viewer's page ───────────────────────────────────────────────────────────────────────────
 
@@ -390,12 +447,7 @@ local function ensurePanel()
   -- viewer, and nothing in the addon can put it back. The two now sit a few pixels apart, so the one
   -- that is not reversible asks.
   f.resetButton = footerButton("Reset to Default", BTN_W, function(category)
-    local spec = specFor(category)
-    StaticPopupDialogs["NE_CDM_EDITOR_RESET"].text =
-      "Reset " .. ((spec and spec.label) or category) ..
-      " to its default layout?\n\nThis viewer's position, size, orientation and visibility all go " ..
-      "back to stock. Nothing else is affected, and it cannot be undone."
-    StaticPopup_Show("NE_CDM_EDITOR_RESET")
+    M.ShowConfirmReset(category)
   end)
   f.resetButton:SetPoint("BOTTOMRIGHT", -CONTENT_X, 15)
 
@@ -450,6 +502,9 @@ function M.ShowEditorPanel(category, anchor)
     if cat ~= category then p.body:Hide() end
   end
   page.body:Show()
+  -- An unanswered confirm names ONE viewer and acts on `current`; selecting another frame would leave
+  -- it asking about the old one and resetting the new. It goes with the page it belongs to.
+  if current ~= category then M.HideConfirm() end
   current = category
 
   -- Re-read every control before showing. Something else may have moved these underneath us — the
@@ -486,6 +541,7 @@ end
 -- editing", and once you have left, that session is over. Keeping them would silently arm the button
 -- with a state from an hour ago.
 function M.HideEditorPanel()
+  M.HideConfirm()
   snapshots = {}
   current = nil
   if panel then panel:Hide() end

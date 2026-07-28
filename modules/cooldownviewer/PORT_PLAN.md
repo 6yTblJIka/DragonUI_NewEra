@@ -2864,6 +2864,33 @@ Four mutations, each failing by name: the popup level hardcoded again, the popup
 coordinate panel, the viewer link stopping at edit mode, and a per-viewer section reappearing on the
 tab.
 
+#### H.3.14. The confirm stops being a StaticPopup
+
+Three attempts to out-stack DragonUI's Exit Edit Mode and Reset All Positions buttons, and the third
+one was to stop trying. In order: `FULLSCREEN_DIALOG`/300 (aimed at the coordinate panel, the wrong
+frame); `TOOLTIP`/300 (right strata, still short of their 1000); reading their level at show time
+(did not work in game either, and from this side there was nothing to see — a `StaticPopup` frame is
+shared, re-parented and repositioned by code we do not own, and every hook we had went through it).
+
+**So the confirm is our own frame, parented to the dialog.** That settles the stacking by construction
+rather than by arithmetic — a child draws inside its parent's stacking, above it, with no number to
+get wrong — and it settles the *position* too, which was the other half of the problem: those buttons
+park at screen centre, and a `StaticPopup` lands in exactly that spot. A confirm inside the dialog
+appears beside the viewer being edited, where nothing else is competing for the space.
+
+It is **modal to the dialog**: a blocker fills the panel behind it, dimmed, eating clicks. The question
+is about the very settings underneath it, and nudging a slider behind an unanswered "are you sure?"
+means answering it about a different state than the one that was read. It wears the same DiamondMetal
+chrome and red buttons as the dialog, and it is dropped whenever the dialog switches viewers — it names
+one viewer and acts on whichever is current, so those must not be allowed to differ.
+
+Seven mutations, each failing by name: the confirm parented to `UIParent`, its level not raised above
+the dialog, the blocker never shown, the confirm placed under its own blocker, Reset firing without
+asking, the confirm surviving a viewer switch, and No doing what Yes does. An eighth — raising the
+blocker — turned out not to be a regression at all: the confirm's level is derived from the blocker's,
+so they move together, which is the property that makes the ordering structural rather than a pair of
+constants to keep in step.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

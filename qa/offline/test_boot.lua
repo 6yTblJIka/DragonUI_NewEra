@@ -3699,13 +3699,14 @@ do
   -- than the "I cannot tell where this is, centre it" fallback.
   anchor._center = { 300, 400 }
   anchor:SetSize(200, 60)
-  -- DragonUI's Exit Edit Mode button, modelled because the confirm has to clear it: UIParent, TOOLTIP,
-  -- frame level 1000 (DragonUI/modules/editor_mode.lua:190). Without it here the level assertion below
-  -- would have nothing to beat and would pass at any number — which is the exact shape of the mistake
-  -- it exists to catch.
+  -- DragonUI's Exit Edit Mode button: UIParent, TOOLTIP, frame level 1000
+  -- (DragonUI/modules/editor_mode.lua:190). Modelled because it is what the Reset confirm kept opening
+  -- underneath, and because its POSITION is half the reason the confirm moved into the dialog — it
+  -- parks at screen centre, which is exactly where a StaticPopup lands.
   local duExit = CreateFrame("Button", "DragonUIExitEditorButton", UIParent)
   duExit:SetFrameStrata("TOOLTIP")
   duExit:SetFrameLevel(1000)
+  duExit:SetPoint("CENTER", UIParent, "CENTER", 0, 200)
 
   -- Find a control by its label, in one viewer's page. By label rather than by index: an index passes
   -- just as well when the wrong row moved into that slot.
@@ -4048,38 +4049,49 @@ do
   -- RESET is the other one, and it does mean defaults — behind a CONFIRM. Revert is bounded and greys
   -- itself out when there is nothing to undo; Reset throws away every layout choice ever made for this
   -- viewer and nothing in the addon can put it back. They now sit three pixels apart.
-  local popupsBefore = #POPUPS_SHOWN
   panel.resetButton:GetScript("OnClick")(panel.resetButton)
-  assertf(#POPUPS_SHOWN == popupsBefore + 1
-          and POPUPS_SHOWN[#POPUPS_SHOWN] == "NE_CDM_EDITOR_RESET",
-          "Reset to Default asks before it wipes anything")
+  assertf(M.IsConfirmShown(), "Reset to Default asks before it wipes anything")
   assertf(M.GetOpt(FID, "iconPadding") == 7,
           "…and the click alone changes nothing (" .. tostring(M.GetOpt(FID, "iconPadding")) .. ")")
-  assertf(tostring(StaticPopupDialogs["NE_CDM_EDITOR_RESET"].text):find("Essential") ~= nil,
+  local confirm = panel.confirm
+  assertf(tostring(confirm.Text:GetText()):find("Essential") ~= nil,
           "…naming the viewer it is about to reset, not asking a generic question over four of them")
-  -- ABOVE EVERYTHING. Edit mode stacks four things over a StaticPopup's home strata, and the top pair
-  -- are Exit Edit Mode / Reset All Positions at TOOLTIP level 1000. The first fix here went to 300,
-  -- which cleared a DIFFERENT frame — DragonUI's coordinate panel at TOOLTIP 200 — and left the
-  -- confirm just as unreadable. So the level is READ off theirs, not picked.
-  local pop = CreateFrame("Frame", nil, UIParent)
-  pop:SetFrameStrata("DIALOG"); pop:SetFrameLevel(1)
-  StaticPopupDialogs["NE_CDM_EDITOR_RESET"].OnShow(pop)
-  assertf(pop:GetFrameStrata() == "TOOLTIP" and pop:GetFrameLevel() > duExit:GetFrameLevel(),
-          "…on top of DragonUI's own edit-mode buttons (" ..
-          tostring(pop:GetFrameStrata()) .. " " .. tostring(pop:GetFrameLevel()) ..
-          " vs " .. tostring(duExit:GetFrameLevel()) .. ")")
-  -- READ, not hardcoded: a number chosen to beat 1000 is a number that stops working the moment
-  -- DragonUI moves theirs, and nothing would say so.
-  duExit:SetFrameLevel(4000)
-  assertf(M._popupLevel() > 4000,
-          "…and it follows if DragonUI raises theirs (" .. tostring(M._popupLevel()) .. ")")
-  duExit:SetFrameLevel(1000)
-  StaticPopupDialogs["NE_CDM_EDITOR_RESET"].OnHide(pop)
-  assertf(pop:GetFrameStrata() == "DIALOG" and pop:GetFrameLevel() == 1,
-          "…and puts the shared popup frame back, since the next dialog in that slot is not ours")
-  StaticPopupDialogs["NE_CDM_EDITOR_RESET"].OnAccept()
+
+  -- OUR OWN FRAME, INSIDE THE DIALOG. As a StaticPopup this opened at screen centre, under DragonUI's
+  -- Exit Edit Mode / Reset All Positions buttons (UIParent, TOOLTIP level 1000) — and two attempts at
+  -- out-stacking them failed in game. A child of the dialog draws inside the dialog's stacking, above
+  -- it by construction, and lands beside the viewer rather than in the middle of the screen where
+  -- those buttons live, so there is nothing left for it to lose to.
+  assertf(confirm:GetParent() == panel, "the confirm belongs to the dialog, not to the screen")
+  assertf(confirm:GetFrameLevel() > panel:GetFrameLevel(),
+          "…drawing above it (" .. tostring(confirm:GetFrameLevel()) .. " vs " ..
+          tostring(panel:GetFrameLevel()) .. ")")
+  -- MODAL to the dialog. The question is about the very settings underneath it, and nudging a slider
+  -- behind an unanswered "are you sure?" means answering it about a different state than the one read.
+  assertf(confirm.Blocker:IsShown(), "…over a blocker that covers the controls it is asking about")
+  assertf(confirm.Blocker:GetFrameLevel() < confirm:GetFrameLevel()
+          and confirm.Blocker:GetFrameLevel() > panel:GetFrameLevel(),
+          "…between the two, so it blocks the dialog without blocking the confirm")
+  assertf(confirm.YesButton._neThreeSlice ~= nil and confirm.NoButton._neThreeSlice ~= nil,
+          "…and its buttons wear the same red 3-slice as the dialog's")
+
+  -- Switching viewers takes it with it: it names one viewer and would act on whichever is current.
+  M.ShowEditorPanel("buffBar", anchor)
+  assertf(not M.IsConfirmShown(),
+          "selecting another frame drops an unanswered confirm, which named the one before it")
+  M.ShowEditorPanel("essential", anchor)
+
+  panel.resetButton:GetScript("OnClick")(panel.resetButton)
+  confirm.NoButton:GetScript("OnClick")(confirm.NoButton)
+  assertf(not M.IsConfirmShown() and M.GetOpt(FID, "iconPadding") == 7,
+          "answering No closes it and changes nothing")
+
+  panel.resetButton:GetScript("OnClick")(panel.resetButton)
+  confirm.YesButton:GetScript("OnClick")(confirm.YesButton)
+  assertf(not M.IsConfirmShown() and not confirm.Blocker:IsShown(),
+          "answering Yes closes it and lifts the blocker")
   assertf(M.GetOpt(FID, "iconPadding") == M.DEFAULTS.iconPadding,
-          "…and answering it puts this viewer's defaults back")
+          "…and puts this viewer's defaults back")
   assertf(M.GetOpt(FID, "iconLimit") == M.PER_FRAME_DEFAULT_OVERRIDES[FID].iconLimit,
           "…including the per-frame ones, not just the shared table")
 
