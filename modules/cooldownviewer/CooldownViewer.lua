@@ -206,10 +206,84 @@ function M.SetPerSpecLayout(v)
   M.RefreshActiveViewer()
 end
 
+-- ── Per-character appearance ────────────────────────────────────────────────────────────────────
+--
+-- OPT-IN, and OFF by default. DragonUI's profile is shared across the account, so out of the box
+-- orientation, icons per row, icon size, padding, opacity and the rest are one setup for every
+-- character — which is usually what you want, and is what shipped for phases.
+--
+-- Turned on, a character's changes go to its own bucket and are read back as OVERRIDES on the shared
+-- table, key by key. That structure is doing real work:
+--
+--   * Nothing jumps when the option is toggled. A character that has changed nothing reads exactly
+--     what the account reads, because the fall-through IS the seed. No copy, no migration, no
+--     "enable it and watch four viewers resize".
+--   * Turning it back OFF simply stops consulting the bucket. The overrides survive, so toggling is
+--     reversible rather than destructive.
+--   * A setting the player never touched on this character keeps tracking the shared one. Change
+--     icon size account-wide and every character that has not overridden it follows.
+--
+-- Frame POSITION is not governed by this and is always per character (integration/Register.lua's
+-- NE.FramePositionKey). That was a separate, explicit decision by the owner; the switch here is
+-- about appearance, which is the part worth sharing by default.
+local function charKey()
+  local name = UnitName and UnitName("player")
+  if not name or name == "" then return nil end
+  local realm = GetRealmName and GetRealmName()
+  if realm and realm ~= "" then return name .. "-" .. realm end
+  return name
+end
+M.CharacterKey = charKey
+
+function M.IsPerCharacterFrames()
+  local cd = store(false)
+  return (cd and cd.perCharacterFrames) and true or false
+end
+
+-- The per-character bucket, or nil when the option is off, the client cannot name the player yet, or
+-- nothing has been stored for this character. Every caller must handle nil by falling back to the
+-- shared table — that fall-back is the whole design, not an error path.
+local function charFrames(create)
+  local cd = store(create)
+  if not cd then return nil end
+  if not (cd.perCharacterFrames and charKey()) then return nil end
+  if not cd.charFrames then
+    if not create then return nil end
+    cd.charFrames = {}
+  end
+  local key = charKey()
+  if not cd.charFrames[key] then
+    if not create then return nil end
+    cd.charFrames[key] = {}
+  end
+  return cd.charFrames[key]
+end
+M._charFrames = charFrames
+
+function M.SetPerCharacterFrames(v)
+  local cd = store(true)
+  if cd then cd.perCharacterFrames = v and true or false end
+  -- Re-apply immediately: the values a viewer should be reading have just changed underneath it, and
+  -- waiting for the next refresh would leave the window disagreeing with the frames.
+  M.ForEachViewer(function(viewer)
+    if viewer.RefreshLayout then viewer:RefreshLayout() end
+  end)
+  -- …and the page itself, whose sliders are now reading a different table.
+  local CDS = NE.cooldownviewersettings
+  if CDS and CDS.RefreshSettingsPage then CDS.RefreshSettingsPage() end
+end
+
 -- THE settings chokepoint. Upstream read the retail Edit Mode stored-value table here and converted
 -- through the settings codec; we read our own table and store display values directly.
 local function getOpt(frameID, key)
   local cd = store(false)
+
+  -- This character's override first, then the account-wide value. Both are consulted, in that order,
+  -- and only a key this character has actually set diverges.
+  local mine = charFrames(false)
+  local mineFrame = mine and mine[frameID]
+  if mineFrame and mineFrame[key] ~= nil then return mineFrame[key] end
+
   local frame = cd and cd.frames and cd.frames[frameID]
   if frame and frame[key] ~= nil then return frame[key] end
 
@@ -219,21 +293,30 @@ local function getOpt(frameID, key)
 end
 M.GetOpt = getOpt
 
--- Write one setting and re-apply it live.
+-- Write one setting and re-apply it live. Goes to this character's bucket when the option is on, and
+-- to the shared table otherwise — so with it off nothing about the old behaviour changes.
 function M.SetOpt(frameID, key, value)
   local cd = store(true)
   if not cd then return end
-  cd.frames[frameID] = cd.frames[frameID] or {}
-  cd.frames[frameID][key] = value
+  local dest = charFrames(true) or cd.frames
+  if not dest then return end
+  dest[frameID] = dest[frameID] or {}
+  dest[frameID][key] = value
   local viewer = M.GetViewerByFrameID and M.GetViewerByFrameID(frameID)
   if viewer and viewer.RefreshLayout then viewer:RefreshLayout() end
 end
 
 -- Restore one frame's settings to defaults.
+--
+-- With per-character appearance ON this clears BOTH this character's overrides and the shared entry,
+-- because the button says "defaults" and landing on the account-wide setup instead would be a
+-- different promise. Other characters' overrides are untouched — they are separate buckets.
 function M.ResetOpts(frameID)
   local cd = store(true)
   if not cd then return end
-  cd.frames[frameID] = nil
+  local mine = charFrames(false)
+  if mine then mine[frameID] = nil end
+  if cd.frames then cd.frames[frameID] = nil end
   local viewer = M.GetViewerByFrameID and M.GetViewerByFrameID(frameID)
   if viewer and viewer.RefreshLayout then viewer:RefreshLayout() end
 end

@@ -241,14 +241,28 @@ local function build(parent)
   -- ── Per-spec layout. Dual talent specialisation means one character genuinely wants two layouts.
   c:AddSection("Talent specs", false)
   c:AddText("Which spells and buffs you track is remembered separately for each talent spec, so a "
-    .. "Discipline layout and a Holy one do not overwrite each other. Position, size and the other "
-    .. "appearance settings are shared, as they are in retail.")
+    .. "Discipline layout and a Holy one do not overwrite each other. Where each viewer sits is "
+    .. "always remembered per character; the appearance settings are shared unless you say otherwise "
+    .. "below.")
   c:AddCheckbox({
     label = "Separate layout per spec",
     desc  = "Off, both specs share one set of lists. Turning it on copies the layout you have now "
             .. "into the spec you are in.",
     get   = function() return M.IsPerSpecLayout() end,
     set   = function(v) M.SetPerSpecLayout(v) end,
+  })
+  c:AddCheckbox({
+    label = "Separate appearance per character",
+    -- Says what happens on BOTH edges, because the reversibility is the reason it is safe to try:
+    -- a character that has changed nothing keeps reading the shared values, so nothing moves when
+    -- this is ticked, and unticking it simply stops consulting the per-character values rather than
+    -- discarding them.
+    desc  = "Off, orientation, icons per row, size, padding and opacity are one setup for every "
+            .. "character. On, each character can differ — until you change something here it still "
+            .. "follows the shared setup, so nothing moves when you tick this, and unticking it "
+            .. "gives the shared setup back without losing what you changed.",
+    get   = function() return M.IsPerCharacterFrames() end,
+    set   = function(v) M.SetPerCharacterFrames(v) end,
   })
 
   -- ── Buff tracking. The buff viewers have no curated list: any player buff shorter than the

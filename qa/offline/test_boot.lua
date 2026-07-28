@@ -2455,6 +2455,70 @@ do
   M.SetAuraAssignment("WARLOCK", 980, nil, "Curse of Agony")
   cdStore.seenAura.WARLOCK = nil
 
+  -- ── PER-CHARACTER APPEARANCE, opt-in ───────────────────────────────────────────────────────────
+  -- Off by default, and off must behave exactly as it always did. On, a character's changes become
+  -- OVERRIDES on the shared table rather than a copy of it — which is what makes toggling free in
+  -- both directions instead of a migration with a jump at each end.
+  local FID = M.FRAME_ID.essential
+  local realName = UnitName
+  M.ResetOpts(FID)
+  assertf(M.IsPerCharacterFrames() == false, "per-character appearance is OFF by default")
+
+  M.SetOpt(FID, "iconLimit", 7)
+  assertf(M.GetOpt(FID, "iconLimit") == 7, "with it off, a setting is written account-wide as before")
+  local frameStore = M._store(true)
+  -- Read defensively: if the write went to a per-character bucket instead, frames[FID] is nil and a
+  -- bare index aborts the whole run rather than failing here by name.
+  assertf(frameStore.frames[FID] and frameStore.frames[FID].iconLimit == 7,
+          "…into cd.frames, the shared table")
+  assertf(frameStore.charFrames == nil, "…and no per-character bucket is created at all")
+
+  -- Ticking it must move NOTHING. A character that has changed nothing reads the shared value
+  -- through the fall-through, which is the seed — there is no copy step to get wrong.
+  M.SetPerCharacterFrames(true)
+  assertf(M.GetOpt(FID, "iconLimit") == 7,
+          "ticking it changes no value: an untouched character still reads the shared one")
+
+  M.SetOpt(FID, "iconLimit", 3)
+  assertf(M.GetOpt(FID, "iconLimit") == 3, "…and a change now applies to this character")
+  assertf(frameStore.frames[FID].iconLimit == 7,
+          "…WITHOUT disturbing the shared value, which is what other characters still read")
+
+  -- The assertion the feature exists for: somebody else is unaffected.
+  UnitName = function() return "Testlock" end
+  assertf(M.GetOpt(FID, "iconLimit") == 7, "another character reads the shared value, not this one's")
+  M.SetOpt(FID, "iconLimit", 11)
+  assertf(M.GetOpt(FID, "iconLimit") == 11, "…and can hold its own")
+  UnitName = realName
+  assertf(M.GetOpt(FID, "iconLimit") == 3, "…with neither overwriting the other")
+
+  -- A key this character never touched keeps tracking the shared one, rather than freezing at
+  -- whatever it was when the option was ticked.
+  assertf(M.GetOpt(FID, "iconPadding") == M.DEFAULTS.iconPadding, "an untouched key follows the account")
+  M.SetPerCharacterFrames(false)
+  M.SetOpt(FID, "iconPadding", 9)
+  M.SetPerCharacterFrames(true)
+  assertf(M.GetOpt(FID, "iconPadding") == 9,
+          "…so a later account-wide change still reaches a character that never overrode it")
+
+  -- Unticking is not destructive. It stops CONSULTING the overrides; it does not discard them.
+  M.SetPerCharacterFrames(false)
+  assertf(M.GetOpt(FID, "iconLimit") == 7, "unticking gives the shared value back")
+  M.SetPerCharacterFrames(true)
+  assertf(M.GetOpt(FID, "iconLimit") == 3, "…and re-ticking finds this character's own still there")
+
+  -- Reset means DEFAULTS, on both levels. Clearing only the override would land on the account-wide
+  -- setup while the button promised defaults.
+  M.ResetOpts(FID)
+  assertf(M.GetOpt(FID, "iconLimit") == M.DEFAULTS.iconLimit,
+          "reset restores defaults, not the shared value the override was hiding")
+  UnitName = function() return "Testlock" end
+  assertf(M.GetOpt(FID, "iconLimit") == 11, "…and leaves another character's override alone")
+  UnitName = realName
+  M.SetPerCharacterFrames(false)
+  M.ResetOpts(FID)
+  frameStore.charFrames = nil
+
   -- The bucket must NOT be the saved-preset table. It was, in the first draft: `cd.layouts` is
   -- SettingsPresets' own key, so ResetTracking silently deleted every layout the player had saved.
   local cd = M._store(true)

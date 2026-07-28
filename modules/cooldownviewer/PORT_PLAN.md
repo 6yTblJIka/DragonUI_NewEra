@@ -2483,6 +2483,40 @@ the upgrade to whoever logged in first and a default layout to everybody else.
 Four mutations, each failing by name: the viewers no longer asking, the key builder ignoring the flag,
 the seed skipped, and the seed moving the shared entry instead of copying it.
 
+### H.3.8. Per-character appearance, as a tickbox
+
+Follow-up to §H.3.7. Position went per character unconditionally; everything else under `cd.frames` —
+orientation, icons per row, icon direction, size, padding, opacity, visibility, timer, tooltips, bar
+content, bar width — stayed account-wide. The owner asked for that to be opt-in rather than automatic.
+
+**"Separate appearance per character", off by default.** With it off nothing about the previous
+behaviour changes: reads and writes go to `cd.frames` exactly as before, and no per-character bucket is
+created at all.
+
+**On, a character's values are OVERRIDES on the shared table, not a copy of it.** `getOpt` consults the
+character bucket first and falls through to `cd.frames`. That structure is doing the work:
+
+* **Nothing moves when the box is ticked.** A character that has changed nothing reads what the account
+  reads, because the fall-through *is* the seed. There is no copy step, so there is no copy step to get
+  wrong — contrast §H.3.7's position migration, which needed one.
+* **Unticking is not destructive.** It stops consulting the bucket; the overrides survive, so the box is
+  free to try in both directions.
+* **An untouched key keeps tracking the account.** Change icon size account-wide and every character
+  that never overrode it follows.
+
+`ResetOpts` clears **both** levels: the button says "defaults", and clearing only the override would
+land on the account-wide setup while promising something else. Other characters' buckets are untouched.
+
+Five mutations, each failing by name: the read never consulting the bucket, writes always going
+account-wide, the option ignored, the bucket not keyed by character, and reset clearing only the
+override. The third of those initially aborted the run instead of failing by name — one assertion
+indexed `frames[FID]` without a nil guard, which is a caught regression that looks like a truncated
+harness.
+
+**Not covered, and worth knowing:** `CDS.SnapshotState` captures five leaves — `customLists`,
+`trackedAura`, `equipAssign`, `alerts`, `sounds`. Appearance has never been among them, so import/export
+does not carry icons-per-row on any setting of this box.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**
