@@ -2224,6 +2224,64 @@ add{ id=751, name="Black Temple", isRaid=true, minLevel=70, mapID=564, loreFDID=
     },
   },
 }
+add{ id=780, name="Zul'Aman", isRaid=true, minLevel=70, mapID=568, loreFDID=526415, bgFDID=522347, buttonFDID=522363,
+  encounters = {
+    { id=186, name="Akil'zon", order=0, uiMapID=380, x=0.334, y=0.455,
+      creatures = { {display=23574, file=522190, name="Akil'zon"} },
+      loot = {
+        {id=33286,pct=13.0}, {id=33215,pct=13.0}, {id=33216,pct=13.0}, {id=33281,pct=13.0}, {id=33293,pct=13.0},
+        {id=33214,pct=13.0}, {id=33283,pct=14.0}, {id=33307,pct=3.0}, {id=29434,pct=100.0},
+      },
+    },
+    { id=187, name="Nalorakk", order=1, uiMapID=380, x=0.665, y=0.455,
+      creatures = { {display=23576, file=522254, name="Nalorakk"} },
+      loot = {
+        {id=33203,pct=13.0}, {id=33285,pct=13.0}, {id=33211,pct=14.0}, {id=33206,pct=13.0}, {id=33327,pct=13.0},
+        {id=33191,pct=13.0}, {id=33640,pct=14.0}, {id=33307,pct=3.0}, {id=29434,pct=100.0},
+      },
+    },
+    { id=188, name="Jan'alai", order=2, uiMapID=380, x=0.334, y=0.785,
+      creatures = { {display=23578, file=522242, name="Jan'alai"} },
+      loot = {
+        {id=33357,pct=13.0}, {id=33356,pct=13.0}, {id=33329,pct=13.0}, {id=33328,pct=13.0}, {id=33354,pct=14.0},
+        {id=33326,pct=13.0}, {id=33332,pct=12.0}, {id=33307,pct=3.0}, {id=29434,pct=100.0},
+      },
+    },
+    { id=189, name="Halazzi", order=3, uiMapID=380, x=0.665, y=0.785,
+      creatures = { {display=23577, file=522231, name="Halazzi"} },
+      loot = {
+        {id=33317,pct=13.0}, {id=33300,pct=14.0}, {id=33322,pct=13.0}, {id=33533,pct=13.0}, {id=33299,pct=13.0},
+        {id=33303,pct=14.0}, {id=33297,pct=13.0}, {id=33307,pct=3.0}, {id=29434,pct=100.0},
+      },
+    },
+    { id=190, name="Hex Lord Malacrass", order=4, uiMapID=380, x=0.500, y=0.150,
+      creatures = { {display=24239, file=522235, name="Hex Lord Malacrass"} },
+      loot = {
+        {id=33592,pct=13.0}, {id=33453,pct=13.0}, {id=33463,pct=13.0}, {id=33432,pct=15.0}, {id=33464,pct=13.0},
+        {id=33421,pct=15.0}, {id=33446,pct=15.0}, {id=33829,pct=12.0}, {id=34029,pct=25.0}, {id=33828,pct=13.0},
+        {id=33389,pct=15.0}, {id=33298,pct=14.0}, {id=33388,pct=15.0}, {id=33465,pct=13.0}, {id=33307,pct=3.0},
+        {id=29434,pct=100.0},
+      },
+    },
+    { id=191, name="Zul'jin", order=5, uiMapID=380, x=0.500, y=0.080,
+      creatures = { {display=23863, file=522217, name="Zul'jin"} },
+      loot = {
+        {id=33471,pct=15.0}, {id=33479,pct=15.0}, {id=33469,pct=16.0}, {id=33473,pct=15.0}, {id=33466,pct=14.0},
+        {id=33830,pct=14.0}, {id=33831,pct=14.0}, {id=33467,pct=14.0}, {id=33478,pct=14.0}, {id=33476,pct=15.0},
+        {id=33468,pct=15.0}, {id=33474,pct=14.0}, {id=33102,pct=87.0}, {id=33307,pct=3.0}, {id=29434,pct=100.0},
+      },
+    },
+    { id=192, name="Amani Chests", order=6, uiMapID=380, x=0.500, y=0.500,
+	  creatures = { {display=0, file=69420, name="Amani Chests"} },
+      loot = {
+        {id=33590,pct=10.0}, {id=33591,pct=11.0}, {id=33489,pct=11.0}, {id=33480,pct=10.0}, {id=33483,pct=12.0},
+        {id=33971,pct=10.0}, {id=33805,pct=10.0}, {id=33481,pct=11.0}, {id=33495,pct=12.0}, {id=33493,pct=12.0},
+        {id=33492,pct=11.0}, {id=33490,pct=13.0}, {id=33494,pct=11.0}, {id=33491,pct=12.0}, {id=33497,pct=18.0},
+        {id=33500,pct=20.0}, {id=33496,pct=23.0}, {id=33499,pct=18.0}, {id=33498,pct=21.0},
+      },
+    },
+  },
+}
 add{ id=752, name="Sunwell Plateau", isRaid=true, minLevel=70, mapID=580, loreFDID=1396511, bgFDID=1396466, buttonFDID=1396592,
   encounters = {
     { id=1591, name="Kalecgos", order=0, uiMapID=335, x=0.30615401268, y=0.51076900959,
@@ -2299,10 +2357,11 @@ if NE.tex and NE.tex.RegisterLocal then
   reg(1396582, _P .. "1396582-ejbutton-gruuls-lair.blp")
   reg(1396584, _P .. "1396584-ejbutton-karazhan.blp")
   reg(1396585, _P .. "1396585-ejbutton-magtheridons-lair.blp")
+  reg(522363, _P .. "522363-ejbutton-zulaman.blp")
   reg(1396592, _P .. "1396592-ejbutton-sunwell-plateau.blp")
   -- model-tab backdrops / lore splashes / boss portraits (FDID-named, in subfolders)
-  for _, fd in ipairs({ 608154, 608159, 608160, 608168, 608169, 608179, 1396453, 1396456, 1396458, 1396459, 1396466 }) do reg(fd, _P .. "Backdrops\\" .. fd .. ".blp") end
-  for _, fd in ipairs({ 608232, 608237, 608238, 608246, 608247, 608257, 1396498, 1396501, 1396503, 1396504, 1396511 }) do reg(fd, _P .. "Lore\\" .. fd .. ".blp") end
+  for _, fd in ipairs({ 522347, 608154, 608159, 608160, 608168, 608169, 608179, 1396453, 1396456, 1396458, 1396459, 1396466 }) do reg(fd, _P .. "Backdrops\\" .. fd .. ".blp") end
+  for _, fd in ipairs({ 526415, 608232, 608237, 608238, 608246, 608247, 608257, 1396498, 1396501, 1396503, 1396504, 1396511 }) do reg(fd, _P .. "Lore\\" .. fd .. ".blp") end
   for _, fd in ipairs({
     607529, 607536, 607544, 607555, 607556, 607558, 607561, 607566, 607570, 607574, 607583, 607596,
     607600, 607614, 607624, 607625, 607635, 607641, 607649, 607651, 607669, 607670, 607683, 607689,
@@ -2312,6 +2371,6 @@ if NE.tex and NE.tex.RegisterLocal then
     1378987, 1378996, 1378997, 1378999, 1379000, 1379002, 1379006, 1379011, 1379012, 1379016, 1379017, 1379018,
     1379020, 1385712, 1385714, 1385716, 1385719, 1385722, 1385725, 1385729, 1385730, 1385739, 1385741, 1385743,
     1385744, 1385745, 1385746, 1385750, 1385751, 1385756, 1385757, 1385758, 1385762, 1385764, 1385766, 1385768,
-    1385772, 1390438,
+    1385772, 1390438, 522217, 522235, 522231, 522242, 522254, 522190, 69420,
   }) do reg(fd, _P .. "Bosses\\" .. fd .. ".blp") end
 end
