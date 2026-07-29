@@ -2897,6 +2897,59 @@ and the height returned to a constant. A tenth — raising the blocker — turne
 regression at all: the confirm's level is derived from the blocker's, so they move together, which is
 the property that makes the ordering structural rather than a pair of constants to keep in step.
 
+#### H.3.15. The sliders stop being 2004, and Revert learns to explain itself
+
+Two reports in one pass. **"The revert button on the CDM window does nothing. What is it currently
+designed to do?"** — and the answer is that it was doing exactly what it was built to do, which turned
+out to be the problem. That Revert (the /cdm footer, next to the layout picker) is a ONE-STEP session
+undo for *layout* operations only: apply, import, starter reset. It is disabled the rest of the time,
+and cleared when the window closes so a stale undo from an hour ago can never fire. So for a player who
+has never touched layouts it is permanently grey — and, because **a disabled Button eats OnEnter on
+3.3.5a**, permanently mute. The tooltip that would have answered "what would this even undo?" only
+existed in the one state nobody needed it. `SetMotionScriptsWhileDisabled(true)` gives it back, and
+the tooltip now adds a reason line while it is unavailable, naming what it covers (layouts) and what it
+does not (the per-viewer settings, which revert from the edit-mode panel instead). The button's
+*behaviour* is unchanged; it was never broken, it was illegible.
+
+**"Can we get the horizontal scrollbars in the new settings matching the earlier NewEra screenshots?"**
+— the sliders. NewEra builds every edit-mode slider from retail's `MinimalSliderWithSteppersTemplate`
+(`EditMode/SettingsPopup.lua:173`), whose art is sheet 4567914, the `minimal_sliderbar_*` family. That
+sheet is **not in the source art set** (`ReferenceAddons/NewEra/Art` has the minimal *scrollbar* sheets
+and nothing else in that family), so it cannot be shipped, and the template does not exist here anyway.
+
+What it can be built from is the art already on disk. The minimal scrollbar and the minimal sliderbar
+are the same 8px rounded bar at right angles, with the same three states — so the horizontal slider
+borrows the vertical bar's own pieces and turns them 90°. `NE.tex.SetAtlasRotated` does that with the
+**eight-argument** `SetTexCoord`, which names all four display corners independently and does exist on
+3.3.5a; there is no `Texture:SetRotation` here. Clockwise sends the source's left edge to the display's
+top, so a piece drawn pointing UP ends up pointing RIGHT — which is why the caps swap ends: the LEFT of
+the track is the vertical bar's BOTTOM cap. `useAtlasSize` swaps width and height for the same reason.
+
+`NE.scrollbar.SkinSlider` then clears OptionsSliderTemplate's groove — a *backdrop* of
+`UI-SliderBar-Background` inside a beveled border, not a region that could be re-pointed — and rebuilds
+it as left cap + run + right cap, with the thumb split three ways over a Slider that has exactly one
+thumb texture (the middle IS the thumb, so the widget keeps its own drag region; the rounded ends ride
+a host frame anchored to it, the same split `buildThumb` uses vertically). The compact slider's nudge
+arrows went with it: they were the spellbook's page-turn glyphs, which is the mismatch the whole pass
+is about, and retail pairs the minimal bar with minimal steppers. Rotated, the scrollbar's DOWN arrow
+points LEFT. The button stays 18px — the row's arithmetic is written against `ARROW_W` — and only the
+glyph shrinks to the art's own 11×17.
+
+Both slider kinds are skinned, the tall two-line one on the tab as well as the dialog's compact one:
+the skin belongs to the kit, not to the dialog that asked for it first. The call sites sit **after**
+`tip()`, because tip owns OnEnter/OnLeave with `SetScript` and a `SetScript` discards hooks installed
+before it — the same trap the dropdown's arrow states hit.
+
+Eleven mutations, each failing by name: the rotation stopping rotating, the track caps swapped, the
+groove left in place, the steppers swapped, the skin moved ahead of `tip`, the thumb's rounded ends
+dropped, the stepper glyph left at button size, the disabled glyph not desaturated, and the thumb left
+square. A twelfth was **not** caught, and was right not to be: `applyState` re-asserted the caps' drawn
+size after each swap, in case `useAtlasSize` snapped them back to native — but the caps are 8×8
+*squares*, so rotation returns exactly the size they were already at, and the only caller that could
+have made the guard matter was a `thickness` option nobody passes. Guard and option both deleted.
+Assertions read the rendered texcoords rather than the atlas *name* throughout, because all three track
+pieces come off one sheet: a rotation that quietly stopped rotating leaves the file path unchanged.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

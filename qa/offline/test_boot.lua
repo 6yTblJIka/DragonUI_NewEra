@@ -127,6 +127,21 @@ function CreateFrame(kind, name, parent, template)
     f:SetNormalTexture("Interface\\Buttons\\UI-Panel-Button-Up")
   end
 
+  -- OptionsSliderTemplate's groove: a BACKDROP of UI-SliderBar-Background inside a beveled border,
+  -- plus the three $parent-named FontStrings the kit blanks. Modelled because the minimal slider skin
+  -- exists to remove that backdrop, and a template that never had one cannot show whether it did.
+  if template == "OptionsSliderTemplate" then
+    f:SetBackdrop({ bgFile = "Interface\\Buttons\\UI-SliderBar-Background",
+                    edgeFile = "Interface\\Buttons\\UI-SliderBar-Border" })
+    f:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
+    if name then
+      for _, suffix in ipairs({ "Text", "Low", "High" }) do
+        local fs = newRegion("FontString")
+        _G[name .. suffix] = fs
+      end
+    end
+  end
+
   -- UIPanelScrollFrameTemplate's stock bar: a `$parentScrollBar` Slider carrying
   -- `$parentScrollUpButton` / `$parentScrollDownButton`. Modelled by GLOBAL NAME and deliberately
   -- WITHOUT a `.ScrollBar` parentKey, because that is precisely how 3.3.5a declares it — and that
@@ -231,7 +246,10 @@ function frameMeta:GetTop()    local c = self._center; return c and (c[2] + (sel
 function frameMeta:GetBottom() local c = self._center; return c and (c[2] - (self._h or 0) / 2) or nil end
 function frameMeta:LockHighlight() self._locked = true end
 function frameMeta:UnlockHighlight() self._locked = false end
-function frameMeta:SetBackdrop() end
+-- RECORDED. OptionsSliderTemplate's groove is a backdrop, not a texture, and the minimal skin's first
+-- act is to clear it — with a no-op setter, "the 2004 groove is gone" was a question the harness had
+-- no way to answer, and a skin that forgot to clear it would have tested identically.
+function frameMeta:SetBackdrop(bd) self._backdrop = bd end
 function frameMeta:SetBackdropColor() end
 function frameMeta:SetBackdropBorderColor() end
 -- ScrollFrame surface.
@@ -269,6 +287,16 @@ function frameMeta:GetPushedTexture()    return stateTex(self, "pushed")    end
 function frameMeta:GetDisabledTexture()  return stateTex(self, "disabled")  end
 function frameMeta:GetHighlightTexture() return stateTex(self, "highlight") end
 function frameMeta:SetDisabledTexture() end
+-- A Slider's thumb, memoized for the same reason as the four above: the minimal slider skin
+-- retextures it and hangs its rounded caps off it, so a fresh region per call would make "is the
+-- thumb wearing the minimal art" unanswerable.
+function frameMeta:GetThumbTexture() return stateTex(self, "thumb") end
+function frameMeta:SetThumbTexture(v) stateTex(self, "thumb"):SetTexture(v) end
+-- Present because the client has it, and because its ABSENCE is the defect it exists to fix: a
+-- disabled Button eats OnEnter unless this is on, which is what left the greyed Revert unable to
+-- explain itself.
+function frameMeta:SetMotionScriptsWhileDisabled(on) self._motionWhileDisabled = on and true or false end
+function frameMeta:IsMouseOver() return self._mouseOver and true or false end
 -- Enable/Disable FIRE their scripts, as the client does. A skin that repaints on OnEnable/OnDisable
 -- (core/ButtonSkin.lua) is otherwise never asked to, so a disabled button would test as wearing the
 -- normal art while in game it wears the disabled art — or vice versa, which is worse.
@@ -3431,6 +3459,28 @@ do
   S.HidePanel()
   assertf(not S.CanRevert(), "closing the panel clears the undo")
 
+  -- …which is the state the button spends nearly all its life in, and it used to spend that life
+  -- greyed and MUTE: a disabled Button eats OnEnter, so the tooltip explaining what Revert even
+  -- covers never appeared on the one occasion someone would go looking for it. Reported as "the
+  -- revert button does nothing".
+  local rb = S.panel.revertButton
+  assertf(rb._motionWhileDisabled == true,
+          "the greyed Revert still takes the mouse, or it cannot say why it is grey")
+  assertf(rb:IsEnabled() == false, "…and it IS grey with nothing to undo")
+  rb:GetScript("OnEnter")(rb)
+  local said = table.concat(GameTooltip.lines, " | ")
+  assertf(said:find("Nothing to undo") ~= nil,
+          "…so hovering it says there is nothing to undo (" .. said .. ")")
+  assertf(said:lower():find("layout") ~= nil,
+          "…and what it would have undone, which is LAYOUTS and not the settings next to it")
+  -- The reason line is conditional, not boilerplate: armed, the tooltip must not still claim there is
+  -- nothing to undo. A single unconditional AddLine would pass the two assertions above forever.
+  P.UseStarter()
+  rb:GetScript("OnEnter")(rb)
+  assertf(table.concat(GameTooltip.lines, " | "):find("Nothing to undo") == nil,
+          "…and drops that line once there IS something to undo")
+  S.HidePanel()
+
   M.ResetTracking()
 end
 
@@ -3505,6 +3555,11 @@ do
   inset.Slider:SetValue(3)
   assertf(M.GetIconInsetExtra() == 3, "moving it writes the setting")
   assertf(inset.Value:GetText() == "3%", "…and the row shows the value with its unit")
+  -- The minimal bar reaches BOTH kinds. Two shapes of slider a tab apart, one wearing the 2004 groove
+  -- and one not, is the same mismatch the button sweep was for — the skin belongs to the kit, not to
+  -- the dialog that asked for it first.
+  assertf(inset.Slider._neMinimalSlider ~= nil and inset.Slider._backdrop == nil,
+          "…and the tall slider wears the minimal bar too, not just the dialog's compact one")
 
   -- SetObeyStepOnDrag is retail-only, so the step is applied on the way in.
   inset.Slider:SetValue(2.4)
@@ -3956,6 +4011,73 @@ do
   for _ = 1, 8 do limit.Left:GetScript("OnClick")(limit.Left) end
   assertf(M.GetOpt(FID, "iconLimit") == 1, "…stopping at the minimum (" ..
           tostring(M.GetOpt(FID, "iconLimit")) .. ")")
+
+  -- THE MINIMAL BAR, ON ITS SIDE. NewEra's dialog sliders are retail's MinimalSliderWithSteppers,
+  -- whose art (sheet 4567914) is absent from the source set — so the horizontal bar is built from the
+  -- shipped minimal SCROLLBAR pieces turned 90° clockwise. Every assertion below reads the rendered
+  -- texcoords rather than the atlas NAME, because all three track pieces come off one sheet: a
+  -- rotation that silently stopped rotating would leave the file path completely unchanged.
+  do
+    local skin = limit.Slider._neMinimalSlider
+    assertf(skin ~= nil and skin.Left ~= nil, "the dialog's sliders wear the minimal bar")
+    assertf(limit.Slider._backdrop == nil,
+            "…with OptionsSliderTemplate's groove cleared, backdrop and border together")
+
+    -- The rotation itself. Clockwise sends the source's BOTTOM edge to the display's LEFT, so the
+    -- eight-corner texcoord has to read (l,b, r,b, l,t, r,t) — the four-arg form cannot express this
+    -- at all, which is the whole reason SetAtlasRotated exists.
+    local function rotatedFrom(tex, name)
+      local e = NE.tex._atlasEntry(name)
+      local c = tex and tex._coords
+      if not (e and c and #c == 8) then return false, (c and #c or 0) end
+      local want = { e.left, e.bottom, e.right, e.bottom, e.left, e.top, e.right, e.top }
+      for i = 1, 8 do
+        if math.abs(c[i] - want[i]) > 1e-9 then return false, i end
+      end
+      return true
+    end
+    local okL, whyL = rotatedFrom(skin.Left, "minimal-scrollbar-track-bottom")
+    assertf(okL, "…the LEFT cap being the bar's BOTTOM cap turned clockwise (" .. tostring(whyL) .. ")")
+    assertf(rotatedFrom(skin.Right, "minimal-scrollbar-track-top"),
+            "…and the right cap its top one, or both ends round the same way")
+    assertf(select(1, rotatedFrom(skin.Left, "minimal-scrollbar-track-top")) == false,
+            "…which are DIFFERENT rects, so this is not two copies of one cap")
+    assertf(skin.Middle ~= nil and #(skin.Middle._coords or {}) == 8,
+            "…and the run between them is rotated too, not stretched from the vertical strip")
+
+    -- The thumb: wider than it is thick, which is the one-line summary of "this is horizontal now".
+    assertf(skin.Thumb ~= nil and skin.Thumb:GetWidth() > skin.Thumb:GetHeight(),
+            "the thumb lies along the bar (" .. tostring(skin.Thumb and skin.Thumb:GetWidth()) ..
+            "x" .. tostring(skin.Thumb and skin.Thumb:GetHeight()) .. ")")
+    assertf(skin.CapLeft ~= nil and skin.CapRight ~= nil,
+            "…with its rounded ends on a host frame, since a Slider has exactly one thumb texture")
+    -- Hover repaints all three thumb pieces. Asserted through a CAP rather than the middle, because a
+    -- cap has a hover rect of its own on a different part of the sheet — the middle's three states sit
+    -- close enough together that reading one is weaker evidence.
+    limit.Slider:GetScript("OnEnter")(limit.Slider)
+    assertf(rotatedFrom(skin.CapLeft, "minimal-scrollbar-small-thumb-bottom-over"),
+            "hovering the slider moves the thumb to its hover art")
+    limit.Slider:GetScript("OnMouseDown")(limit.Slider)
+    assertf(rotatedFrom(skin.CapLeft, "minimal-scrollbar-small-thumb-bottom-down"),
+            "…and pressing it to the pressed art")
+    limit.Slider:GetScript("OnLeave")(limit.Slider)
+    assertf(rotatedFrom(skin.CapLeft, "minimal-scrollbar-small-thumb-bottom"),
+            "…returning to rest on the way out")
+
+    -- The steppers match the bar. They were the spellbook's page-turn glyphs, which is the exact
+    -- mismatch the reskin is about — retail pairs the minimal bar with minimal steppers.
+    local lArt = limit.Left:GetNormalTexture()
+    assertf(rotatedFrom(lArt, "minimal-scrollbar-arrow-bottom"),
+            "the left stepper is the scrollbar's DOWN arrow turned clockwise, so it points left")
+    assertf(rotatedFrom(limit.Right:GetNormalTexture(), "minimal-scrollbar-arrow-top"),
+            "…and the right one its up arrow")
+    assertf(limit.Left:GetWidth() == 18 and lArt:GetWidth() == 11 and lArt:GetHeight() == 17,
+            "…drawn at the art's own 11x17 inside an unchanged 18px button, or the row's arithmetic " ..
+            "shifts under it (" .. tostring(limit.Left:GetWidth()) .. " / " ..
+            tostring(lArt:GetWidth()) .. "x" .. tostring(lArt:GetHeight()) .. ")")
+    assertf(limit.Left:GetDisabledTexture()._desat == true,
+            "…and the disabled glyph is the same art desaturated, as the scrollbar's arrows are")
+  end
 
   -- CLICK AWAY TO DISMISS. An open menu had two ways out — pick a row, or Escape — and clicking
   -- anywhere else left it hanging, which no other menu in the game does. The dismiss is a full-screen

@@ -348,6 +348,9 @@ function Column:AddSlider(o)
   end)
 
   tip(sl, o.label, o.desc)
+  -- AFTER tip, for the reason spelled out in AddDropdown: tip owns OnEnter/OnLeave with SetScript,
+  -- and SkinSlider's hover/press states are HookScripts a later SetScript would discard.
+  if NE.scrollbar and NE.scrollbar.SkinSlider then pcall(NE.scrollbar.SkinSlider, sl) end
   refresh()
   self.refreshers[#self.refreshers + 1] = refresh
   row.Slider, row.Label, row.Value, row.Refresh = sl, label, value, refresh
@@ -436,13 +439,43 @@ function Column:AddCompactSlider(o)
     commit(v)
   end)
 
-  local function arrow(point, xOff, dir, up, down, dis)
+  -- The 17x11 minimal scrollbar arrow, on its side. The BUTTON stays 18x18 — the row's arithmetic is
+  -- written against ARROW_W and the hit area wants to be square — so only the glyph shrinks.
+  local MIN_ARROW_W, MIN_ARROW_H = 11, 17
+
+  local function arrow(point, xOff, dir, up, down, dis, atlas)
     local b = CreateFrame("Button", nil, row)
     b:SetSize(ARROW_W, ARROW_W)
     b:SetPoint(point, row, point, xOff, 0)
     b:SetNormalTexture(up)
     b:SetPushedTexture(down)
     b:SetDisabledTexture(dis)
+
+    -- The minimal steppers, when the art is shipped. The bar next to them is minimal now
+    -- (NE.scrollbar.SkinSlider), and a 2004 page-turn glyph six pixels from it is exactly the
+    -- mismatch this pass is about — retail's own MinimalSliderWithSteppers pairs the two. Rotated
+    -- clockwise the scrollbar's UP arrow points RIGHT, so the ends swap the same way the caps do.
+    -- Set on top of the page-turn paths rather than instead of them: SetNormalTexture is what
+    -- CREATES the texture object, and a miss here leaves that original art in place.
+    if atlas and NE.tex and NE.tex.SetAtlasRotated then
+      local n = b:GetNormalTexture()
+      if n and NE.tex.SetAtlasRotated(n, atlas, false) then
+        local p, d = b:GetPushedTexture(), b:GetDisabledTexture()
+        NE.tex.SetAtlasRotated(p, atlas .. "-down", false)
+        if NE.tex.SetAtlasRotated(d, atlas, false) and d.SetDesaturated then d:SetDesaturated(true) end
+        local h = b:CreateTexture(nil, "HIGHLIGHT")
+        NE.tex.SetAtlasRotated(h, atlas .. "-over", false)
+        h:SetBlendMode("ADD")
+        for _, t in ipairs({ n, p, d, h }) do
+          if t then
+            t:ClearAllPoints()
+            t:SetSize(MIN_ARROW_W, MIN_ARROW_H)
+            t:SetPoint("CENTER", b, "CENTER", 0, 0)
+          end
+        end
+      end
+    end
+
     b:SetScript("OnClick", function()
       -- Drive the slider rather than the store: SetValue fires OnValueChanged, which is the one
       -- place that snaps, clamps and writes. Two paths into one setting is how they drift.
@@ -456,13 +489,17 @@ function Column:AddCompactSlider(o)
   row.Left  = arrow("LEFT",  labelW + 2, -1,
                     "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up",
                     "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Down",
-                    "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Disabled")
+                    "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Disabled",
+                    "minimal-scrollbar-arrow-bottom")
   row.Right = arrow("RIGHT", -(VALUE_W + 4), 1,
                     "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up",
                     "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down",
-                    "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Disabled")
+                    "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Disabled",
+                    "minimal-scrollbar-arrow-top")
 
   tip(sl, o.label, o.desc)
+  -- AFTER tip — see AddSlider.
+  if NE.scrollbar and NE.scrollbar.SkinSlider then pcall(NE.scrollbar.SkinSlider, sl) end
   refresh()
   self.refreshers[#self.refreshers + 1] = refresh
   row.Slider, row.Label, row.Value, row.Refresh = sl, label, value, refresh

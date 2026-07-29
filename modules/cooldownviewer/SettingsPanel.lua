@@ -338,11 +338,21 @@ local function build()
   f.revertButton:SetScript("OnClick", function()
     if CDS.Revert then CDS.Revert() end
   end)
+  -- A disabled Button eats OnEnter, so the greyed Revert had no way to say WHY it was grey — and a
+  -- button that is permanently dark and silent reads as broken rather than as inapplicable. Reported
+  -- as exactly that: "the revert button does nothing". The tooltip is the only thing that can answer
+  -- "what would this even undo?", so it has to survive the state it is most needed in.
+  f.revertButton:SetMotionScriptsWhileDisabled(true)
   f.revertButton:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText("Revert")
     GameTooltip:AddLine("Undoes the last layout change — applying a layout,|nimporting one, or the "
       .. "starter reset.|n|nOne step, and only for this session.", 1, 1, 1)
+    if not (CDS.CanRevert and CDS.CanRevert()) then
+      GameTooltip:AddLine(" ")
+      GameTooltip:AddLine("Nothing to undo. It covers LAYOUTS, not the settings|non these tabs — a "
+        .. "viewer's own size and position revert|nfrom its edit-mode panel instead.", 1, 0.3, 0.3)
+    end
     GameTooltip:Show()
   end)
   f.revertButton:SetScript("OnLeave", function() GameTooltip:Hide() end)

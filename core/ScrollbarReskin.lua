@@ -1249,6 +1249,112 @@ function NE.scrollbar.BuildCustomMessageFrame(scrollFrame, opts)
   return bar
 end
 
+-- ============================================================================
+-- NE.scrollbar.SkinSlider — the minimal bar, laid on its side, for a HORIZONTAL Slider.
+--
+-- NewEra builds every edit-mode slider from retail's MinimalSliderWithSteppersTemplate
+-- (EditMode/SettingsPopup.lua:173), whose art is sheet 4567914, the `minimal_sliderbar_*` family.
+-- That sheet is NOT in the source art set, so it cannot be shipped and the template does not exist
+-- here anyway. What IS shipped is the minimal SCROLLBAR family — and the two are the same 8px
+-- rounded bar at right angles, with the same three states. So this borrows the vertical bar's own
+-- pieces and turns them 90° clockwise (NE.tex.SetAtlasRotated), which is why the caps swap ends:
+-- rotating clockwise sends "up" to "right", so the BOTTOM cap is the one that draws on the LEFT.
+--
+-- The alternative was leaving OptionsSliderTemplate's groove, which is a backdrop of
+-- UI-SliderBar-Background inside a beveled border — the 2004 art, next to a reskinned scrollbar
+-- eight pixels away. Same reason the buttons all went red.
+--
+-- Idempotent via slider._neMinimalSlider. Fail-safe: SetAtlasRotated returns false when the art is
+-- missing, leaving an untextured piece rather than erroring, so a stripped Textures/ still boots.
+-- ============================================================================
+
+local SL_THICK   = 8    -- the bar's cross-section, native to the art in both directions
+local SL_CAP     = 8    -- one rounded end
+local SL_THUMB_W = 24   -- long enough to grab; the caps eat 16 of it
+local SL_HEIGHT  = 12   -- the Slider frame itself, a little taller than the art it draws
+
+function NE.scrollbar.SkinSlider(slider, opts)
+  if not slider then return end
+  if slider._neMinimalSlider then return slider._neMinimalSlider end
+  opts = opts or {}
+  -- The bar's cross-section is NOT a parameter. Every piece is 8px of native art and the caps are 8x8
+  -- squares, so a thinner bar would need the caps rescaled on every state swap to hold — a guard that
+  -- could only ever be exercised by a caller that does not exist. SL_THICK is the art, not a default.
+  local thick = SL_THICK
+
+  -- OptionsSliderTemplate's groove is a BACKDROP (bgFile UI-SliderBar-Background inside edgeFile
+  -- UI-SliderBar-Border), not a region we could re-point at other art, so it goes whole.
+  if slider.SetBackdrop then pcall(slider.SetBackdrop, slider, nil) end
+  slider:SetHeight(opts.height or SL_HEIGHT)
+  -- The art is 8px of a 12px frame; give the track back the clickable band the groove used to have.
+  if slider.SetHitRectInsets then slider:SetHitRectInsets(0, 0, -4, -4) end
+
+  local d = {}
+
+  d.Left = slider:CreateTexture(nil, "BACKGROUND")
+  NE.tex.SetAtlasRotated(d.Left, "minimal-scrollbar-track-bottom", true)
+  d.Left:SetSize(SL_CAP, thick)
+  d.Left:SetPoint("LEFT", slider, "LEFT", 0, 0)
+
+  d.Right = slider:CreateTexture(nil, "BACKGROUND")
+  NE.tex.SetAtlasRotated(d.Right, "minimal-scrollbar-track-top", true)
+  d.Right:SetSize(SL_CAP, thick)
+  d.Right:SetPoint("RIGHT", slider, "RIGHT", 0, 0)
+
+  d.Middle = slider:CreateTexture(nil, "BACKGROUND")
+  NE.tex.SetAtlasRotated(d.Middle, "!minimal-scrollbar-track-middle", false)
+  d.Middle:SetPoint("TOPLEFT",     d.Left,  "TOPRIGHT")
+  d.Middle:SetPoint("BOTTOMRIGHT", d.Right, "BOTTOMLEFT")
+
+  -- The thumb is THREE pieces over a Slider that has exactly one thumb texture — same split, and the
+  -- same fix, as the vertical bar's buildThumb: the middle is the thumb texture (so the widget's own
+  -- drag region is the whole thumb), and the rounded ends ride a host frame anchored to it.
+  local thumb = slider.GetThumbTexture and slider:GetThumbTexture()
+  if thumb then
+    NE.tex.SetAtlasRotated(thumb, "minimal-scrollbar-small-thumb-middle", false)
+    thumb:SetSize(opts.thumbWidth or SL_THUMB_W, thick)
+
+    local host = CreateFrame("Frame", nil, slider)
+    host:SetFrameLevel((slider:GetFrameLevel() or 1) + 5)
+    host:SetPoint("TOPLEFT",     thumb, "TOPLEFT",     0, 0)
+    host:SetPoint("BOTTOMRIGHT", thumb, "BOTTOMRIGHT", 0, 0)
+
+    d.CapLeft = host:CreateTexture(nil, "OVERLAY")
+    NE.tex.SetAtlasRotated(d.CapLeft, "minimal-scrollbar-small-thumb-bottom", true)
+    d.CapLeft:SetSize(SL_CAP, thick)
+    d.CapLeft:SetPoint("LEFT", host, "LEFT", 0, 0)
+
+    d.CapRight = host:CreateTexture(nil, "OVERLAY")
+    NE.tex.SetAtlasRotated(d.CapRight, "minimal-scrollbar-small-thumb-top", true)
+    d.CapRight:SetSize(SL_CAP, thick)
+    d.CapRight:SetPoint("RIGHT", host, "RIGHT", 0, 0)
+
+    d.Thumb, d.Host = thumb, host
+
+    local function applyState(suffix)
+      d.state = suffix
+      NE.tex.SetAtlasRotated(thumb,      "minimal-scrollbar-small-thumb-middle" .. suffix, false)
+      NE.tex.SetAtlasRotated(d.CapLeft,  "minimal-scrollbar-small-thumb-bottom" .. suffix, true)
+      NE.tex.SetAtlasRotated(d.CapRight, "minimal-scrollbar-small-thumb-top"    .. suffix, true)
+    end
+    d.ApplyState = applyState
+    applyState("")
+
+    -- HOOKED, and hooked LAST. The kit's tooltip helper owns OnEnter/OnLeave with SetScript, and a
+    -- SetScript discards any hook installed before it — the same trap the dropdown's arrow states hit.
+    -- Callers therefore skin AFTER wiring the tooltip.
+    slider:HookScript("OnEnter",     function() applyState("-over") end)
+    slider:HookScript("OnLeave",     function() applyState("")      end)
+    slider:HookScript("OnMouseDown", function() applyState("-down") end)
+    slider:HookScript("OnMouseUp",   function(self)
+      applyState((self.IsMouseOver and self:IsMouseOver()) and "-over" or "")
+    end)
+  end
+
+  slider._neMinimalSlider = d
+  return d
+end
+
 -- AttachBottomShadow — DOWNPORT STUB. Needs WowScrollBox callbacks (BaseScrollBoxEvents,
 -- RegisterCallback, GetDerivedScrollRange) — retail-only. Returns nil on 3.3.5a.
 function NE.scrollbar.AttachBottomShadow(scrollBox, host, opts)
