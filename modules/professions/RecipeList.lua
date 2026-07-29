@@ -19,7 +19,9 @@
 --   C.UpdateFilterReset()  — show/hide the filter-reset (x) button
 --   C.ResetFilters()       — restore C.filters to defaults (used on manual reset and window close)
 
+
 local NE = DragonUI_NewEra
+local L = NE:GetLocale()
 NE.profcraft = NE.profcraft or {}
 local C = NE.profcraft
 
@@ -693,31 +695,41 @@ function C.buildRecipeList(f)
 
   filter:SetScript("OnClick", function(self)
     if not UIDropDownMenu_Initialize then return end
+
     -- Reuse a single dropdown frame (see fav dropdown note above).
     local dd = C._filterDropdown
     if not dd then
       dd = CreateFrame("Frame", "NE_ProfCraftFilterDropDown", UIParent, "UIDropDownMenuTemplate")
       C._filterDropdown = dd
     end
+
     -- Toggle: a second click on the filter button closes the open list instead of reopening it.
     if _G.UIDROPDOWNMENU_OPEN_MENU == dd and _G.DropDownList1 and _G.DropDownList1:IsShown() then
       if CloseDropDownMenus then CloseDropDownMenus() end
       return
     end
+
     UIDropDownMenu_Initialize(dd, function()
       local function toggle(key)
         C.filters[key] = not C.filters[key]; C.RefreshRecipes(); C.UpdateFilterReset()
       end
+
       local function addCheck(label, key)
         local info = UIDropDownMenu_CreateInfo()
         info.text = label; info.checked = C.filters[key]; info.keepShownOnClick = true
         info.func = function() toggle(key) end
         UIDropDownMenu_AddButton(info)
       end
-      addCheck(_G.PROFESSION_RECIPES_SHOW_LEARNED   or "Show Learned",    "showLearned")
-      addCheck(_G.TRADESKILL_FILTER_HAS_SKILL_UP    or "Has Skill Up",    "skillUp")
-      addCheck(_G.CRAFT_IS_MAKEABLE                 or "Have Materials",  "makeable")
+
+      local showLearnedText   = (L and L["Show Learned"])   or "Show Learned"
+      local hasSkillUpText    = (L and L["Has Skill Up"])   or "Has Skill Up"
+      local haveMaterialsText = (L and L["Have Materials"]) or "Have Materials"
+
+      addCheck(showLearnedText,   "showLearned")
+      addCheck(hasSkillUpText,    "skillUp")
+      addCheck(haveMaterialsText, "makeable")
     end, "MENU")
+
     -- Anchor the list to the filter button (drops below it) instead of at the cursor.
     ToggleDropDownMenu(1, nil, dd, self, 0, 0)
   end)

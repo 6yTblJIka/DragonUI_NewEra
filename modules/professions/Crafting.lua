@@ -29,6 +29,7 @@
 --   C.ResetOutput()
 
 local NE = DragonUI_NewEra
+local L = NE:GetLocale()
 NE.profcraft = NE.profcraft or {}
 local C = NE.profcraft
 
@@ -44,10 +45,28 @@ local ATLAS_RECIPE_BG   = C.ATLAS_RECIPE_BG   or "professions-recipe-background"
 local ATLAS_SKILL_BG    = C.ATLAS_SKILL_BG    or "professions-skillbar-bg"
 local ATLAS_SKILL_FRAME = C.ATLAS_SKILL_FRAME or "professions-skillbar-frame"
 
--- Cog-toggled "plain skill bar": one generic bar texture (the reputation/skills fill) for every
--- profession, tinted, with no per-profession flipbook animation.
-local GENERIC_BAR_TEX   = "Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar"
-local GENERIC_BAR_COLOR = { 0.15, 0.68, 0.20 }   -- green
+-- Rank-bar fill geometry, relative to the RankBar's TOPLEFT. Shared by the animated (flipbook)
+-- fill and the plain-bar fill so the two styles can't drift apart.
+-- MEASURED from the frame art (professions-skillbar-frame, 451x29, drawn at the RankBar's TOPLEFT):
+-- its strokes land on x=5 (left), x=445 (right), y=3 (top), y=20 (bottom).
+--
+-- The fit is deliberately ASYMMETRIC, because the four edges are not equivalent:
+--
+--   top/bottom/right — UNDERLAP the stroke by 1px. The frame draws on OVERLAY above the fill and
+--     its strokes are soft-edged; fitted to the strict y 4..19 interior, those semi-transparent
+--     edges fall over dark trough instead of over fill and read as a seam around the whole bar.
+--   left — must respect the interior and start at x=6. It is the one edge exposed at EVERY skill
+--     level (the fill always starts there and grows right), so a 1px underlap here is not hidden
+--     under the stroke at low fill — it hangs visibly outside the border. Cost is a 1px seam at
+--     the far left, which is invisible next to the trough's own feathered edge.
+local FILL_X    = 6     -- first interior column — do NOT drop to 5, it hangs out at low fill
+local FILL_Y    = -3    -- on the top stroke, fill continues under it
+local FILL_H    = 18    -- reaches the bottom stroke at y=20
+local FILL_MAXW = 440   -- x 6..445 — 100% lands under the right stroke
+-- No minimum drawn width, deliberately: a low skill must LOOK low. The fill's width and its
+-- texcoord crop are always derived from the same fraction, so the art never scales — a narrow
+-- bar is a narrow slice of art at 1:1, not a squashed one.
+
 
 -- Max reagent slots shown (retail shows up to 8 on WotLK; WoTLK recipes rarely exceed 6).
 local MAX_REAGENT_SLOTS = 8
@@ -65,58 +84,73 @@ local DETAILS_CAP_H = math.floor(100 * (DETAILS_W / 260) + 0.5)   -- 96 for DETA
 local REAGENT_COL_W = SCHEMATIC_W - DETAILS_W - 70
 
 -- ============================================================================
--- Per-profession theming map. key = lowercase substring of the profession name.
--- kit = atlas suffix for Professions-Recipe-Background-<kit>.
--- icon = modern DF FDID (resolved to the shipped local BLP via NE.tex.localFiles).
--- fill = themed flipbook atlas name (nil → DefaultBlue from the chrome sheet).
+-- PROF_MAP 
 -- ============================================================================
 local PROF_MAP = {
-  alchemy        = { kit = "Alchemy",        icon = 4620669, fill = "skillbar_fill_flipbook_alchemy"        },
-  blacksmith     = { kit = "Blacksmithing",  icon = 4620670, fill = "skillbar_fill_flipbook_blacksmithing"  },
-  enchant        = { kit = "Enchanting",     icon = 4620672, fill = "skillbar_fill_flipbook_enchanting"     },
-  engineer       = { kit = "Engineering",    icon = 4620673, fill = "skillbar_fill_flipbook_engineering"    },
-  herbal         = { kit = "Herbalism",      icon = 4620675 },   -- no crafting window on gatherers; DefaultBlue
-  leather        = { kit = "Leatherworking", icon = 4620678, fill = "skillbar_fill_flipbook_leatherworking" },
-  mining         = { kit = "Mining",         icon = 4620679 },
-  smelt          = { kit = "Mining",         icon = 4620679 },
-  skin           = { kit = "Skinning",       icon = 4620680 },
-  tailor         = { kit = "Tailoring",      icon = 4620681, fill = "skillbar_fill_flipbook_tailoring"      },
-  cooking        = { kit = "Cooking",        icon = 4620671, fill = "skillbar_fill_flipbook_cooking"        },
-  fishing        = { kit = "Fishing",        icon = 4620674 },
-  inscription    = { kit = "Inscription",   icon = 4620676, fill = "skillbar_fill_flipbook_inscription" },
-  inscript       = { kit = "Inscription",   icon = 4620676, fill = "skillbar_fill_flipbook_inscription" },
-  jewel          = { kit = "Jewelcrafting", icon = 4620677, fill = "skillbar_fill_flipbook_jewelcrafting" },
-  jewelcraft     = { kit = "Jewelcrafting", icon = 4620677, fill = "skillbar_fill_flipbook_jewelcrafting" },
-  prospect       = { kit = "Jewelcrafting", icon = 4620677, fill = "skillbar_fill_flipbook_jewelcrafting" },
-  ["first aid"]  = { kit = nil,              icon = "Interface\\Icons\\Spell_Holy_SealOfSacrifice",
-                     fill = "skillbar_fill_flipbook_skinning" },
+  ["Alchemy"]        = { kit = "Alchemy",        icon = 4620669, fill = "skillbar_fill_flipbook_alchemy"        },
+  ["Blacksmithing"]  = { kit = "Blacksmithing",  icon = 4620670, fill = "skillbar_fill_flipbook_blacksmithing"  },
+  ["Enchanting"]     = { kit = "Enchanting",     icon = 4620672, fill = "skillbar_fill_flipbook_enchanting"     },
+  ["Engineering"]    = { kit = "Engineering",    icon = 4620673, fill = "skillbar_fill_flipbook_engineering"    },
+  ["Herbalism"]      = { kit = "Herbalism",      icon = 4620675 },
+  ["Leatherworking"] = { kit = "Leatherworking", icon = 4620678, fill = "skillbar_fill_flipbook_leatherworking" },
+  ["Mining"]         = { kit = "Mining",         icon = 4620679 },
+  ["Smelting"]       = { kit = "Mining",         icon = 4620679 },
+  ["Skinning"]       = { kit = "Skinning",       icon = 4620680 },
+  ["Tailoring"]      = { kit = "Tailoring",      icon = 4620681, fill = "skillbar_fill_flipbook_tailoring"      },
+  ["Cooking"]        = { kit = "Cooking",        icon = 4620671, fill = "skillbar_fill_flipbook_cooking"        },
+  ["Fishing"]        = { kit = "Fishing",        icon = 4620674 },
+  ["Inscription"]    = { kit = "Inscription",   icon = 4620676, fill = "skillbar_fill_flipbook_inscription" },
+  ["Jewelcrafting"]  = { kit = "Jewelcrafting", icon = 4620677, fill = "skillbar_fill_flipbook_jewelcrafting" },
+  ["Prospecting"]    = { kit = "Jewelcrafting", icon = 4620677, fill = "skillbar_fill_flipbook_jewelcrafting" },
+  ["First Aid"]      = { kit = nil,              icon = "Interface\\Icons\\Spell_Holy_SealOfSacrifice", fill = "skillbar_fill_flipbook_skinning" },
 }
 
 local function infoFromName(name)
-  if not name then return nil end
-  local lname = name:lower()
-  for key, v in pairs(PROF_MAP) do
-    if lname:find(key, 1, true) then return v end
+  if not name or name == "" then return nil end
+  local lname = _G.strlower and _G.strlower(name) or name:lower()
+
+
+  L = L or (NE.GetLocale and NE:GetLocale())
+
+  for engKey, info in pairs(PROF_MAP) do
+    local locName = (L and L[engKey]) or engKey
+    local locLower = _G.strlower and _G.strlower(locName) or locName:lower()
+    local engLower = _G.strlower and _G.strlower(engKey) or engKey:lower()
+
+    if lname:find(locLower, 1, true) or lname:find(engLower, 1, true) then
+      return info
+    end
   end
+
   return nil
 end
 
+-- Fallback when the name lookup misses — the trade-skill icon path is English on every client,
+-- so it still resolves the theme when GetTradeSkillLine() is blank/UNKNOWN or a locale table
+-- doesn't cover the profession. Ordered (not pairs) so "mining" can't shadow a later probe.
+local ICON_PATH_PROBES = {
+  { "alchemy",     "Alchemy"        },
+  { "blacksmith",  "Blacksmithing"  },
+  { "enchant",     "Enchanting"     },
+  { "engineer",    "Engineering"    },
+  { "herbal",      "Herbalism"      },
+  { "leather",     "Leatherworking" },
+  { "mining",      "Mining"         },
+  { "skinning",    "Skinning"       },
+  { "tailor",      "Tailoring"      },
+  { "cooking",     "Cooking"        },
+  { "fishing",     "Fishing"        },
+  { "inscription", "Inscription"    },
+  { "jewel",       "Jewelcrafting"  },
+}
+
 local function infoFromIconPath(texPath)
   if type(texPath) ~= "string" or texPath == "" then return nil end
-  local p = texPath:lower()
-  if p:find("alchemy", 1, true) then return PROF_MAP.alchemy end
-  if p:find("blacksmith", 1, true) then return PROF_MAP.blacksmith end
-  if p:find("enchant", 1, true) then return PROF_MAP.enchant end
-  if p:find("engineer", 1, true) then return PROF_MAP.engineer end
-  if p:find("herbal", 1, true) then return PROF_MAP.herbal end
-  if p:find("leather", 1, true) then return PROF_MAP.leather end
-  if p:find("mining", 1, true) then return PROF_MAP.mining end
-  if p:find("skinning", 1, true) then return PROF_MAP.skin end
-  if p:find("tailor", 1, true) then return PROF_MAP.tailor end
-  if p:find("cooking", 1, true) then return PROF_MAP.cooking end
-  if p:find("fishing", 1, true) then return PROF_MAP.fishing end
-  if p:find("inscription", 1, true) then return PROF_MAP.inscription end
-  if p:find("jewel", 1, true) then return PROF_MAP.jewel end
+  local p = _G.strlower and _G.strlower(texPath) or texPath:lower()
+  for i = 1, #ICON_PATH_PROBES do
+    local probe = ICON_PATH_PROBES[i]
+    if p:find(probe[1], 1, true) then return PROF_MAP[probe[2]] end
+  end
   return nil
 end
 
@@ -133,59 +167,92 @@ local FLARE_U0 = 0.837402
 local FLARE_U1 = 0.863281
 local FLARE_H  = 0.016114
 
+-- Crop the texture to the sprite cell the entry's current phase lands on. Shared by the driver
+-- and by startFlip so a freshly (re)started flipbook never renders the whole sheet for a frame.
+local function applyFlipFrame(f)
+  local first = f.first or 1
+  local span  = f.frames - first
+  local idx
+  if span <= 0 then
+    idx = first
+  else
+    idx = first + math.floor((f.elapsed / f.duration) * span)
+    if idx >= f.frames then idx = f.frames - 1 end
+  end
+  local col = idx % f.cols
+  local row = math.floor(idx / f.cols)
+
+  local frac = f.tex._frac or 1
+  local u0 = f.l + col * f.cellW
+  local u1 = u0 + f.cellW * frac
+
+  local v0 = f.t + row * f.cellH
+  local v1 = f.t + (row + 1) * f.cellH
+
+  f.tex:SetTexCoord(u0, u1, v0, v1)
+end
+
 flipDriver:SetScript("OnUpdate", function(_, dt)
   for i = #flipActive, 1, -1 do
     local f = flipActive[i]
     f.elapsed = f.elapsed + dt
     while f.elapsed >= f.duration do f.elapsed = f.elapsed - f.duration end
-    -- DOWNPORT FIX (PR#7 "skill bar occasionally goes black"): cell 0 of every fill sheet is a
-    -- black frame (see fillLayoutForAtlas / static-fallback comment). The old stepper cycled
-    -- idx over 0..frames-1, so it landed on the black cell once per loop → a periodic flash.
-    -- Animate over first..frames-1 instead, skipping the black lead cell entirely.
-    local first = f.first or 1
-    local span  = f.frames - first
-    local idx
-    if span <= 0 then
-      idx = first
-    else
-      idx = first + math.floor((f.elapsed / f.duration) * span)
-      if idx >= f.frames then idx = f.frames - 1 end
-    end
-    local col = idx % f.cols
-    local row = math.floor(idx / f.cols)
-    f.tex:SetTexCoord(
-      f.l + col * f.cellW,     f.l + (col + 1) * f.cellW,
-      f.t + row * f.cellH,     f.t + (row + 1) * f.cellH)
+    applyFlipFrame(f)
   end
   if #flipActive == 0 then flipDriver:Hide() end
 end)
 flipDriver:Hide()
 
--- tc = { l, r, t, b }; rows/cols/frames describe the sprite grid; duration in seconds.
+-- -- tc = { l, r, t, b }; rows/cols/frames describe the sprite grid; duration in seconds.
 -- first = index of the first NON-black frame to animate from (defaults to 1 — cell 0 is black).
 local function startFlip(tex, tc, rows, cols, frames, duration, first)
   first = first or 1
   local cellW = (tc.r - tc.l) / cols
   local cellH = (tc.b - tc.t) / rows
-  for i = #flipActive, 1, -1 do if flipActive[i].tex == tex then table.remove(flipActive, i) end end
-  -- Seed the texcoord on the first non-black frame so we never flash cell 0.
-  local col0 = first % cols
-  local row0 = math.floor(first / cols)
-  tex:SetTexCoord(
-    tc.l + col0 * cellW,      tc.l + (col0 + 1) * cellW,
-    tc.t + row0 * cellH,      tc.t + (row0 + 1) * cellH)
-  flipActive[#flipActive + 1] = {
+
+  -- Opening the window re-enters here several times in the first second (OnShow refresh + the
+  -- five deferred post-open passes + TRADE_SKILL_UPDATE). Resetting elapsed on each of those
+  -- snapped the fill back to `first` over and over, which read as the flipbook racing before it
+  -- settled — so carry the running phase over when the layout is unchanged.
+  local phase = 0
+  for i = #flipActive, 1, -1 do
+    local a = flipActive[i]
+    if a.tex == tex then
+      if a.cols == cols and a.frames == frames and a.first == first and a.duration == duration then
+        phase = a.elapsed
+      end
+      table.remove(flipActive, i)
+    end
+  end
+
+  local entry = {
     tex = tex, l = tc.l, t = tc.t, cols = cols, frames = frames,
-    duration = duration, elapsed = 0, first = first,
+    duration = duration, elapsed = phase, first = first,
     cellW = cellW,
     cellH = cellH,
   }
+  applyFlipFrame(entry)
+
+  flipActive[#flipActive + 1] = entry
   flipDriver:Show()
 end
 
 local function stopFlip(tex)
   for i = #flipActive, 1, -1 do if flipActive[i].tex == tex then table.remove(flipActive, i) end end
   if #flipActive == 0 then flipDriver:Hide() end
+end
+
+-- Re-crop an already-running flipbook in the current frame — used when the fill's width fraction
+-- changes so the crop doesn't lag a frame behind the bar.
+-- Returns true if the texture was found and re-cropped. A false return means flipActive no longer
+-- tracks it, so the CALLER must re-crop (see UpdateRank): the texcoord is whatever SetAtlas last
+-- left there — the WHOLE sprite sheet — and scaling all 60 frames into the bar's width is what
+-- produced the smeared, squashed fill at low skill.
+local function refreshFlipFrame(tex)
+  for i = 1, #flipActive do
+    if flipActive[i].tex == tex then applyFlipFrame(flipActive[i]); return true end
+  end
+  return false
 end
 
 -- Flipbook layout differs by atlas. The themed sheets are 2-column sprite grids.
@@ -601,7 +668,10 @@ function C.buildSchematicForm(f)
   local empty = sf:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
   empty:SetPoint("CENTER", sf, "CENTER", 0, 40)
   empty:SetVertexColor(0.5, 0.5, 0.5)
-  empty:SetText(_G.PROFESSIONS_RECIPE_SELECT_NO_RECIPE or "Select a recipe to craft")
+
+  local emptyText = (L and L["Select a recipe to craft"]) or "Select a recipe to craft"
+
+  empty:SetText(emptyText)
   sf.EmptyText = empty
 
   -- -------------------------------------------------------------------------
@@ -680,82 +750,61 @@ end
 -- ============================================================================
 function C.buildRankBar(f)
   local rb = CreateFrame("Frame", "NE_ProfessionsCraftingRankBar", f)
-  rb:SetSize(RANKBAR_W, RANKBAR_H)
+  rb:SetSize(RANKBAR_W, 29)
   rb:SetFrameStrata("HIGH")
   rb:SetPoint("TOPLEFT", f, "TOPLEFT", RANKBAR_TL[1], RANKBAR_TL[2])
   f.RankBar = rb
 
-  local bgTex = rb:CreateTexture(nil, "ARTWORK", nil, 1)
+  
+  local bgTex = rb:CreateTexture(nil, "BACKGROUND", nil, -8)
   NE.tex.SetAtlas(bgTex, ATLAS_SKILL_BG, true)
   bgTex:SetPoint("TOPLEFT", rb, "TOPLEFT", 0, 0)
+  bgTex:Hide()
   rb.BarBg = bgTex
 
-  -- Fill texture (DefaultBlue flipbook as placeholder; swapped per profession in UpdateRank).
+  
   local baseFill = rb:CreateTexture(nil, "ARTWORK", nil, 1)
-  baseFill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-  baseFill:SetVertexColor(0.20, 0.58, 0.96, 0.95)
-  baseFill:SetSize(441, RANKBAR_H)
-  baseFill:SetPoint("TOPLEFT", rb, "TOPLEFT", 5, -3)
+  baseFill:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar")
+  baseFill:SetVertexColor(0.15, 0.85, 0.25, 1)
+  baseFill:SetSize(FILL_MAXW, FILL_H)
+  baseFill:SetPoint("TOPLEFT", rb, "TOPLEFT", FILL_X, FILL_Y)
   baseFill:SetTexCoord(0, 1, 0, 1)
   baseFill:Hide()
   rb.BaseFill = baseFill
 
+ 
   local fill = rb:CreateTexture(nil, "ARTWORK", nil, 2)
   NE.tex.SetAtlas(fill, "skillbar_fill_flipbook_defaultblue", false)
-  fill:SetSize(441, RANKBAR_H)
-  fill:SetPoint("TOPLEFT", rb, "TOPLEFT", 5, -3)
+  fill:SetSize(FILL_MAXW, FILL_H)
+  fill:SetPoint("TOPLEFT", rb, "TOPLEFT", FILL_X, FILL_Y)
   fill:SetBlendMode("ADD")
   fill:SetAlpha(0.95)
   fill:Hide()
   rb.Fill    = fill
-  rb.FillMaxW = 441
+  rb.FillMaxW = FILL_MAXW
 
-  -- 3.3.5a mask clipping is unreliable across clients/addon stacks; drive progress by
-  -- explicit fill width so the bar ratio is always correct.
-  rb.FillMask = nil
+ 
+  local border = rb:CreateTexture(nil, "OVERLAY", nil, 1)
+  NE.tex.SetAtlas(border, ATLAS_SKILL_FRAME, true)
+  border:SetPoint("TOPLEFT", rb, "TOPLEFT", 0, 0)
+  border:Hide()
+  rb.Border = border
 
-  -- Flare (additive spark at the leading edge of the fill).
-  local flare = rb:CreateTexture(nil, "ARTWORK", nil, 2)
+  
+  local flare = rb:CreateTexture(nil, "OVERLAY", nil, 2)
   flare:SetBlendMode("ADD"); flare:SetSize(53, 16)
   flare:SetPoint("RIGHT", fill, "RIGHT", 0, 0)
   flare:Hide(); rb.Flare = flare
 
-  -- Frame/border overlay.
-  local border = rb:CreateTexture(nil, "ARTWORK", nil, 3)
-  NE.tex.SetAtlas(border, ATLAS_SKILL_FRAME, true)
-  border:SetPoint("TOPLEFT", rb, "TOPLEFT", 0, 0)
-  rb.Border = border
-
-  -- Generic-bar chrome (shown only in the "Plain skill bar" cog mode): a dark trough + 1px outline
-  -- that matches the RECTANGULAR generic fill and stays inside the bar space. The DF frame art above
-  -- is shaped for the flipbook fill, so it can't frame this one. All constrained within rb.
-  local genBg = rb:CreateTexture(nil, "ARTWORK", nil, 0)
-  genBg:SetTexture(0, 0, 0, 0.85)
-  genBg:SetPoint("TOPLEFT", rb, "TOPLEFT", 5, -1)
-  genBg:SetSize(443, 22)   -- top-anchored, so the extra height extends the bar at the BOTTOM
-  genBg:Hide()
-  rb.GenBg = genBg
-
-  rb.GenBorder = {}
-  local function genEdge()
-    local t = rb:CreateTexture(nil, "ARTWORK", nil, 3)
-    t:SetTexture(0, 0, 0, 0.95); t:Hide()
-    rb.GenBorder[#rb.GenBorder + 1] = t
-    return t
-  end
-  local eT, eB, eL, eR = genEdge(), genEdge(), genEdge(), genEdge()
-  eT:SetPoint("TOPLEFT", genBg, "TOPLEFT", 0, 0);      eT:SetPoint("TOPRIGHT", genBg, "TOPRIGHT", 0, 0);       eT:SetHeight(1)
-  eB:SetPoint("BOTTOMLEFT", genBg, "BOTTOMLEFT", 0, 0); eB:SetPoint("BOTTOMRIGHT", genBg, "BOTTOMRIGHT", 0, 0); eB:SetHeight(1)
-  eL:SetPoint("TOPLEFT", genBg, "TOPLEFT", 0, 0);      eL:SetPoint("BOTTOMLEFT", genBg, "BOTTOMLEFT", 0, 0);   eL:SetWidth(1)
-  eR:SetPoint("TOPRIGHT", genBg, "TOPRIGHT", 0, 0);     eR:SetPoint("BOTTOMRIGHT", genBg, "BOTTOMRIGHT", 0, 0); eR:SetWidth(1)
-
-  -- Rank text (centered, on OVERLAY layer so it renders above the border).
+  
   local rank = rb:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  rank:SetDrawLayer("OVERLAY", 7)
   do
     local fn = rank:GetFont()
     if fn then rank:SetFont(fn, 12, "OUTLINE") end
   end
-  rank:SetPoint("CENTER", rb, "CENTER", 0, -2); rank:SetText("")
+  rank:SetPoint("CENTER", rb, "CENTER", 0, 3)
+  rank:SetText("")
   rb.RankText = rank
 end
 
@@ -766,7 +815,7 @@ function C.buildCreateControls(f)
   -- "Create" button.
   local create = CreateFrame("Button", "NE_ProfessionsCraftingCreate", f, "UIPanelButtonTemplate")
   create:SetSize(82, 22)
-  create:SetText(_G.TRADESKILL_CREATE or "Create")
+  create:SetText((L and L["Create"]) or _G.TRADESKILL_CREATE or "Create")
   create:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -9, 16)
   create:Disable()
   f.CreateButton = create
@@ -799,7 +848,7 @@ function C.buildCreateControls(f)
   -- "Create All" button.
   local createAll = CreateFrame("Button", "NE_ProfessionsCraftingCreateAll", f, "UIPanelButtonTemplate")
   createAll:SetSize(125, 22)
-  createAll:SetText(_G.TRADESKILL_CREATE_ALL or "Create All")
+  createAll:SetText((L and L["Create All"]) or _G.TRADESKILL_CREATE_ALL or "Create All")
   createAll:SetPoint("RIGHT", minus, "LEFT", -30, 0)
   createAll:Disable()
   f.CreateAllButton = createAll
@@ -955,18 +1004,11 @@ function C.SetProfession(name)
   C._fillAtlas  = (info and info.fill) or "skillbar_fill_flipbook_defaultblue"
   C._flareAtlas = info and info.fill and info.fill:gsub("fill_flipbook", "flare") or nil
 
-  -- Prewarm the rankbar fill atlas on profession switch. If a custom sheet fails to apply,
-  -- fall back for this draw only; keep the desired atlas so UpdateRank can retry on the next
-  -- refresh instead of pinning the session to DefaultBlue.
-  if f.RankBar and f.RankBar.Fill and NE.tex and NE.tex.SetAtlas then
-    local wanted = C._fillAtlas or "skillbar_fill_flipbook_defaultblue"
-    local ok = NE.tex.SetAtlas(f.RankBar.Fill, wanted, false)
-    if not ok then
-      NE.tex.SetAtlas(f.RankBar.Fill, "skillbar_fill_flipbook_defaultblue", false)
-    end
-    -- Force UpdateRank to treat this as an atlas refresh next tick.
-    f.RankBar._flipAtlas = nil
-  end
+  -- NOTE: the rankbar fill deliberately is NOT touched here. SetProfession runs on every refresh
+  -- pass (OnShow plus five deferred post-open passes plus TRADE_SKILL_UPDATE), and re-applying the
+  -- atlas resets the texcoord to the WHOLE sprite sheet while invalidating _flipAtlas restarted
+  -- the animation — together that made the bar flash and race on first open. UpdateRank owns the
+  -- fill: it detects a genuine atlas change on its own and validates the backing sheet.
 
   -- Clear selection only when the profession actually changes.
   if C._professionName ~= name then
@@ -978,7 +1020,7 @@ function C.SetProfession(name)
 end
 
 -- ============================================================================
--- C.UpdateRank() — refresh the RankBar from the live profession skill.
+-- C.UpdateRank()
 -- ============================================================================
 function C.UpdateRank()
   local rb = C.frame and C.frame.RankBar
@@ -989,6 +1031,11 @@ function C.UpdateRank()
   local defaultAtlas = "skillbar_fill_flipbook_defaultblue"
   local atlasName = C._fillAtlas or defaultAtlas
   local entry     = NE.tex and NE.tex.atlases and NE.tex.atlases[atlasName:lower()]
+  -- An atlas can be registered while its BLP was never shipped — SetAtlas reports a miss and
+  -- leaves the previous sheet in place, so validate the backing file here and fall back cleanly.
+  if entry and NE.tex.localFiles and type(NE.tex.localFiles[entry.file]) ~= "string" then
+    entry = nil
+  end
   if not entry then
     atlasName = defaultAtlas
     entry = NE.tex and NE.tex.atlases and NE.tex.atlases[defaultAtlas:lower()]
@@ -996,131 +1043,147 @@ function C.UpdateRank()
 
   if rank and maxRank and maxRank > 0 then
     local frac = math.max(0, math.min(1, rank / maxRank))
-    local maxW  = rb.FillMaxW or 441
+    local maxW  = rb.FillMaxW or FILL_MAXW
+    -- `w` and the texcoord crop below must both come from `frac`. Deriving one from an adjusted
+    -- fraction and the other from the raw one is what squashes the art.
+    local w     = math.max(1, maxW * frac)
 
-    -- Animate the mask/width to reveal 'frac' of the fill bar.
-    local profChanged = (rb._profKey ~= profName)
     rb._profKey = profName
 
-    if profChanged then
-      if rb._interp and rb._interp.driver then rb._interp.driver:SetScript("OnUpdate", nil) end
-      rb._interp = nil
-      local w = math.max(1, maxW * frac)
-      rb.Fill:SetWidth(w)
-      if rb.BaseFill then rb.BaseFill:SetWidth(w) end
-      rb._ratio = frac
-    elseif frac ~= (rb._ratio or 0) then
-      -- Smooth width tween on ratio changes.
-      if rb._interp and rb._interp.driver then rb._interp.driver:SetScript("OnUpdate", nil) end
-      local from   = rb._ratio or 0
-      local to     = frac
-      local dur    = 0.5
-      local t      = 0
-      rb._interp   = {}
-      local driver = CreateFrame("Frame")
-      rb._interp.driver = driver
-      driver:SetScript("OnUpdate", function(_, dt)
-        t = t + dt
-        if t >= dur then
-          local w = math.max(1, maxW * to)
-          rb.Fill:SetWidth(w)
-          if rb.BaseFill then rb.BaseFill:SetWidth(w) end
-          rb._ratio = to
-          rb._interp = nil; driver:SetScript("OnUpdate", nil); driver:Hide()
-        else
-          local u = t / dur
-          u = 1 - (1 - u) * (1 - u)
-          local w = math.max(1, maxW * (from + (to - from) * u))
-          rb.Fill:SetWidth(w)
-          if rb.BaseFill then rb.BaseFill:SetWidth(w) end
-        end
-      end)
-      driver:Show()
-      rb._ratio = frac
-    end
 
-    -- Cog option: one plain green bar for every profession (no flipbook animation), inside its own
-    -- rectangular border. Swap out the DF-shaped chrome for the generic box + fit the fill within it.
     if C.opts and C.opts.genericBar then
-      stopFlip(rb.Fill); rb._flipping = false; rb._flipAtlas = nil
+      stopFlip(rb.Fill)
+      rb._flipping = false
+      rb._flipAtlas = nil
       rb.Fill:Hide()
-      if rb.Flare  then rb.Flare:Hide()  end
-      if rb.Border then rb.Border:Hide() end     -- DF frame doesn't match the rectangular fill
-      if rb.BarBg  then rb.BarBg:Hide()  end     -- DF trough too
-      if rb.GenBg  then rb.GenBg:Show()  end
-      if rb.GenBorder then for _, e in ipairs(rb.GenBorder) do e:Show() end end
-      if rb.BaseFill and rb.GenBg then
-        rb.BaseFill:SetTexture(GENERIC_BAR_TEX)
-        rb.BaseFill:SetTexCoord(0, 1, 0, 1)
-        rb.BaseFill:SetVertexColor(GENERIC_BAR_COLOR[1], GENERIC_BAR_COLOR[2], GENERIC_BAR_COLOR[3], 1)
-        rb.BaseFill:ClearAllPoints()
-        rb.BaseFill:SetPoint("TOPLEFT",    rb.GenBg, "TOPLEFT",    1, -1)
-        rb.BaseFill:SetPoint("BOTTOMLEFT", rb.GenBg, "BOTTOMLEFT", 1,  1)
-        local innerW = (rb.GenBg:GetWidth() or 443) - 2
-        rb.BaseFill:SetWidth(math.max(1, innerW * frac))
-        if frac > 0 then rb.BaseFill:Show() else rb.BaseFill:Hide() end
+      if rb.Flare then rb.Flare:Hide() end
+
+      if rb.BarBg then
+        rb.BarBg:SetDrawLayer("BACKGROUND", -8)
+        NE.tex.SetAtlas(rb.BarBg, ATLAS_SKILL_BG, true)
+        rb.BarBg:SetVertexColor(0.20, 0.20, 0.20)
+        rb.BarBg:Show()
       end
+
+      if rb.Border then
+        rb.Border:SetDrawLayer("OVERLAY", 1)
+        NE.tex.SetAtlas(rb.Border, ATLAS_SKILL_FRAME, true)
+        rb.Border:SetVertexColor(1, 1, 1)
+        rb.Border:Show()
+      end
+
+      if rb.BaseFill then
+        rb.BaseFill:SetDrawLayer("ARTWORK", 1)
+        rb.BaseFill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+        rb.BaseFill:SetVertexColor(0.12, 0.75, 0.22, 1)
+        rb.BaseFill:SetTexCoord(0, 1, 0, 1)
+        
+        rb.BaseFill:ClearAllPoints()
+        rb.BaseFill:SetPoint("TOPLEFT", rb, "TOPLEFT", FILL_X, FILL_Y)
+        rb.BaseFill:SetSize(w, FILL_H)
+        rb.BaseFill:SetShown(frac > 0)
+      end
+
       if rb.RankText then rb.RankText:SetText(("%d / %d"):format(rank, maxRank)) end
+      rb._ratio = frac
       return
     end
-    -- Non-generic: ensure the DF bar chrome is the visible one.
-    if rb.GenBg then rb.GenBg:Hide() end
-    if rb.GenBorder then for _, e in ipairs(rb.GenBorder) do e:Hide() end end
-    if rb.Border then rb.Border:Show() end
-    if rb.BarBg  then rb.BarBg:Show()  end
 
-    rb.Fill:SetShown(frac > 0)
-    rb.Fill:SetBlendMode(atlasName == defaultAtlas and "ADD" or "BLEND")
-    rb.Fill:SetAlpha(atlasName == defaultAtlas and 0.95 or 1)
+
     if rb.BaseFill then rb.BaseFill:Hide() end
 
-    -- Flipbook shimmer on the fill texture.
-    if entry and frac > 0 then
-      local atlasChanged = (rb._flipAtlas ~= atlasName)
-      if atlasChanged then
-        local applied = NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(rb.Fill, atlasName, false)
-        if not applied and atlasName ~= defaultAtlas then
-          atlasName = defaultAtlas
-          entry = NE.tex and NE.tex.atlases and NE.tex.atlases[defaultAtlas:lower()]
-          NE.tex.SetAtlas(rb.Fill, atlasName, false)
-        end
-      end
-      rb.Fill:SetBlendMode(atlasName == defaultAtlas and "ADD" or "BLEND")
-      rb.Fill:SetAlpha(atlasName == defaultAtlas and 0.95 or 1)
-      if rb.BaseFill then rb.BaseFill:Hide() end
+    if rb.BarBg then
+      rb.BarBg:SetDrawLayer("BACKGROUND", -8)
+      NE.tex.SetAtlas(rb.BarBg, ATLAS_SKILL_BG, true)
+      rb.BarBg:SetVertexColor(1, 1, 1)
+      rb.BarBg:Show()
+    end
+    if rb.Border then
+      rb.Border:SetDrawLayer("OVERLAY", 1)
+      NE.tex.SetAtlas(rb.Border, ATLAS_SKILL_FRAME, true)
+      rb.Border:SetVertexColor(1, 1, 1)
+      rb.Border:Show()
+    end
 
+    rb.Fill:ClearAllPoints()
+    rb.Fill:SetPoint("TOPLEFT", rb, "TOPLEFT", FILL_X, FILL_Y)
+    rb.Fill:SetHeight(FILL_H)
+    rb.Fill:SetWidth(w)
+    rb.Fill._frac = frac
+    rb.Fill:SetShown(frac > 0)
+    rb._ratio = frac
+
+    local atlasChanged = (rb._flipAtlas ~= atlasName)
+    -- SetAtlas resets the texcoord to the WHOLE sprite sheet, and from then on the flip driver
+    -- owns that texcoord. Re-applying it on every refresh pass flashed all ~60 frames at once for
+    -- one render, so only touch the texture when the applied sheet actually changes — startFlip
+    -- below re-crops to a single cell within the same pass.
+    if atlasChanged or rb.Fill._neFillAtlas ~= atlasName then
+      NE.tex.SetAtlas(rb.Fill, atlasName, false)
+      rb.Fill._neFillAtlas = atlasName
+    end
+    rb.Fill:SetBlendMode(atlasName == defaultAtlas and "ADD" or "BLEND")
+    rb.Fill:SetVertexColor(1, 1, 1)
+    rb.Fill:SetAlpha(atlasName == defaultAtlas and 0.95 or 1)
+
+    if entry and frac > 0 then
       local rows, cols, frames, staticFrame = fillLayoutForAtlas(atlasName, entry)
-      local tc     = { l = entry.left, r = entry.right, t = entry.top, b = entry.bottom }
+      local tc = { l = entry.left, r = entry.right, t = entry.top, b = entry.bottom }
+
       if frames > 2 then
         if atlasChanged or not rb._flipping then
-          startFlip(rb.Fill, tc, rows, cols, frames, 2.0, staticFrame); rb._flipping = true
+          startFlip(rb.Fill, tc, rows, cols, frames, 7.8, staticFrame)
+          rb._flipping = true
+        elseif not refreshFlipFrame(rb.Fill) then
+          -- _flipping said it was running but flipActive had dropped it, so the re-crop no-opped
+          -- and the texture kept SetAtlas's full-sheet texcoord. Restart rather than leave all 60
+          -- frames scaled into the bar.
+          startFlip(rb.Fill, tc, rows, cols, frames, 7.8, staticFrame)
+          rb._flipping = true
         end
       else
-        stopFlip(rb.Fill); rb._flipping = false
-        -- Static: choose a deterministic non-black frame for this atlas family.
+        stopFlip(rb.Fill)
+        rb._flipping = false
         local idx = math.max(1, math.min(frames, staticFrame or 1)) - 1
         local cellW = (tc.r - tc.l) / cols
         local cellH = (tc.b - tc.t) / rows
         local col = idx % cols
         local row = math.floor(idx / cols)
-        rb.Fill:SetTexCoord(
-          tc.l + col * cellW,     tc.l + (col + 1) * cellW,
-          tc.t + row * cellH,     tc.t + (row + 1) * cellH)
+
+        local u0 = tc.l + col * cellW
+        local u1 = u0 + cellW * frac
+        local v0 = tc.t + row * cellH
+        local v1 = tc.t + (row + 1) * cellH
+
+        rb.Fill:SetTexCoord(u0, u1, v0, v1)
       end
       rb._flipAtlas = atlasName
     else
-      stopFlip(rb.Fill); rb._flipping = false; rb._flipAtlas = nil
-      if rb.BaseFill then rb.BaseFill:Hide() end
+      stopFlip(rb.Fill)
+      rb._flipping = false
+      rb._flipAtlas = nil
     end
 
-    -- Flare at the leading edge.
     if rb.Flare then
       local themed = (atlasName ~= defaultAtlas)
       if themed and entry and frac > 0 and frac < 1 then
         local srcFile = entry.file and (NE.tex and NE.tex.localFiles and NE.tex.localFiles[entry.file]) or entry.file
         rb.Flare:SetTexture(srcFile)
-        rb.Flare:SetTexCoord(FLARE_U0, FLARE_U1, entry.top, math.min(1, entry.top + FLARE_H))
-        rb.Flare:SetSize(53, 16)
+
+        local maxFlareW = 53
+        local fw = math.min(maxFlareW, w)
+        local fracW = fw / maxFlareW
+        local uSpan = FLARE_U1 - FLARE_U0
+        local cropU0 = FLARE_U1 - (uSpan * fracW)
+
+        -- ARTWORK (above Fill at sublevel 2), NOT OVERLAY: the flare is additive, so on OVERLAY it
+        -- drew on top of the frame art and bloomed straight over the rounded left cap whenever the
+        -- fill was short enough to sit inside it. Below the border, the frame clips it.
+        rb.Flare:SetDrawLayer("ARTWORK", 3)
+        rb.Flare:ClearAllPoints()
+        rb.Flare:SetPoint("RIGHT", rb.Fill, "RIGHT", 0, 0)
+        rb.Flare:SetSize(fw, 16)
+        rb.Flare:SetTexCoord(cropU0, FLARE_U1, entry.top, math.min(1, entry.top + FLARE_H))
         rb.Flare:Show()
       else
         rb.Flare:Hide()
@@ -1129,11 +1192,12 @@ function C.UpdateRank()
 
     if rb.RankText then rb.RankText:SetText(("%d / %d"):format(rank, maxRank)) end
   else
-    -- No valid rank data.
-    if rb._interp and rb._interp.driver then rb._interp.driver:SetScript("OnUpdate", nil) end
-    rb._interp, rb._ratio, rb._profKey, rb._flipAtlas, rb._flipping = nil, nil, nil, nil, false
-    rb.Fill:Hide(); stopFlip(rb.Fill)
+    stopFlip(rb.Fill)
+    rb._ratio, rb._profKey, rb._flipAtlas, rb._flipping = nil, nil, nil, false
+    rb.Fill:Hide()
     if rb.BaseFill then rb.BaseFill:Hide() end
+    if rb.BarBg then rb.BarBg:Hide() end
+    if rb.Border then rb.Border:Hide() end
     if rb.Flare then rb.Flare:Hide() end
     if rb.GenBg then rb.GenBg:Hide() end
     if rb.GenBorder then for _, e in ipairs(rb.GenBorder) do e:Hide() end end
@@ -1556,6 +1620,9 @@ end
 -- ============================================================================
 function C.UpdateCreateButtons(r)
   local f = C.frame; if not f then return end
+  
+  -- Получаем перевод
+  local createAllText = (L and L["Create All"]) or _G.TRADESKILL_CREATE_ALL or "Create All"
 
   if f.ScanAHButton then
     local reagentNames = getRecipeReagentNames(r)
@@ -1567,10 +1634,9 @@ function C.UpdateCreateButtons(r)
     if f.CreateAllButton then f.CreateAllButton:Enable() end
     if f.CreateAllButton then
       local n = r.numAvailable or 0
-      f.CreateAllButton:SetText((_G.TRADESKILL_CREATE_ALL or "Create All") .. (n > 0 and (" [%d]"):format(n) or ""))
+      f.CreateAllButton:SetText(createAllText .. (n > 0 and (" [%d]"):format(n) or ""))
     end
-    -- Keep the quantity spinner inside the (now live) craftable range — the [+] button clamps to
-    -- numAvailable, so a count typed/left over from a larger stock would otherwise stick.
+    -- Keep the quantity spinner inside the (now live) craftable range
     local qty = f.CreateMultipleInputBox
     if qty and qty.GetValue and not qty:HasFocus() then
       local v = qty:GetValue()
@@ -1580,7 +1646,7 @@ function C.UpdateCreateButtons(r)
     if f.CreateButton    then f.CreateButton:Disable()    end
     if f.CreateAllButton then
       f.CreateAllButton:Disable()
-      f.CreateAllButton:SetText(_G.TRADESKILL_CREATE_ALL or "Create All")
+      f.CreateAllButton:SetText(createAllText)
     end
   end
 end

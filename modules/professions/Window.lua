@@ -25,6 +25,7 @@
 --   C.UpdateRank()    update skill bar (defined in Crafting.lua)
 
 local NE = DragonUI_NewEra
+local L = NE:GetLocale()
 NE.profcraft = NE.profcraft or {}
 local C = NE.profcraft
 
@@ -352,8 +353,8 @@ end
 
 local function buildCogMenu(f, cog)
   if f.CogMenu then return f.CogMenu end
+
   local menu = CreateFrame("Frame", "NE_ProfessionsCraftingCogMenu", cog)
-  menu:SetSize(236, 106)
   menu:SetFrameStrata("DIALOG")
   menu:SetPoint("TOPRIGHT", cog, "BOTTOMRIGHT", 0, -2)
   if menu.SetBackdrop then
@@ -366,32 +367,55 @@ local function buildCogMenu(f, cog)
   end
   menu:Hide(); menu:EnableMouse(true)
 
+  local maxCalculatedWidth = 220
+
   local function checkRow(label, getfn, setfn, y)
     local cb = CreateFrame("CheckButton", nil, menu, "UICheckButtonTemplate")
-    cb:SetSize(20, 20); cb:SetPoint("TOPLEFT", 10, y)
+    cb:SetSize(20, 20); cb:SetPoint("TOPLEFT", 12, y)
+
     local fs = cb:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    fs:SetPoint("LEFT", cb, "RIGHT", 2, 0); fs:SetText(label)
+    fs:SetPoint("LEFT", cb, "RIGHT", 4, 0)
+    fs:SetJustifyH("LEFT")
+    fs:SetText(label)
+
+    local strWidth = fs:GetStringWidth() or 0
+    local neededWidth = math.ceil(12 + 20 + 4 + strWidth + 28)
+    if neededWidth > maxCalculatedWidth then
+      maxCalculatedWidth = neededWidth
+    end
+
     cb:SetChecked(getfn())
     cb:SetScript("OnClick", function(self) setfn(self:GetChecked() and true or false) end)
     cb._sync = function() cb:SetChecked(getfn()) end
     return cb
   end
 
-  menu.cbTip = checkRow("Hide item tooltips in list",
+  menu.cbTip = checkRow((L and L["Hide item tooltips in list"]) or "Hide item tooltips in list",
     function() return C.opts.hideListTooltips end,
     function(v) C.opts.hideListTooltips = v; saveOpts() end, -12)
-  menu.cbDiff = checkRow("Colour names by skill difficulty",
+
+  menu.cbDiff = checkRow((L and L["Colour names by skill difficulty"]) or "Colour names by skill difficulty",
     function() return C.opts.colorByDifficulty end,
     function(v)
       C.opts.colorByDifficulty = v; saveOpts()
       if C.RefreshRecipes then C.RefreshRecipes() end
     end, -40)
-  menu.cbBar = checkRow("Plain skill bar (no animation)",
+
+  menu.cbBar = checkRow((L and L["Plain skill bar (no animation)"]) or "Plain skill bar (no animation)",
     function() return C.opts.genericBar end,
     function(v)
       C.opts.genericBar = v; saveOpts()
       if C.UpdateRank then C.UpdateRank() end
     end, -68)
+
+  menu:SetSize(maxCalculatedWidth, 106)
+
+  for _, cb in ipairs({ menu.cbTip, menu.cbDiff, menu.cbBar }) do
+    local fs = cb and cb:GetFontString()
+    if fs then
+      fs:SetPoint("RIGHT", menu, "RIGHT", -16, 0)
+    end
+  end
 
   menu:SetScript("OnShow", function(self)
     if self.cbTip  and self.cbTip._sync  then self.cbTip._sync()  end
@@ -479,11 +503,6 @@ local function buildWindow()
   guard("windowScale", function() applyWindowScale(f) end)
   f:HookScript("OnShow", function(self) applyWindowScale(self) end)
 
-  -- Refresh content on every show.
-  f:HookScript("OnShow", function()
-    if C.Refresh then guard("refresh.onshow", C.Refresh) end
-  end)
-
   -- Ensure focused EditBoxes inside the panel don't keep swallowing ESC after close.
   f:HookScript("OnHide", function()
     if CloseDropDownMenus then pcall(CloseDropDownMenus) end
@@ -512,9 +531,8 @@ local function buildWindow()
     end
   end)
 
-  -- Build sub-panels (RecipeList + SchematicForm + RankBar + CreateControls).
-  -- These functions are defined in RecipeList.lua and Crafting.lua which load AFTER this file.
-  -- We defer building them to the first Show so all functions are guaranteed to exist by then.
+  -- Build sub-panels (RecipeList + SchematicForm + RankBar + CreateControls) FIRST,
+  -- AND THEN refresh content in strict sequence.
   f._subBuilt = false
   f:HookScript("OnShow", function()
     if not f._subBuilt then
@@ -525,6 +543,9 @@ local function buildWindow()
       guard("buildCreateControls",function() if C.buildCreateControls then C.buildCreateControls(f) end end)
       guard("buildLinkButton",    function() if C.buildLinkButton     then C.buildLinkButton(f)    end end)
     end
+
+    -- Refresh content strictly AFTER all sub-panels (including RankBar) are fully constructed.
+    if C.Refresh then guard("refresh.onshow", C.Refresh) end
   end)
 
   return f
@@ -646,54 +667,38 @@ local function refreshAfterOpen()
   local f = C.frame
   if not (f and f:IsShown()) then return end
 
-  -- Bounded retry loop: initial opens can report UNKNOWN/blank profession for a short time.
-  -- Keep re-running Refresh until header resolves or we hit the retry cap.
   C._openRefreshToken = (C._openRefreshToken or 0) + 1
   local token = C._openRefreshToken
-  local tries = 0
-  local maxTries = 50
-  local baseTitle = _G.TRADE_SKILLS or "Professions"
 
-  local function readLiveName()
-    if GetTradeSkillLine then
-      local ok, n = pcall(GetTradeSkillLine)
-      if ok and type(n) == "string" and n ~= "" and n ~= "UNKNOWN" then return n end
-    end
-    if GetCraftDisplaySkillLine then
-      local ok, n = pcall(GetCraftDisplaySkillLine)
-      if ok and type(n) == "string" and n ~= "" and n ~= "UNKNOWN" then return n end
-    end
-    if GetCraftName then
-      local ok, n = pcall(GetCraftName)
-      if ok and type(n) == "string" and n ~= "" and n ~= "UNKNOWN" then return n end
-    end
-    return nil
+  local ticker = C._openTickerFrame
+  if not ticker then
+    ticker = CreateFrame("Frame")
+    C._openTickerFrame = ticker
   end
 
-  local function step()
-    if token ~= C._openRefreshToken then return end
-    local frame = C.frame
-    if not (frame and frame:IsShown()) then return end
+  local elapsed = 0
+  local pass = 0
+  local maxPasses = 5
+  local passDelays = { 0.05, 0.15, 0.25, 0.40, 0.60 }
 
-    guard("Refresh.postOpen.loop", C.Refresh)
-
-    local liveName = readLiveName()
-    if liveName and C.SetProfession then
-      guard("SetProfession.postOpen.live", function() C.SetProfession(liveName) end)
+  ticker:SetScript("OnUpdate", function(self, dt)
+    elapsed = elapsed + dt
+    if pass < maxPasses then
+      local targetTime = passDelays[pass + 1] or (pass * 0.15)
+      if elapsed >= targetTime then
+        pass = pass + 1
+        if token ~= C._openRefreshToken or not (C.frame and C.frame:IsShown()) then
+          self:SetScript("OnUpdate", nil)
+          return
+        end
+        guard("Refresh.postOpen.pass" .. pass, function()
+          if C.Refresh then C.Refresh() end
+        end)
+      end
+    else
+      self:SetScript("OnUpdate", nil)
     end
-
-    local title = frame._neTitle and frame._neTitle.GetText and frame._neTitle:GetText() or nil
-    local resolved = liveName and title and title ~= "" and title ~= "UNKNOWN" and title ~= baseTitle
-    if resolved then return end
-
-    tries = tries + 1
-    if tries >= maxTries then return end
-    if C_Timer and C_Timer.After then
-      C_Timer.After(0.10, step)
-    end
-  end
-
-  step()
+  end)
 end
 
 -- ============================================================================

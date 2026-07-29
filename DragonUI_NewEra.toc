@@ -28,6 +28,9 @@ compat\C_Map.lua
 compat\C_EquipmentSet.lua
 compat\SpellBook.lua
 
+compat\Locale.lua
+Locales\Load_Locales.xml
+
 # --- core: downported NewEra Core chrome toolkit (owner: Core/Chrome Engineer) ---
 core\FrameUtil.lua
 core\Scale.lua
