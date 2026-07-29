@@ -87,3 +87,9 @@ NE.tex.RegisterLocal(4331838, P .. "Common\\4331838-minimal-scrollbar.blp")     
 NE.tex.RegisterLocal(4332072, P .. "Common\\4332072-minimal-scrollbar-track-middle.blp")          -- !track-middle 1px tile
 NE.tex.RegisterLocal(5142784, P .. "Common\\5142784-minimal-scrollbar-small-thumb-middle.blp")    -- small thumb middle strip
 NE.tex.RegisterLocal(5142787, P .. "Common\\5142787-minimal-scrollbar-small.blp")                 -- small thumb top/bottom caps
+
+-- MinimalSliderWithSteppers (sheet 4567914) — the whole horizontal slider on one 32x128 sheet: both
+-- rounded track caps, the 1px tiled run between them, the DIAMOND thumb, and both chevron steppers.
+-- Supplied by the owner; it is not in the NewEra Art set, which is why NE.scrollbar.SkinSlider first
+-- shipped built out of the vertical scrollbar's pieces turned on their side.
+NE.tex.RegisterLocal(4567914, P .. "Common\\4567914-minimalsliderbar.blp")                        -- track caps + run + diamond + steppers

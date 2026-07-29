@@ -4012,71 +4012,76 @@ do
   assertf(M.GetOpt(FID, "iconLimit") == 1, "…stopping at the minimum (" ..
           tostring(M.GetOpt(FID, "iconLimit")) .. ")")
 
-  -- THE MINIMAL BAR, ON ITS SIDE. NewEra's dialog sliders are retail's MinimalSliderWithSteppers,
-  -- whose art (sheet 4567914) is absent from the source set — so the horizontal bar is built from the
-  -- shipped minimal SCROLLBAR pieces turned 90° clockwise. Every assertion below reads the rendered
-  -- texcoords rather than the atlas NAME, because all three track pieces come off one sheet: a
-  -- rotation that silently stopped rotating would leave the file path completely unchanged.
+  -- THE MINIMAL BAR. NewEra's dialog sliders are retail's MinimalSliderWithSteppers, and the owner
+  -- supplied its sheet — one 32x128 file carrying the whole widget, so every piece here is the real
+  -- art at its own size rather than a substitute.
+  --
+  -- Read through the TEXCOORDS, not the atlas name: all six pieces come off that one file, so the
+  -- texture path is identical whichever rect a piece ends up wearing, and "did the left cap get the
+  -- left cap's rect" is a question only the coordinates can answer.
   do
     local skin = limit.Slider._neMinimalSlider
     assertf(skin ~= nil and skin.Left ~= nil, "the dialog's sliders wear the minimal bar")
     assertf(limit.Slider._backdrop == nil,
             "…with OptionsSliderTemplate's groove cleared, backdrop and border together")
 
-    -- The rotation itself. Clockwise sends the source's BOTTOM edge to the display's LEFT, so the
-    -- eight-corner texcoord has to read (l,b, r,b, l,t, r,t) — the four-arg form cannot express this
-    -- at all, which is the whole reason SetAtlasRotated exists.
-    local function rotatedFrom(tex, name)
+    local function wears(tex, name)
       local e = NE.tex._atlasEntry(name)
       local c = tex and tex._coords
-      if not (e and c and #c == 8) then return false, (c and #c or 0) end
-      local want = { e.left, e.bottom, e.right, e.bottom, e.left, e.top, e.right, e.top }
-      for i = 1, 8 do
-        if math.abs(c[i] - want[i]) > 1e-9 then return false, i end
-      end
-      return true
+      if not (e and c and #c == 4) then return false end
+      return math.abs(c[1] - e.left) < 1e-9 and math.abs(c[2] - e.right)  < 1e-9
+         and math.abs(c[3] - e.top)  < 1e-9 and math.abs(c[4] - e.bottom) < 1e-9
     end
-    local okL, whyL = rotatedFrom(skin.Left, "minimal-scrollbar-track-bottom")
-    assertf(okL, "…the LEFT cap being the bar's BOTTOM cap turned clockwise (" .. tostring(whyL) .. ")")
-    assertf(rotatedFrom(skin.Right, "minimal-scrollbar-track-top"),
-            "…and the right cap its top one, or both ends round the same way")
-    assertf(select(1, rotatedFrom(skin.Left, "minimal-scrollbar-track-top")) == false,
-            "…which are DIFFERENT rects, so this is not two copies of one cap")
-    assertf(skin.Middle ~= nil and #(skin.Middle._coords or {}) == 8,
-            "…and the run between them is rotated too, not stretched from the vertical strip")
+    assertf(wears(skin.Left,  "minimal_sliderbar_left"),  "…its left cap being the sheet's left cap")
+    assertf(wears(skin.Right, "minimal_sliderbar_right"), "…and its right the right one")
+    assertf(not wears(skin.Left, "minimal_sliderbar_right"),
+            "…which are DIFFERENT rects, so this is not one cap drawn twice")
+    assertf(wears(skin.Middle, "_minimal_sliderbar_middle"),
+            "…with the one-pixel run tiling between them")
+    -- The caps keep their own width and only the run stretches — the rule the dropdown's textholder
+    -- had to learn the hard way, when stretching a rounded rect smeared its corners sideways.
+    assertf(skin.Left:GetWidth() == 11 and skin.Right:GetWidth() == 11,
+            "…each at the art's own 11px, or a wide slider smears its rounded ends (" ..
+            tostring(skin.Left:GetWidth()) .. ")")
+    assertf(#skin.Middle._points == 2,
+            "…and the run anchored to both caps rather than sized, so it fills whatever is left")
 
-    -- The thumb: wider than it is thick, which is the one-line summary of "this is horizontal now".
-    assertf(skin.Thumb ~= nil and skin.Thumb:GetWidth() > skin.Thumb:GetHeight(),
-            "the thumb lies along the bar (" .. tostring(skin.Thumb and skin.Thumb:GetWidth()) ..
-            "x" .. tostring(skin.Thumb and skin.Thumb:GetHeight()) .. ")")
-    assertf(skin.CapLeft ~= nil and skin.CapRight ~= nil,
-            "…with its rounded ends on a host frame, since a Slider has exactly one thumb texture")
-    -- Hover repaints all three thumb pieces. Asserted through a CAP rather than the middle, because a
-    -- cap has a hover rect of its own on a different part of the sheet — the middle's three states sit
-    -- close enough together that reading one is weaker evidence.
-    limit.Slider:GetScript("OnEnter")(limit.Slider)
-    assertf(rotatedFrom(skin.CapLeft, "minimal-scrollbar-small-thumb-bottom-over"),
-            "hovering the slider moves the thumb to its hover art")
-    limit.Slider:GetScript("OnMouseDown")(limit.Slider)
-    assertf(rotatedFrom(skin.CapLeft, "minimal-scrollbar-small-thumb-bottom-down"),
-            "…and pressing it to the pressed art")
-    limit.Slider:GetScript("OnLeave")(limit.Slider)
-    assertf(rotatedFrom(skin.CapLeft, "minimal-scrollbar-small-thumb-bottom"),
-            "…returning to rest on the way out")
+    -- THE DIAMOND. It is the thumb outright — 20x19 of the sheet, two pixels taller than the 17px
+    -- track it rides, which is what makes it read as a knob sitting on the bar and not part of it.
+    assertf(wears(skin.Thumb, "minimal_sliderbar_button"), "the thumb is the sheet's diamond")
+    assertf(skin.Thumb:GetWidth() == 20 and skin.Thumb:GetHeight() == 19,
+            "…at its own size (" .. tostring(skin.Thumb:GetWidth()) .. "x" ..
+            tostring(skin.Thumb:GetHeight()) .. ")")
+    assertf(limit.Slider:GetHeight() >= skin.Thumb:GetHeight(),
+            "…and the SLIDER sized to the knob rather than to the 17px track, so the whole diamond " ..
+            "sits inside the frame's own mouse region (" .. tostring(limit.Slider:GetHeight()) ..
+            " vs " .. tostring(skin.Thumb:GetHeight()) .. ")")
+    -- NO STATE ART, deliberately. The sheet carries one diamond and one chevron per direction because
+    -- retail's minimal slider does not change art on hover or press — the feedback is the thumb
+    -- moving. An earlier build DID swap three states per piece, but only because it was borrowing the
+    -- scrollbar's art, which has them. Asserted so nobody re-adds a tint and calls it fidelity.
+    assertf(NE.tex._atlasEntry("minimal_sliderbar_button-over") == nil,
+            "the sheet has no hover variant, and the skin invents none")
+    assertf(skin.ApplyState == nil, "…so there is no state machine left on it either")
 
-    -- The steppers match the bar. They were the spellbook's page-turn glyphs, which is the exact
-    -- mismatch the reskin is about — retail pairs the minimal bar with minimal steppers.
+    -- The steppers come off the same sheet as the bar. They were the spellbook's page-turn glyphs,
+    -- which is the mismatch this pass is about.
     local lArt = limit.Left:GetNormalTexture()
-    assertf(rotatedFrom(lArt, "minimal-scrollbar-arrow-bottom"),
-            "the left stepper is the scrollbar's DOWN arrow turned clockwise, so it points left")
-    assertf(rotatedFrom(limit.Right:GetNormalTexture(), "minimal-scrollbar-arrow-top"),
-            "…and the right one its up arrow")
-    assertf(limit.Left:GetWidth() == 18 and lArt:GetWidth() == 11 and lArt:GetHeight() == 17,
-            "…drawn at the art's own 11x17 inside an unchanged 18px button, or the row's arithmetic " ..
+    assertf(wears(lArt, "minimal_sliderbar_button_left"),
+            "the left stepper is the sheet's own left chevron")
+    assertf(wears(limit.Right:GetNormalTexture(), "minimal_sliderbar_button_right"),
+            "…and the right one its right chevron")
+    assertf(limit.Left:GetWidth() == 18 and lArt:GetWidth() == 11 and lArt:GetHeight() == 19,
+            "…drawn at the art's own 11x19 inside an unchanged 18px button, or the row's arithmetic " ..
             "shifts under it (" .. tostring(limit.Left:GetWidth()) .. " / " ..
             tostring(lArt:GetWidth()) .. "x" .. tostring(lArt:GetHeight()) .. ")")
     assertf(limit.Left:GetDisabledTexture()._desat == true,
-            "…and the disabled glyph is the same art desaturated, as the scrollbar's arrows are")
+            "…and the disabled glyph is that same chevron desaturated")
+    -- Pressed is the glyph nudged, because the sheet gives us nothing else to swap to.
+    local _, _, _, px, py = limit.Left:GetPushedTexture():GetPoint(1)
+    assertf(px == 1 and py == -1,
+            "…while pressed offsets it a pixel, which is the only feedback this art affords (" ..
+            tostring(px) .. "," .. tostring(py) .. ")")
   end
 
   -- CLICK AWAY TO DISMISS. An open menu had two ways out — pick a row, or Escape — and clicking

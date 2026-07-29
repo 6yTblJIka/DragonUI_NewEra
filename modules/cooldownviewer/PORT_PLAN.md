@@ -2913,42 +2913,55 @@ does not (the per-viewer settings, which revert from the edit-mode panel instead
 
 **"Can we get the horizontal scrollbars in the new settings matching the earlier NewEra screenshots?"**
 — the sliders. NewEra builds every edit-mode slider from retail's `MinimalSliderWithSteppersTemplate`
-(`EditMode/SettingsPopup.lua:173`), whose art is sheet 4567914, the `minimal_sliderbar_*` family. That
-sheet is **not in the source art set** (`ReferenceAddons/NewEra/Art` has the minimal *scrollbar* sheets
-and nothing else in that family), so it cannot be shipped, and the template does not exist here anyway.
+(`EditMode/SettingsPopup.lua:173`), whose art is sheet 4567914, the `minimal_sliderbar_*` family.
 
-What it can be built from is the art already on disk. The minimal scrollbar and the minimal sliderbar
-are the same 8px rounded bar at right angles, with the same three states — so the horizontal slider
-borrows the vertical bar's own pieces and turns them 90°. `NE.tex.SetAtlasRotated` does that with the
-**eight-argument** `SetTexCoord`, which names all four display corners independently and does exist on
-3.3.5a; there is no `Texture:SetRotation` here. Clockwise sends the source's left edge to the display's
-top, so a piece drawn pointing UP ends up pointing RIGHT — which is why the caps swap ends: the LEFT of
-the track is the vertical bar's BOTTOM cap. `useAtlasSize` swaps width and height for the same reason.
+**This shipped twice, and the second version is the one to read.** The sheet was not in the NewEra Art
+set, so the first build substituted: the minimal *scrollbar* art IS shipped, and it is the same rounded
+bar at right angles, so the horizontal slider borrowed the vertical one's pieces and turned them 90°
+via a new `NE.tex.SetAtlasRotated` — the **eight-argument** `SetTexCoord`, which names all four display
+corners independently and is the only way to rotate art on 3.3.5a (`Texture:SetRotation` is retail).
+Then the owner supplied 4567914, and the whole workaround came out: rotation helper deleted with it,
+since a primitive whose only caller has gone is dead code. *For future missing art, ask — the owner
+supplies it.*
 
-`NE.scrollbar.SkinSlider` then clears OptionsSliderTemplate's groove — a *backdrop* of
-`UI-SliderBar-Background` inside a beveled border, not a region that could be re-pointed — and rebuilds
-it as left cap + run + right cap, with the thumb split three ways over a Slider that has exactly one
-thumb texture (the middle IS the thumb, so the widget keeps its own drag region; the rounded ends ride
-a host frame anchored to it, the same split `buildThumb` uses vertically). The compact slider's nudge
-arrows went with it: they were the spellbook's page-turn glyphs, which is the mismatch the whole pass
-is about, and retail pairs the minimal bar with minimal steppers. Rotated, the scrollbar's DOWN arrow
-points LEFT. The button stays 18px — the row's arithmetic is written against `ARROW_W` — and only the
-glyph shrinks to the art's own 11×17.
+The sheet is 32×128 and carries the entire widget: both rounded track caps (11×17), the **one-pixel**
+run that tiles between them, the little **diamond** thumb (20×19), and both chevron steppers (11×19 and
+9×18). `NE.scrollbar.SkinSlider` rebuilds it piece by piece at those native sizes. Only the run
+stretches; the caps keep their own width, which is the rule the dropdown's textholder learned the hard
+way when stretching a rounded rect smeared its corners. The Slider is sized to the **knob**, not the
+track, so the diamond stands two pixels proud of the bar and the whole of it falls inside the frame's
+own mouse region.
+
+`OptionsSliderTemplate`'s groove goes whole — it is a *backdrop* of `UI-SliderBar-Background` inside a
+beveled border, not a region that could be re-pointed. The compact slider's nudge arrows became the
+sheet's own chevrons: they were the spellbook's page-turn glyphs, which is the mismatch the whole pass
+is about. The button stays 18px, because the row's arithmetic is written against `ARROW_W`; only the
+glyph takes the atlas's size.
+
+**No hover or pressed art, deliberately.** The sheet has one diamond and one chevron per direction,
+because retail's minimal slider does not change art on either — the feedback is the thumb moving. The
+first build *did* swap three states per piece, but only because the scrollbar art it was borrowing has
+them; carrying that over would have been this addon's idea wearing the reference's clothes. The
+steppers keep a one-pixel pressed offset, which is the only feedback this art affords, and a test
+asserts the sheet has no `-over` variant so nobody re-adds a tint and calls it fidelity.
 
 Both slider kinds are skinned, the tall two-line one on the tab as well as the dialog's compact one:
-the skin belongs to the kit, not to the dialog that asked for it first. The call sites sit **after**
-`tip()`, because tip owns OnEnter/OnLeave with `SetScript` and a `SetScript` discards hooks installed
-before it — the same trap the dropdown's arrow states hit.
+the skin belongs to the kit, not to the dialog that asked for it first.
 
-Eleven mutations, each failing by name: the rotation stopping rotating, the track caps swapped, the
-groove left in place, the steppers swapped, the skin moved ahead of `tip`, the thumb's rounded ends
-dropped, the stepper glyph left at button size, the disabled glyph not desaturated, and the thumb left
-square. A twelfth was **not** caught, and was right not to be: `applyState` re-asserted the caps' drawn
-size after each swap, in case `useAtlasSize` snapped them back to native — but the caps are 8×8
-*squares*, so rotation returns exactly the size they were already at, and the only caller that could
-have made the guard matter was a `thickness` option nobody passes. Guard and option both deleted.
-Assertions read the rendered texcoords rather than the atlas *name* throughout, because all three track
-pieces come off one sheet: a rotation that quietly stopped rotating leaves the file path unchanged.
+Assertions read the rendered **texcoords**, never the atlas name: all six pieces come off one file, so
+the texture path is identical whichever rect a piece ends up wearing, and "did the left cap get the
+left cap's rect" is a question only the coordinates can answer. Seven mutations fail by name — the
+track caps swapped, the thumb wearing a cap instead of the diamond, the groove left in place, the caps
+stretching with the bar, the steppers swapped, the pressed glyph not nudged, and the Slider sized to
+the track instead of the knob. That last one took two attempts: the first assertion read the *thumb's*
+height against a constant, which cannot see a change to the *frame's*, so it passed the mutation
+unmoved. Rewritten to compare the two heights directly.
+
+One mutation from the first build was **not** caught, and was right not to be: `applyState` re-asserted
+the caps' drawn size in case `useAtlasSize` snapped them back to native — but those caps were 8×8
+*squares*, so rotation returned exactly the size they already had, and the only caller that could have
+made the guard matter was a `thickness` option nobody passed. Guard and option deleted before the art
+arrived and made the whole path moot.
 
 ## H.4. Suggested order
 

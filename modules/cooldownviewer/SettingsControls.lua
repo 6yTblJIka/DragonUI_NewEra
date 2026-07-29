@@ -347,10 +347,12 @@ function Column:AddSlider(o)
     end
   end)
 
-  tip(sl, o.label, o.desc)
-  -- AFTER tip, for the reason spelled out in AddDropdown: tip owns OnEnter/OnLeave with SetScript,
-  -- and SkinSlider's hover/press states are HookScripts a later SetScript would discard.
+  -- The minimal bar: retail's MinimalSliderWithSteppers art, rebuilt piece by piece in
+  -- core/ScrollbarReskin.lua. Scripts are none of its business — it swaps textures and sizes the
+  -- frame — so it can sit here rather than dodging tip()'s SetScript below.
   if NE.scrollbar and NE.scrollbar.SkinSlider then pcall(NE.scrollbar.SkinSlider, sl) end
+
+  tip(sl, o.label, o.desc)
   refresh()
   self.refreshers[#self.refreshers + 1] = refresh
   row.Slider, row.Label, row.Value, row.Refresh = sl, label, value, refresh
@@ -439,10 +441,6 @@ function Column:AddCompactSlider(o)
     commit(v)
   end)
 
-  -- The 17x11 minimal scrollbar arrow, on its side. The BUTTON stays 18x18 — the row's arithmetic is
-  -- written against ARROW_W and the hit area wants to be square — so only the glyph shrinks.
-  local MIN_ARROW_W, MIN_ARROW_H = 11, 17
-
   local function arrow(point, xOff, dir, up, down, dis, atlas)
     local b = CreateFrame("Button", nil, row)
     b:SetSize(ARROW_W, ARROW_W)
@@ -451,26 +449,30 @@ function Column:AddCompactSlider(o)
     b:SetPushedTexture(down)
     b:SetDisabledTexture(dis)
 
-    -- The minimal steppers, when the art is shipped. The bar next to them is minimal now
-    -- (NE.scrollbar.SkinSlider), and a 2004 page-turn glyph six pixels from it is exactly the
-    -- mismatch this pass is about — retail's own MinimalSliderWithSteppers pairs the two. Rotated
-    -- clockwise the scrollbar's UP arrow points RIGHT, so the ends swap the same way the caps do.
-    -- Set on top of the page-turn paths rather than instead of them: SetNormalTexture is what
-    -- CREATES the texture object, and a miss here leaves that original art in place.
-    if atlas and NE.tex and NE.tex.SetAtlasRotated then
+    -- The bar's own steppers, off the same sheet as the bar (NE.scrollbar.SkinSlider): retail's
+    -- MinimalSliderWithSteppers ships the chevrons alongside the track and the diamond, and a
+    -- spellbook page-turn glyph six pixels from that bar is the mismatch this pass is about.
+    --
+    -- Set on TOP of the page-turn paths rather than instead of them: SetNormalTexture is what creates
+    -- the texture object in the first place, and a miss here leaves that original art in place rather
+    -- than a blank button. The BUTTON stays 18x18 — the row's arithmetic is written against ARROW_W
+    -- and the hit area wants to be square — so only the glyph takes the atlas's own size.
+    if atlas and NE.tex and NE.tex.SetAtlas then
       local n = b:GetNormalTexture()
-      if n and NE.tex.SetAtlasRotated(n, atlas, false) then
-        local p, d = b:GetPushedTexture(), b:GetDisabledTexture()
-        NE.tex.SetAtlasRotated(p, atlas .. "-down", false)
-        if NE.tex.SetAtlasRotated(d, atlas, false) and d.SetDesaturated then d:SetDesaturated(true) end
+      if n and NE.tex.SetAtlas(n, atlas, true) then
+        local p, dt = b:GetPushedTexture(), b:GetDisabledTexture()
+        NE.tex.SetAtlas(p, atlas, true)
+        if NE.tex.SetAtlas(dt, atlas, true) and dt.SetDesaturated then dt:SetDesaturated(true) end
         local h = b:CreateTexture(nil, "HIGHLIGHT")
-        NE.tex.SetAtlasRotated(h, atlas .. "-over", false)
+        NE.tex.SetAtlas(h, atlas, true)
         h:SetBlendMode("ADD")
-        for _, t in ipairs({ n, p, d, h }) do
+        h:SetAlpha(0.35)
+        -- Pressed is the glyph nudged a pixel down-right, which is what the client's own buttons do
+        -- and what this sheet leaves us — it carries one chevron per direction, no state variants.
+        for _, t in ipairs({ n, p, dt, h }) do
           if t then
             t:ClearAllPoints()
-            t:SetSize(MIN_ARROW_W, MIN_ARROW_H)
-            t:SetPoint("CENTER", b, "CENTER", 0, 0)
+            t:SetPoint("CENTER", b, "CENTER", (t == p) and 1 or 0, (t == p) and -1 or 0)
           end
         end
       end
@@ -490,16 +492,17 @@ function Column:AddCompactSlider(o)
                     "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up",
                     "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Down",
                     "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Disabled",
-                    "minimal-scrollbar-arrow-bottom")
+                    "minimal_sliderbar_button_left")
   row.Right = arrow("RIGHT", -(VALUE_W + 4), 1,
                     "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up",
                     "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down",
                     "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Disabled",
-                    "minimal-scrollbar-arrow-top")
+                    "minimal_sliderbar_button_right")
+
+  -- The minimal bar — see AddSlider.
+  if NE.scrollbar and NE.scrollbar.SkinSlider then pcall(NE.scrollbar.SkinSlider, sl) end
 
   tip(sl, o.label, o.desc)
-  -- AFTER tip — see AddSlider.
-  if NE.scrollbar and NE.scrollbar.SkinSlider then pcall(NE.scrollbar.SkinSlider, sl) end
   refresh()
   self.refreshers[#self.refreshers + 1] = refresh
   row.Slider, row.Label, row.Value, row.Refresh = sl, label, value, refresh

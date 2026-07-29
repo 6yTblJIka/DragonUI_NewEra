@@ -91,6 +91,19 @@ NE.tex.RegisterAtlases({
   ["minimal-scrollbar-small-thumb-bottom-over"] = { file = 5142787, left = 0.312500, right = 0.437500, top = 0.687500, bottom = 0.812500, width = 8, height = 8 },
   ["minimal-scrollbar-small-thumb-bottom-down"] = { file = 5142787, left = 0.765625, right = 0.890625, top = 0.484375, bottom = 0.609375, width = 8, height = 8 },
 
+  -- MinimalSliderWithSteppers (sheet 4567914, 32x128) — the HORIZONTAL slider, natively. Retail's
+  -- own rects, verbatim; the thumb is the little diamond. Two things to know about this family:
+  --   * The run is ONE PIXEL wide (`_` prefix = tiles horizontally), so the track is cap + run + cap
+  --     and only the middle stretches, the same shape as every bar in this file.
+  --   * There are NO hover or pressed variants. Retail's minimal slider does not change art on state,
+  --     and the sheet has nothing to swap to — so the skin does not invent any.
+  ["minimal_sliderbar_left"]         = { file = 4567914, left = 0.437500, right = 0.781250, top = 0.320312, bottom = 0.453125, width = 11, height = 17 },
+  ["minimal_sliderbar_right"]        = { file = 4567914, left = 0.031250, right = 0.375000, top = 0.484375, bottom = 0.617188, width = 11, height = 17 },
+  ["_minimal_sliderbar_middle"]      = { file = 4567914, left = 0.000000, right = 0.031250, top = 0.007812, bottom = 0.140625, width = 1,  height = 17 },
+  ["minimal_sliderbar_button"]       = { file = 4567914, left = 0.031250, right = 0.656250, top = 0.156250, bottom = 0.304688, width = 20, height = 19 },
+  ["minimal_sliderbar_button_left"]  = { file = 4567914, left = 0.031250, right = 0.375000, top = 0.320312, bottom = 0.468750, width = 11, height = 19 },
+  ["minimal_sliderbar_button_right"] = { file = 4567914, left = 0.031250, right = 0.312500, top = 0.632812, bottom = 0.773438, width = 9,  height = 18 },
+
   -- DiamondMetal (frame sheet 3056750, side edges 3056755) — retail's "Dialog" border, the clean
   -- thin frame the ESC menu and every modern dialog wear. Distinct from the Metal family above,
   -- which is the heavy panel chrome with the portrait ring.
