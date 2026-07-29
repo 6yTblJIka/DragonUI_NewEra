@@ -23,8 +23,10 @@
 --
 -- SUBMENU PARENTS ARE `notClickable`. A row with children gets hasArrow + notClickable, not a
 -- no-op func. UIDropDownMenu's OnClick toggles the row's Check texture *before* it looks at func,
--- so a clickable-but-inert parent paints a stray checkmark on itself. Disabling the row leaves
--- OnEnter (which is what opens the submenu) firing normally.
+-- so a clickable-but-inert parent paints a stray checkmark on itself. What that costs, and what
+-- `openOnHover` below pays back, is the row's ability to see the mouse at all: notClickable means
+-- disabled, and a disabled row neither fires the OnEnter that opens the submenu nor keeps the
+-- invisible button — whose OnEnter CLOSES the submenu — out of the way.
 --
 -- RADIOS REFRESH THEMSELVES. C_UIDropDownMenu_Refresh keys off frame.selectedName/ID/Value, which
 -- says nothing about function-valued `checked`, so it cannot be used here. Instead a radio's click
@@ -188,6 +190,36 @@ end
 
 -- ── render ──────────────────────────────────────────────────────────────────────────────────────
 
+-- Let a submenu row take the mouse across its whole width, instead of only on its 16px arrow.
+--
+-- `notClickable` (see the header) makes the row a DISABLED button — C_UIDropDownMenu.lua:172 turns it
+-- into `info.disabled`. Two things follow from that on this client, and both of them fight the player:
+--
+--   1. A disabled Button fires no OnEnter unless it is told to. The row's own OnEnter is the thing
+--      that opens a `hasArrow` submenu, so it never ran.
+--   2. Disabling also SHOWS `$parentInvisibleButton`, which covers the row and whose OnEnter calls
+--      CloseDropDownMenus(level + 1) — so hovering the row body actively shut the submenu again.
+--
+-- That left `$parentExpandArrow` as the only way in, and any approach to it that crossed the row
+-- first slammed the door. Reported as "I have to specifically mouse over the arrow which makes
+-- navigating annoying", on the alert menu's FX Style submenu.
+--
+-- The tooltip the invisible button existed to serve is on the row's own OnEnter too, so nothing is
+-- lost by taking it down; AddButton re-shows it on the next build anyway.
+--
+-- SET ON EVERY ROW, not only the submenu ones. These list buttons are shared with every other
+-- C_UIDropDownMenu in the game, so a row left motion-enabled is one that some later menu's disabled
+-- title could hover-highlight. Passing `false` back is what keeps the leak from spreading.
+local function openOnHover(btn, wanted)
+  if btn.SetMotionScriptsWhileDisabled then
+    btn:SetMotionScriptsWhileDisabled(wanted and true or false)
+  end
+  if wanted then
+    local inv = btn.GetName and btn:GetName() and _G[btn:GetName() .. "InvisibleButton"]
+    if inv then inv:Hide() end
+  end
+end
+
 -- UIDropDownMenu calls this once per open level, handing back whatever we stashed in info.menuList
 -- for the parent row. Stashing the node itself is what gives us arbitrary nesting for free.
 local function initLevel(frame, level, menuList)
@@ -200,13 +232,14 @@ local function initLevel(frame, level, menuList)
   for _, child in ipairs(node.children) do
     local info = b.CreateInfo()
     local kind = child.kind
+    local hasKids = #child.children > 0
 
     if kind == "divider" then
       -- No divider primitive on this client. A disabled blank row reads as one.
       info.text, info.isTitle, info.notCheckable, info.disabled = " ", true, true, 1
     elseif kind == "title" then
       info.text, info.isTitle, info.notCheckable, info.disabled = child.text, true, true, 1
-    elseif #child.children > 0 then
+    elseif hasKids then
       info.text = child.text
       info.notCheckable = true
       info.hasArrow = true
@@ -240,7 +273,10 @@ local function initLevel(frame, level, menuList)
     -- AddButton bumps numButtons; that is the index of the row it just wrote.
     local list = _G[b.prefix .. level]
     local btn = list and listButton(level, list.numButtons or 0)
-    if btn then btn._neNode = child end
+    if btn then
+      btn._neNode = child
+      openOnHover(btn, hasKids)
+    end
   end
 end
 

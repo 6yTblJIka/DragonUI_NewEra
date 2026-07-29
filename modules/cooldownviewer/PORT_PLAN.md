@@ -2963,6 +2963,45 @@ the caps' drawn size in case `useAtlasSize` snapped them back to native — but 
 made the guard matter was a `thickness` option nobody passed. Guard and option deleted before the art
 arrived and made the whole path moot.
 
+#### H.3.16. Submenus stop demanding you aim at the arrow
+
+> "The effects dropdown menu has issues where i have to specifically mouse over the arrow which makes
+> navigating annoying"
+
+The FX Style submenu on the alert menu — and every other submenu we build, the ready-sound tree
+included. Hovering the row did nothing; only the 16×16 `$parentExpandArrow` at the right edge opened
+it, and a diagonal approach to it across the row shut whatever had just been opened.
+
+**Same 3.3.5a quirk as §H.3.15's Revert button, wearing a different hat: a disabled Button eats
+OnEnter.** Submenu parents are `notClickable` — deliberately, and §H.3.15's reason still holds, because
+UIDropDownMenu's OnClick ticks the row's Check texture before it ever looks at `func`. But
+`C_UIDropDownMenu.lua:172` turns `notClickable` into `info.disabled`, and disabling costs the row two
+things at once:
+
+1. its own `OnEnter` — which for a `hasArrow` row is the thing that calls `C_ToggleDropDownMenu` on
+   level+1. Silenced.
+2. `$parentInvisibleButton` goes **up** (line 179). It covers the row, and its `OnEnter` calls
+   `C_CloseDropDownMenus(level + 1)`. So the row body did not merely fail to open the submenu — it
+   actively closed one.
+
+Between them, the arrow was the only door and the row was a wall in front of it.
+
+`NE.menu` cannot fix this in ClassicAPI — read-only, §0 — so `openOnHover` does it per row, after
+`AddButton` has written it: `SetMotionScriptsWhileDisabled(true)` and take the invisible button down.
+The tooltip that button existed to serve is on the row's own `OnEnter` too (`C_UIDropDownMenu.xml:157`),
+so nothing is lost, and `AddButton` re-shows it on the next build regardless.
+
+**It is set on every row, `false` included.** These list buttons are shared with every
+`C_UIDropDownMenu` in the game; one left motion-enabled is a disabled title in some later menu that
+hover-highlights for no reason. Handing it back on non-submenu rows is what keeps the change from
+leaking, and is its own assertion.
+
+The harness gained `$parentInvisibleButton` and the one rule that governs it — shown on any disabled
+row, and `notClickable`/`isTitle` both *become* disabled two lines before that check. Without it in the
+stub, taking the button down would have tested identically to forgetting to. Three mutations fail by
+name: the row never told to take OnEnter, the invisible button left up, and the motion flag set
+blanket-true.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

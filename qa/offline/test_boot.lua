@@ -743,6 +743,14 @@ function C_UIDropDownMenu_AddButton(info, level)
   b.checked = info.checked
   b.menuList = info.menuList
   _G[bn .. "Check"] = _G[bn .. "Check"] or b:CreateTexture()
+
+  -- RECORDED: $parentInvisibleButton, and the one rule that governs it — ClassicAPI shows it on any
+  -- disabled row (C_UIDropDownMenu.lua:177-181), and `notClickable` and `isTitle` both BECOME
+  -- disabled two lines earlier. It covers the row, and its OnEnter closes level+1, which is what made
+  -- a submenu parent openable only from its 16px arrow. Without it in the stub, taking it down for
+  -- submenu rows would test identically to forgetting to.
+  local inv = _G[bn .. "InvisibleButton"] or CreateFrame("Button", bn .. "InvisibleButton", b)
+  if info.disabled or info.notClickable or info.isTitle then inv:Show() else inv:Hide() end
 end
 
 function C_UIDropDownMenu_Initialize(frame, init, displayMode, level, menuList)
@@ -2896,12 +2904,30 @@ do
   S.OnItemClick(tile, "RightButton")
   assertf(DD_ROWS[1] ~= nil and #DD_ROWS[1] > 0, "right-click renders a level-1 menu (" .. #(DD_ROWS[1] or {}) .. " rows)")
 
-  local soundRow
-  for _, row in ipairs(DD_ROWS[1]) do
-    if row.text == "Ready Sound" then soundRow = row end
+  local soundRow, soundIdx, titleIdx
+  for i, row in ipairs(DD_ROWS[1]) do
+    if row.text == "Ready Sound" then soundRow, soundIdx = row, i end
+    if row.isTitle and not titleIdx then titleIdx = i end
   end
   assertf(soundRow ~= nil and soundRow.hasArrow and soundRow.notClickable,
           "a submenu parent is hasArrow + notClickable, so OnClick cannot tick it")
+
+  -- …and that is exactly what costs the row its mouse, so core/Menu.lua buys it back. notClickable
+  -- means DISABLED, which on 3.3.5a silences the OnEnter that opens the submenu AND raises
+  -- $parentInvisibleButton over the row, whose own OnEnter closes it. Between them the only way in
+  -- was the 16px arrow — and any approach to it across the row slammed the door.
+  local subBtn = _G["C_DropDownList1Button" .. soundIdx]
+  assertf(subBtn._motionWhileDisabled == true,
+          "…so the disabled submenu row is told to take OnEnter anyway, which is what opens it")
+  assertf(_G["C_DropDownList1Button" .. soundIdx .. "InvisibleButton"]:IsShown() == false,
+          "…and the invisible button that would shut it again is down, so the whole row is the target")
+
+  -- Handed BACK on every other row. These list buttons are shared with every C_UIDropDownMenu in the
+  -- game, so one left motion-enabled is a disabled title some later menu could hover-highlight.
+  assertf(titleIdx ~= nil and _G["C_DropDownList1Button" .. titleIdx]._motionWhileDisabled == false,
+          "…while a disabled row with no submenu is handed back, so the shared widgets do not leak it")
+  assertf(_G["C_DropDownList1Button" .. titleIdx .. "InvisibleButton"]:IsShown() == true,
+          "…keeping the invisible button that serves ITS tooltip")
 
   -- Walk two levels in, the way hovering the arrows does.
   local mf = NE.menu._frame
