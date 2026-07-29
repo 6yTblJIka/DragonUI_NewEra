@@ -4074,6 +4074,17 @@ do
           "…between the two, so it blocks the dialog without blocking the confirm")
   assertf(confirm.YesButton._neThreeSlice ~= nil and confirm.NoButton._neThreeSlice ~= nil,
           "…and its buttons wear the same red 3-slice as the dialog's")
+  -- The message WRAPS. It was sized by anchoring TOPLEFT and TOPRIGHT, which does give a width — but on
+  -- 3.3.5a that width truncates with an ellipsis instead of wrapping, so the second paragraph arrived as
+  -- "…orientation and vis...". An explicit SetWidth is what wraps, and it is the only difference
+  -- between the two, so it is what gets asserted.
+  local textW = confirm.Text:GetWidth()
+  assertf(textW > 0 and textW < confirm:GetWidth(),
+          "the message has a width of its own, so it wraps rather than truncating (" ..
+          tostring(textW) .. " inside " .. tostring(confirm:GetWidth()) .. ")")
+  assertf(confirm:GetHeight() > 20 + 18 + 28 + 16,
+          "…and the frame is sized around the wrapped text, not a constant (" ..
+          tostring(confirm:GetHeight()) .. ")")
 
   -- Switching viewers takes it with it: it names one viewer and would act on whichever is current.
   M.ShowEditorPanel("buffBar", anchor)

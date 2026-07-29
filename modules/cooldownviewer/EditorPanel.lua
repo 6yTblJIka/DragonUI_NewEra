@@ -167,9 +167,13 @@ local function ensureConfirm(f)
     pcall(NE.nineslice.ApplyLayout, c, "Dialog")
   end
 
+  -- WIDTH, not two anchors. Anchoring TOPLEFT and TOPRIGHT does give the FontString a width, but on
+  -- 3.3.5a that width TRUNCATES with an ellipsis instead of wrapping — the second paragraph came out as
+  -- "This viewer's position, size, orientation and vis...". An explicit SetWidth wraps, which is the
+  -- same reason SettingsControls' AddText sets one.
   c.Text = c:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-  c.Text:SetPoint("TOPLEFT", c, "TOPLEFT", 18, -20)
-  c.Text:SetPoint("TOPRIGHT", c, "TOPRIGHT", -18, -20)
+  c.Text:SetWidth(CONFIRM_W - 36)
+  c.Text:SetPoint("TOP", c, "TOP", 0, -20)
   c.Text:SetJustifyH("CENTER")
 
   local function confirmButton(label, w, onClick)

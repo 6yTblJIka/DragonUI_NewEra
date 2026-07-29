@@ -2884,12 +2884,18 @@ means answering it about a different state than the one that was read. It wears 
 chrome and red buttons as the dialog, and it is dropped whenever the dialog switches viewers — it names
 one viewer and acts on whichever is current, so those must not be allowed to differ.
 
-Seven mutations, each failing by name: the confirm parented to `UIParent`, its level not raised above
+One thing did not survive first contact: the message came out as "…orientation and vis...".
+The FontString was sized by anchoring TOPLEFT and TOPRIGHT, which does give it a width — but on 3.3.5a
+that width TRUNCATES with an ellipsis rather than wrapping. An explicit `SetWidth` wraps, which is why
+`SettingsControls`' own `AddText` has always set one. The height then follows from `GetStringHeight`,
+so the frame grows around whatever the text turns out to be.
+
+Nine mutations, each failing by name: the confirm parented to `UIParent`, its level not raised above
 the dialog, the blocker never shown, the confirm placed under its own blocker, Reset firing without
-asking, the confirm surviving a viewer switch, and No doing what Yes does. An eighth — raising the
-blocker — turned out not to be a regression at all: the confirm's level is derived from the blocker's,
-so they move together, which is the property that makes the ordering structural rather than a pair of
-constants to keep in step.
+asking, the confirm surviving a viewer switch, No doing what Yes does, the two-anchor sizing put back,
+and the height returned to a constant. A tenth — raising the blocker — turned out not to be a
+regression at all: the confirm's level is derived from the blocker's, so they move together, which is
+the property that makes the ordering structural rather than a pair of constants to keep in step.
 
 ## H.4. Suggested order
 
