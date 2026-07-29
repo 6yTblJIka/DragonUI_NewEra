@@ -116,32 +116,37 @@ local FLARE_U0 = 0.837402
 local FLARE_U1 = 0.863281
 local FLARE_H  = 0.016114
 
+-- Crop the texture to the sprite cell the entry's current phase lands on. Shared by the driver
+-- and by startFlip so a freshly (re)started flipbook never renders the whole sheet for a frame.
+local function applyFlipFrame(f)
+  local first = f.first or 1
+  local span  = f.frames - first
+  local idx
+  if span <= 0 then
+    idx = first
+  else
+    idx = first + math.floor((f.elapsed / f.duration) * span)
+    if idx >= f.frames then idx = f.frames - 1 end
+  end
+  local col = idx % f.cols
+  local row = math.floor(idx / f.cols)
+
+  local frac = f.tex._frac or 1
+  local u0 = f.l + col * f.cellW
+  local u1 = u0 + f.cellW * frac
+
+  local v0 = f.t + row * f.cellH
+  local v1 = f.t + (row + 1) * f.cellH
+
+  f.tex:SetTexCoord(u0, u1, v0, v1)
+end
+
 flipDriver:SetScript("OnUpdate", function(_, dt)
   for i = #flipActive, 1, -1 do
     local f = flipActive[i]
     f.elapsed = f.elapsed + dt
     while f.elapsed >= f.duration do f.elapsed = f.elapsed - f.duration end
-    local first = f.first or 1
-    local span  = f.frames - first
-    local idx
-    if span <= 0 then
-      idx = first
-    else
-      idx = first + math.floor((f.elapsed / f.duration) * span)
-      if idx >= f.frames then idx = f.frames - 1 end
-    end
-    local col = idx % f.cols
-    local row = math.floor(idx / f.cols)
-
-    local frac = f.tex._frac or 1
-    local u0 = f.l + col * f.cellW
-    local u1 = f.l + (col + 1) * f.cellW
-    u1 = u0 + (u1 - u0) * frac
-
-    local v0 = f.t + row * f.cellH
-    local v1 = f.t + (row + 1) * f.cellH
-
-    f.tex:SetTexCoord(u0, u1, v0, v1)
+    applyFlipFrame(f)
   end
   if #flipActive == 0 then flipDriver:Hide() end
 end)
@@ -153,32 +158,45 @@ local function startFlip(tex, tc, rows, cols, frames, duration, first)
   first = first or 1
   local cellW = (tc.r - tc.l) / cols
   local cellH = (tc.b - tc.t) / rows
-  for i = #flipActive, 1, -1 do if flipActive[i].tex == tex then table.remove(flipActive, i) end end
-  
-  local col0 = first % cols
-  local row0 = math.floor(first / cols)
-  local u0 = tc.l + col0 * cellW
-  local u1 = tc.l + (col0 + 1) * cellW
-  local v0 = tc.t + row0 * cellH
-  local v1 = tc.t + (row0 + 1) * cellH
-  
-  local frac = tex._frac or 1
-  u1 = u0 + (u1 - u0) * frac
-  
-  tex:SetTexCoord(u0, u1, v0, v1)
-  
-  flipActive[#flipActive + 1] = {
+
+  -- Opening the window re-enters here several times in the first second (OnShow refresh + the
+  -- five deferred post-open passes + TRADE_SKILL_UPDATE). Resetting elapsed on each of those
+  -- snapped the fill back to `first` over and over, which read as the flipbook racing before it
+  -- settled — so carry the running phase over when the layout is unchanged.
+  local phase = 0
+  for i = #flipActive, 1, -1 do
+    local a = flipActive[i]
+    if a.tex == tex then
+      if a.cols == cols and a.frames == frames and a.first == first and a.duration == duration then
+        phase = a.elapsed
+      end
+      table.remove(flipActive, i)
+    end
+  end
+
+  local entry = {
     tex = tex, l = tc.l, t = tc.t, cols = cols, frames = frames,
-    duration = duration, elapsed = 0, first = first,
+    duration = duration, elapsed = phase, first = first,
     cellW = cellW,
     cellH = cellH,
   }
+  applyFlipFrame(entry)
+
+  flipActive[#flipActive + 1] = entry
   flipDriver:Show()
 end
 
 local function stopFlip(tex)
   for i = #flipActive, 1, -1 do if flipActive[i].tex == tex then table.remove(flipActive, i) end end
   if #flipActive == 0 then flipDriver:Hide() end
+end
+
+-- Re-crop an already-running flipbook in the current frame — used when the fill's width fraction
+-- changes so the crop doesn't lag a frame behind the bar.
+local function refreshFlipFrame(tex)
+  for i = 1, #flipActive do
+    if flipActive[i].tex == tex then applyFlipFrame(flipActive[i]); return end
+  end
 end
 
 -- Flipbook layout differs by atlas. The themed sheets are 2-column sprite grids.
@@ -930,20 +948,11 @@ function C.SetProfession(name)
   C._fillAtlas  = (info and info.fill) or "skillbar_fill_flipbook_defaultblue"
   C._flareAtlas = info and info.fill and info.fill:gsub("fill_flipbook", "flare") or nil
 
-  -- Prewarm the rankbar fill atlas on profession switch. If a custom sheet fails to apply,
-  -- fall back for this draw only; keep the desired atlas so UpdateRank can retry on the next
-  -- refresh instead of pinning the session to DefaultBlue.
-  if f.RankBar and f.RankBar.Fill and NE.tex and NE.tex.SetAtlas then
-  if not (C.opts and C.opts.genericBar) then
-    local wanted = C._fillAtlas or "skillbar_fill_flipbook_defaultblue"
-    local ok = NE.tex.SetAtlas(f.RankBar.Fill, wanted, false)
-    if not ok then
-      NE.tex.SetAtlas(f.RankBar.Fill, "skillbar_fill_flipbook_defaultblue", false)
-    end
-    -- Force UpdateRank to treat this as an atlas refresh next tick.
-    f.RankBar._flipAtlas = nil
-  end
-  end
+  -- NOTE: the rankbar fill deliberately is NOT touched here. SetProfession runs on every refresh
+  -- pass (OnShow plus five deferred post-open passes plus TRADE_SKILL_UPDATE), and re-applying the
+  -- atlas resets the texcoord to the WHOLE sprite sheet while invalidating _flipAtlas restarted
+  -- the animation — together that made the bar flash and race on first open. UpdateRank owns the
+  -- fill: it detects a genuine atlas change on its own and validates the backing sheet.
 
   -- Clear selection only when the profession actually changes.
   if C._professionName ~= name then
@@ -966,6 +975,11 @@ function C.UpdateRank()
   local defaultAtlas = "skillbar_fill_flipbook_defaultblue"
   local atlasName = C._fillAtlas or defaultAtlas
   local entry     = NE.tex and NE.tex.atlases and NE.tex.atlases[atlasName:lower()]
+  -- An atlas can be registered while its BLP was never shipped — SetAtlas reports a miss and
+  -- leaves the previous sheet in place, so validate the backing file here and fall back cleanly.
+  if entry and NE.tex.localFiles and type(NE.tex.localFiles[entry.file]) ~= "string" then
+    entry = nil
+  end
   if not entry then
     atlasName = defaultAtlas
     entry = NE.tex and NE.tex.atlases and NE.tex.atlases[defaultAtlas:lower()]
@@ -1042,7 +1056,14 @@ function C.UpdateRank()
     rb._ratio = frac
 
     local atlasChanged = (rb._flipAtlas ~= atlasName)
-    NE.tex.SetAtlas(rb.Fill, atlasName, false)
+    -- SetAtlas resets the texcoord to the WHOLE sprite sheet, and from then on the flip driver
+    -- owns that texcoord. Re-applying it on every refresh pass flashed all ~60 frames at once for
+    -- one render, so only touch the texture when the applied sheet actually changes — startFlip
+    -- below re-crops to a single cell within the same pass.
+    if atlasChanged or rb.Fill._neFillAtlas ~= atlasName then
+      NE.tex.SetAtlas(rb.Fill, atlasName, false)
+      rb.Fill._neFillAtlas = atlasName
+    end
     rb.Fill:SetBlendMode(atlasName == defaultAtlas and "ADD" or "BLEND")
     rb.Fill:SetVertexColor(1, 1, 1)
     rb.Fill:SetAlpha(atlasName == defaultAtlas and 0.95 or 1)
@@ -1055,6 +1076,9 @@ function C.UpdateRank()
         if atlasChanged or not rb._flipping then
           startFlip(rb.Fill, tc, rows, cols, frames, 7.8, staticFrame)
           rb._flipping = true
+        else
+          -- Already running on this sheet: just re-crop for the new width fraction.
+          refreshFlipFrame(rb.Fill)
         end
       else
         stopFlip(rb.Fill)
