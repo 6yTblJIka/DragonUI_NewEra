@@ -3002,6 +3002,47 @@ stub, taking the button down would have tested identically to forgetting to. Thr
 name: the row never told to take OnEnter, the invisible button left up, and the motion flag set
 blanket-true.
 
+#### H.3.17. …and the submenu opens where the row is
+
+> "The submenu opens up right next to the main menu then when i move my mouse over to it, the frame
+> drops down to where it actually should be"
+
+Letting the row open its own submenu uncovered a second fault that had been sitting under the first,
+harmless only because nothing ever exercised it. ClassicAPI picks a level-2+ list's anchor like this
+(`C_UIDropDownMenu.lua:397`):
+
+```lua
+local anchorFrame = (strsub(button:GetParent():GetName(), 1, 12) == listFramePrefix)
+                     and button or button:GetParent()
+```
+
+Blizzard's original compares against the **literal** `"DropDownList"` — exactly 12 characters.
+ClassicAPI renamed the prefix to `"C_DropDownList"`, which is 14, and left the 12 alone. The test can
+therefore never be true, and the anchor is always `button:GetParent()`.
+
+That was invisible while the arrow was the only way in, because an arrow's parent **is** its row —
+the right answer, reached by accident. A row's parent is the whole **list**, so the submenu hung off
+the top of the parent menu. Crossing the arrow then re-opened it from the arrow, and it dropped into
+place: exactly the two-step the owner described.
+
+The correction re-anchors to the **arrow**, not to the row that was hovered. The arrow is a 16×16
+child centred in a 16px row, so `TOPRIGHT` is the same point either way — but the arrow's own OnEnter
+re-opens the menu unless it finds itself as the anchor already (`C_UIDropDownMenu.xml:94`), and
+anchoring to the row would rebuild the whole submenu every time the mouse crossed the arrow on its way
+there. Same pixels, no rebuild under the cursor.
+
+The screen-bounds flip from `ToggleDropDownMenu`'s own tail is re-run here too, against the right
+anchor this time; a submenu that re-anchored correctly and then fell off the bottom of the screen would
+be no improvement.
+
+It hooks `OnEnter` on the row, which cannot be un-hooked, on a button shared with every menu in the
+game — so the hook asks whether `C_UIDROPDOWNMENU_OPEN_MENU` is ours before it moves anything, and
+that guard is its own assertion. The level is closed over rather than read back off the parent: a
+button belongs to exactly one list forever and its name already says which.
+
+918 assertions. Six mutations fail by name: no fix at all, anchored to the row, the ownership guard
+dropped, the wrong corner, the old points left in place, and the off-screen flip removed.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

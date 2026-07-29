@@ -700,6 +700,7 @@ MOUSE_FOCUS = nil
 function GetCursorPosition() return CURSOR.x, CURSOR.y end
 function IsMouseButtonDown(btn) return MOUSE_DOWN[btn or "LeftButton"] and true or false end
 function GetMouseFocus() return MOUSE_FOCUS end
+function GetScreenWidth() return 1024 end
 
 -- ── C_UIDropDownMenu stand-in ───────────────────────────────────────────────
 -- NOT a reimplementation. It records the `info` tables core/Menu.lua hands to AddButton, which is
@@ -751,6 +752,12 @@ function C_UIDropDownMenu_AddButton(info, level)
   -- submenu rows would test identically to forgetting to.
   local inv = _G[bn .. "InvisibleButton"] or CreateFrame("Button", bn .. "InvisibleButton", b)
   if info.disabled or info.notClickable or info.isTitle then inv:Show() else inv:Hide() end
+
+  -- $parentExpandArrow, shown only on submenu rows (C_UIDropDownMenu.lua:237). It is what a level-2+
+  -- list SHOULD hang off; the client hangs it off whatever `button:GetParent()` happens to be, which
+  -- for a hovered row is the entire list.
+  local arrow = _G[bn .. "ExpandArrow"] or CreateFrame("Button", bn .. "ExpandArrow", b)
+  if info.hasArrow then arrow:Show() else arrow:Hide() end
 end
 
 function C_UIDropDownMenu_Initialize(frame, init, displayMode, level, menuList)
@@ -767,6 +774,9 @@ local function ddList(level) return _G["C_DropDownList" .. (level or 1)] end
 
 function C_ToggleDropDownMenu(level, value, frame, anchor, x, y, menuList)
   frame = frame or DragonUI_NewEra.menu._frame   -- global on purpose: the NE local is declared below
+  -- Set at level 1 only, as ClassicAPI does via the delegate's "openmenu" attribute. It is how a hook
+  -- on the SHARED list buttons tells our menu from anyone else's before it repositions anything.
+  if (level or 1) == 1 then C_UIDROPDOWNMENU_OPEN_MENU = frame end
   C_UIDropDownMenu_Initialize(frame, frame.initialize, nil, level or 1, menuList)
   local list = ddList(level)
   if list then if list:IsShown() then list:Hide() else list:Show() end end
@@ -2935,6 +2945,45 @@ do
   local animalRow
   for _, row in ipairs(DD_ROWS[2] or {}) do if row.text == "Animals" then animalRow = row end end
   assertf(animalRow ~= nil, "level 2 lists the sound categories")
+
+  -- WHERE it opens, not just whether. The client anchors a level-2 list to `button:GetParent()`,
+  -- because its "is the parent a list?" test compares 12 characters against a 14-character prefix and
+  -- can never be true. An arrow's parent is its row — right by accident — but a ROW's parent is the
+  -- whole list, so once the row could open its own submenu the submenu appeared beside the TOP of the
+  -- parent menu and only dropped into place when the mouse reached the arrow and re-opened it.
+  local arrow = _G["C_DropDownList1Button" .. soundIdx .. "ExpandArrow"]
+  assertf(arrow:IsShown(), "the submenu row shows its expand arrow, and a non-submenu row does not")
+  local sub2 = _G.C_DropDownList2
+  sub2:Show()
+  sub2:ClearAllPoints()
+  sub2:SetPoint("TOPLEFT", _G.C_DropDownList1, "TOPRIGHT", 0, 0)   -- what the client just did
+  subBtn:GetScript("OnEnter")(subBtn)
+  local ap, arel, arelp = sub2:GetPoint(1)
+  assertf(sub2:GetNumPoints() == 1 and ap == "TOPLEFT" and arel == arrow and arelp == "TOPRIGHT",
+          "…so hovering the row re-anchors the submenu to that ARROW — the row's own height, and the "
+          .. "one anchor the arrow's OnEnter accepts without rebuilding the menu underneath the mouse")
+
+  -- A submenu opened near the bottom of the screen flips to hang UPWARDS. That correction exists in
+  -- ToggleDropDownMenu already, but it runs there against the same wrong anchor, so it has to run
+  -- again here — and a submenu that re-anchored correctly and then fell off the screen would be no
+  -- better than one that never moved.
+  sub2._center, sub2._w, sub2._h = { 900, 10 }, 200, 100
+  subBtn:GetScript("OnEnter")(subBtn)
+  local fp, frel, frelp, _, fy = sub2:GetPoint(1)
+  assertf(fp == "BOTTOMRIGHT" and frel == arrow and frelp == "BOTTOMLEFT" and fy == -14,
+          "…and one opening off the bottom of the screen flips to hang up from the arrow instead")
+  sub2._center, sub2._w, sub2._h = nil, 0, 0
+
+  -- The hook lives on a button shared with every other menu in the game and cannot be taken off, so
+  -- it has to ask whose menu is open before it moves anything.
+  local realOpen = C_UIDROPDOWNMENU_OPEN_MENU
+  C_UIDROPDOWNMENU_OPEN_MENU = CreateFrame("Frame")
+  sub2:ClearAllPoints()
+  sub2:SetPoint("TOPLEFT", _G.C_DropDownList1, "TOPRIGHT", 0, 0)
+  subBtn:GetScript("OnEnter")(subBtn)
+  assertf(select(2, sub2:GetPoint(1)) == _G.C_DropDownList1,
+          "…and leaves someone else's open menu exactly where they put it")
+  C_UIDROPDOWNMENU_OPEN_MENU = realOpen
 
   C_UIDropDownMenu_Initialize(mf, mf.initialize, nil, 3, animalRow.menuList)
   local onCount, chickenOn = 0, false

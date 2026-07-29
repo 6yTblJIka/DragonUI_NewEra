@@ -129,6 +129,7 @@ local function backend()
     B = {
       prefix     = "C_DropDownList",
       template   = "C_UIDropDownMenuTemplate",
+      openVar    = "C_UIDROPDOWNMENU_OPEN_MENU",
       CreateInfo = _G.C_UIDropDownMenu_CreateInfo,
       AddButton  = _G.C_UIDropDownMenu_AddButton,
       Initialize = _G.C_UIDropDownMenu_Initialize,
@@ -140,6 +141,7 @@ local function backend()
     B = {
       prefix     = "DropDownList",
       template   = "UIDropDownMenuTemplate",
+      openVar    = "UIDROPDOWNMENU_OPEN_MENU",
       CreateInfo = _G.UIDropDownMenu_CreateInfo,
       AddButton  = _G.UIDropDownMenu_AddButton,
       Initialize = _G.UIDropDownMenu_Initialize,
@@ -210,13 +212,64 @@ end
 -- SET ON EVERY ROW, not only the submenu ones. These list buttons are shared with every other
 -- C_UIDropDownMenu in the game, so a row left motion-enabled is one that some later menu's disabled
 -- title could hover-highlight. Passing `false` back is what keeps the leak from spreading.
-local function openOnHover(btn, wanted)
+--
+-- …and then put the submenu where the row is, because letting the row open it exposed a second fault
+-- underneath the first. ClassicAPI picks a level-2+ list's anchor like this (C_UIDropDownMenu.lua:397):
+--
+--     local anchorFrame = (strsub(button:GetParent():GetName(), 1, 12) == listFramePrefix)
+--                          and button or button:GetParent()
+--
+-- Blizzard's original compared against the LITERAL "DropDownList" — exactly 12 characters. ClassicAPI
+-- renamed the prefix to "C_DropDownList", which is 14, and left the 12 alone, so the test can never be
+-- true and the anchor is always `button:GetParent()`. That stayed invisible while the arrow was the
+-- only way in: an arrow's parent IS its row, which is the right answer by accident. A row's parent is
+-- the whole LIST — so the submenu appeared pinned to the top of the parent menu, and only dropped into
+-- place once the mouse crossed the arrow and re-opened it from there.
+--
+-- We re-anchor to the ARROW, not to the row that was actually hovered. The arrow is a 16x16 child
+-- centred in a 16px row, so its TOPRIGHT is the row's TOPRIGHT and the placement is the same either
+-- way — but the arrow's own OnEnter re-opens the menu unless it finds ITSELF as the anchor already
+-- (C_UIDropDownMenu.xml:94), and anchoring to the row would rebuild the whole submenu every time the
+-- mouse crossed the arrow on its way there.
+local function anchorSubmenu(list, arrow)
+  list:ClearAllPoints()
+  list:SetPoint("TOPLEFT", arrow, "TOPRIGHT", 0, 0)
+
+  -- The screen-bounds correction from ToggleDropDownMenu's own tail (line 429). It runs there against
+  -- the wrong anchorFrame, so it has to run again here against the right one.
+  local x, y = list:GetCenter()
+  if not (x and y) then return end
+  local offY = (y - list:GetHeight() / 2) < 0
+  local offX = list:GetRight() > GetScreenWidth()
+  if offY or offX then
+    list:ClearAllPoints()
+    list:SetPoint(offY and "BOTTOMRIGHT" or "TOPRIGHT", arrow, offY and "BOTTOMLEFT" or "TOPLEFT",
+                  offX and -11 or 0, offY and -14 or 14)
+  end
+end
+
+local function openOnHover(btn, level, wanted)
   if btn.SetMotionScriptsWhileDisabled then
     btn:SetMotionScriptsWhileDisabled(wanted and true or false)
   end
-  if wanted then
-    local inv = btn.GetName and btn:GetName() and _G[btn:GetName() .. "InvisibleButton"]
-    if inv then inv:Hide() end
+  if not wanted then return end
+
+  local name = btn.GetName and btn:GetName()
+  local inv = name and _G[name .. "InvisibleButton"]
+  if inv then inv:Hide() end
+
+  -- Hooked once and never removed — HookScript has no inverse — so the hook itself has to ask whose
+  -- menu is open before it moves anything. The level is closed over rather than read back off the
+  -- parent: a given button belongs to exactly one list forever, its name says which, and asking would
+  -- mean depending on GetID for a number we already have.
+  if name and not btn._neSubAnchor then
+    btn._neSubAnchor = true
+    btn:HookScript("OnEnter", function(self)
+      local b = backend()
+      if not (b and _G[b.openVar] == NE.menu._frame) then return end
+      local list, arrow = _G[b.prefix .. (level + 1)], _G[self:GetName() .. "ExpandArrow"]
+      if list and arrow and list:IsShown() and arrow:IsShown() then anchorSubmenu(list, arrow) end
+    end)
   end
 end
 
@@ -275,7 +328,7 @@ local function initLevel(frame, level, menuList)
     local btn = list and listButton(level, list.numButtons or 0)
     if btn then
       btn._neNode = child
-      openOnHover(btn, hasKids)
+      openOnHover(btn, level, hasKids)
     end
   end
 end
