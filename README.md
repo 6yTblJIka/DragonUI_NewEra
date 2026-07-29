@@ -167,7 +167,7 @@ A standalone Dragonflight-style **Adventure Guide**, downported from NewEra's En
 
 ![Cooldown Manager](screenshots/cooldownmanager.png)
 
-Retail's **Cooldown Manager** (a *War Within* feature) downported from NewEra — four HUD viewers that track what's ready, what's running, and what's on you, plus the window that decides what goes in them. Open it with **`/cdm`**; the viewers themselves are placed from **`/dui edit`**.
+Retail's **Cooldown Manager** (a *War Within* feature) downported from NewEra — four HUD viewers that track what's ready, what's running, and what's on you, plus the window that decides what goes in them. Open it with **`/cdm`**; the viewers themselves are placed from **`/dragonui edit`**.
 
 - **Four viewers** — **Essential** and **Utility** cooldown icon rows, a **Buff Icons** row, and **Tracked Bars** with names and countdowns. Each one is independently placed, sized, and toggled.
 - **Curated per class, then filtered by you** — spell lists come from the client's own DBC data (never hand-typed IDs), gated on the talents you've actually spent points in, and grouped into *Essential* / *Utility* / *Not Displayed*. Drag a tile between sections to move it; search to find one.
@@ -175,10 +175,8 @@ Retail's **Cooldown Manager** (a *War Within* feature) downported from NewEra �
 - **Trinkets** — on-use trinkets are discovered from what you're wearing, no configuration.
 - **A spell's frame lights gold while its own buff is up**, so you can see at a glance which of your cooldowns is currently *doing* something rather than merely off cooldown.
 - **Alerts** — right-click any tile to pick a trigger (*Available*, *Refresh*, *Active*, *Usable*), an **FX Style**, a refresh window, and a **ready sound** from the client's full sound catalogue. A small badge marks every tile that has one configured.
-- **Edit mode** — `/dui edit` gives each viewer a mover and a settings dialog: orientation, icon limit and direction, icon size, padding, opacity, visibility, timers, and tooltips.
+- **Edit mode** — `/dragonui edit` gives each viewer a mover and a settings dialog: orientation, icon limit and direction, icon size, padding, opacity, visibility, timers, and tooltips.
 - **Layouts** — save and apply layouts, share them as import/export strings, drop back to a starter layout, and undo the last layout change with **Revert**. Layouts are stored **per spec**, so your dual-spec setups don't fight each other.
-
-Built over 3.3.5a's own `GetSpellCooldown` / `UNIT_AURA` / `GetInventoryItemCooldown` — retail's `C_CooldownViewer` API doesn't exist on this client, and doesn't exist on Classic Era or TBC Classic either, so this is the retail frame stack driven by real WotLK data rather than a wrapper around a missing API.
 
 ## Roadmap
 
