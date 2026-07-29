@@ -65,19 +65,33 @@ local function openRaidSlotMenu(name)
 end
 
 -- ---------------------------------------------------------------------------
--- Saved Instances (raid lockouts). Owner correction 2026-07-17: the toggleable Raid Info popup
--- was removed on the assumption its lockout info was already surfaced somewhere in the main Raid
--- tab -- turned out nothing in the addon ever actually read GetSavedInstanceInfo, so lockouts
--- weren't shown ANYWHERE. Rebuilt here, inline at the top of the Raid tab instead of as a separate
--- popup. 3.3.5a API (confirmed via the on-client APIDocumentation addon,
+-- Saved Instances (raid lockouts) — a toggled POPUP hung off a "Raid Info" button, the way stock
+-- 3.3.5a does it (RaidFrameRaidInfoButton toggles RaidInfoFrame, parked off the Socials window's
+-- right edge).
+--
+-- Owner report 2026-07-29 (issue #45, "Too many raid lockouts overflow"): the previous pass drew
+-- lockouts INLINE at the top of the Raid tab as one wrapped FontString inside a fixed 60px block.
+-- A FontString isn't clipped by its parent frame, so a player saved to more instances than fit
+-- simply drew past the block's bottom edge and over the group grid below. A SCROLLING list in its
+-- own window can't overflow no matter how many lockouts there are, which is why stock put this
+-- behind a button in the first place.
+--
+-- 3.3.5a API (confirmed via the on-client APIDocumentation addon,
 -- Documentation/InstanceDocumentation.lua -- this build's GetSavedInstanceInfo has no
 -- numEncounters/encounterProgress, that's a later/retail addition to the same-named API):
 --   GetNumSavedInstances() -> count
 --   GetSavedInstanceInfo(index) -> name, id, reset, difficulty, locked, extended,
 --                                   instanceIDMostSig, isRaid, maxPlayers, difficultyName
 -- RequestRaidInfo() asks the server to (re)send this; UPDATE_INSTANCE_INFO fires on arrival.
+-- SetSavedInstanceExtend(index, extend) backs the Extend button (documented on this client under
+-- Documentation/UncategorizedDocumentation.lua, args undocumented there — stock's signature).
+-- Probed at runtime like every other optional API in this addon: where it doesn't exist the
+-- button (and row selection with it) is simply never built and the popup stays a read-only list.
 -- ---------------------------------------------------------------------------
-local SAVED_BLOCK_H = 60
+local INFO_W, INFO_H = 340, 330
+local INFO_ROWS      = 12
+local INFO_ROW_H     = 18
+local INFO_BOTTOM    = 44   -- clearance for the Extend button; trimmed when the API is missing
 
 local function formatReset(seconds)
   seconds = tonumber(seconds) or 0
@@ -89,54 +103,280 @@ local function formatReset(seconds)
   return string.format("%dm", math.floor(seconds / 60))
 end
 
-local function buildSavedInstances(panel)
-  local block = CreateFrame("Frame", nil, panel)
-  block:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -4)
-  block:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -4)
-  block:SetHeight(SAVED_BLOCK_H)
+local function canExtend()
+  return type(SetSavedInstanceExtend) == "function"
+end
 
-  local title = block:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  title:SetPoint("TOPLEFT", block, "TOPLEFT", 4, 0)
-  title:SetText(RAID_INFO or "Saved Instances")
-  title:SetTextColor(1, 0.82, 0)
+-- Stock RaidInfoFrame lists every saved instance the server sent, raids AND heroic dungeons, not
+-- just raids (the inline block filtered to isRaid because it had ~3 lines of room; the popup
+-- doesn't). Entries that are neither locked nor extended are dead rows — skip those.
+local function collectSavedInstances()
+  local out = {}
+  if not (GetNumSavedInstances and GetSavedInstanceInfo) then return out end
+  local n = GetNumSavedInstances() or 0
+  for i = 1, n do
+    local name, id, reset, _, locked, extended, _, isRaid, maxPlayers, difficultyName = GetSavedInstanceInfo(i)
+    if name and (locked or extended) then
+      out[#out + 1] = {
+        index = i, name = name, id = id, reset = reset, extended = extended and true or false,
+        isRaid = isRaid, maxPlayers = maxPlayers, difficultyName = difficultyName,
+      }
+    end
+  end
+  return out
+end
 
-  local body = block:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  body:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
-  body:SetPoint("RIGHT", block, "RIGHT", -4, 0)
-  body:SetJustifyH("LEFT"); body:SetJustifyV("TOP")
-  body:SetWordWrap(true)
-  block.Body = body
+local function instanceLabel(e)
+  if e.difficultyName and e.difficultyName ~= "" then
+    return e.name .. " (" .. e.difficultyName .. ")"
+  end
+  if e.maxPlayers and e.maxPlayers > 0 then
+    return string.format("%s (%d)", e.name, e.maxPlayers)
+  end
+  return e.name
+end
 
-  -- Thin separator under the block so it reads as a distinct section from the group grid below.
-  local sep = block:CreateTexture(nil, "ARTWORK")
-  sep:SetTexture("Interface\\Buttons\\WHITE8X8")
-  sep:SetVertexColor(1, 1, 1, 0.10)
-  sep:SetHeight(1)
-  sep:SetPoint("BOTTOMLEFT", block, "BOTTOMLEFT", 4, 0)
-  sep:SetPoint("BOTTOMRIGHT", block, "BOTTOMRIGHT", -4, 0)
+local function buildRaidInfoFrame(f, panel)
+  -- Parented to `panel` (the Raid tab) so it hides with the tab and the window, exactly like the
+  -- Ready Check button below; anchored off the WINDOW's right edge, which is where stock parks
+  -- RaidInfoFrame. Frame level is lifted well clear of the window (and of the Guild window, which
+  -- auto-anchors into this same space when both are open — see SO.Show in Window.lua).
+  local frame = CreateFrame("Frame", "NE_SocialRaidInfoFrame", panel)
+  frame:SetSize(INFO_W, INFO_H)
+  frame:SetPoint("TOPLEFT", f, "TOPRIGHT", 4, -24)
+  frame:SetFrameStrata("DIALOG")
+  frame:SetFrameLevel((f:GetFrameLevel() or 1) + 30)
+  frame:EnableMouse(true)
+  frame:Hide()
 
-  panel.SavedInstances = block
-  return block
+  if NE.chrome and NE.chrome.Apply then
+    NE.chrome.Apply(frame, {
+      layout = "ButtonFrameTemplateNoPortrait",
+      title = RAID_INFO or "Raid Info",
+      noPortrait = true,
+    })
+  end
+  -- Square-corner chrome, left-edge sliver (owner report 2026-07-29, "as per previous times when we
+  -- use the square corners the frames background is sticking out 4px to the left"). PC's ensureBg
+  -- insets the rock fill by 1px on each side, which is tuned for PortraitFrameTemplate; the
+  -- ButtonFrameTemplateNoPortrait metal draws its corners/edges at x=-8 (left) vs x=+4 (right), so
+  -- its opaque coverage falls INSIDE the frame's nominal left edge and the fill pokes out past it.
+  -- 4px is the measured left inset that fixes it — same value, same layout, as
+  -- modules/guild/Window.lua:buildChrome (which also confirmed pushing the fill OUTWARD makes the
+  -- sliver bigger, not smaller). Right/bottom stay at PC's defaults; no sliver reported there.
+  -- Outer frame area (owner steer 2026-07-29): the tiled UI-Background-Rock STONE fill every other
+  -- NE window carries — see this module's own Window.lua:buildChrome, and guild/AH, which all lay
+  -- the sheet down untinted starting 21px below the frame top (the top metal band + streaks own
+  -- that strip). PC.ApplyModernChrome's own Bg is the same sheet but pulled to 32% brightness for
+  -- panels that sit UNDER a dark content inset, which next to those windows reads as flat black.
+  if frame.Bg then
+    local rockPath = NE.tex and NE.tex.localFiles and NE.tex.localFiles[374155]
+    frame.Bg:SetTexture(rockPath or 374155, "REPEAT", "REPEAT")
+    frame.Bg:SetHorizTile(true); frame.Bg:SetVertTile(true)
+    frame.Bg:SetVertexColor(1, 1, 1)
+    frame.Bg:ClearAllPoints()
+    frame.Bg:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -21)
+    frame.Bg:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 2)
+  end
+  if frame.CloseButton then
+    frame.CloseButton:SetScript("OnClick", function() frame:Hide() end)
+  end
+  -- PC.TitleBand starts at x+58 to clear a portrait cutout this window doesn't have, which on a
+  -- frame only 340 wide throws the centred title visibly right. Re-centre it on the frame itself.
+  if frame.Title then
+    frame.Title:ClearAllPoints()
+    frame.Title:SetPoint("TOP",   frame, "TOP",    0, -6)
+    frame.Title:SetPoint("LEFT",  frame, "LEFT",  24,  0)
+    frame.Title:SetPoint("RIGHT", frame, "RIGHT", -24, 0)
+  end
+
+  local bottom = canExtend() and INFO_BOTTOM or 16
+
+  -- Column headers, sitting just above the list inset.
+  -- Literal English labels, like the rest of this file's own strings: the plausible-looking
+  -- globals here (INSTANCE / TIME_REMAINING / RAID_INFO_EXTEND) are NOT confirmed to exist on this
+  -- client, and a global that turns out to be a format template would render as a raw "%s".
+  -- RAID_INFO is the exception — it's a real 3.3.5a string ("Raid Info").
+  local hName = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  hName:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -30)
+  hName:SetText("Instance")
+  hName:SetTextColor(1, 0.82, 0)
+
+  local hReset = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  hReset:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -34, -30)
+  hReset:SetText("Resets In")
+  hReset:SetTextColor(1, 0.82, 0)
+
+  -- Dark recessed list well, same treatment as the tab panels themselves.
+  local content = CreateFrame("Frame", nil, frame)
+  content:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -46)
+  content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -12, bottom)
+  local contentBg = content:CreateTexture(nil, "BACKGROUND")
+  contentBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+  contentBg:SetVertexColor(0.06, 0.06, 0.07, 0.75)
+  contentBg:SetAllPoints(content)
+  if NE.nineslice and NE.nineslice.AttachInset then pcall(NE.nineslice.AttachInset, content, 0, 0, 0, 0) end
+
+  local scroll = CreateFrame("ScrollFrame", "NE_SocialRaidInfoScroll", content, "FauxScrollFrameTemplate")
+  scroll:SetPoint("TOPLEFT", content, "TOPLEFT", 4, -4)
+  scroll:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -26, 4)
+  scroll:SetScript("OnVerticalScroll", function(self, o)
+    FauxScrollFrame_OnVerticalScroll(self, o, INFO_ROW_H, SO.RefreshSavedInstances)
+  end)
+  frame.Scroll = scroll
+  scroll.ScrollBar = _G["NE_SocialRaidInfoScrollScrollBar"]   -- 3.3.5a template sets no parentKey
+  if NE.scrollbar and NE.scrollbar.Reskin then NE.scrollbar.Reskin(scroll) end
+
+  -- Rows are children of `content`, NOT of the scroll frame, so they are not clipped — the usual
+  -- caveat for this addon's FauxScrollFrame lists: INFO_ROWS * INFO_ROW_H must stay inside the
+  -- well (236px tall with the Extend button present; 12 * 18 = 216).
+  frame.Rows = {}
+  for i = 1, INFO_ROWS do
+    local row = CreateFrame("Button", nil, content)
+    row:SetHeight(INFO_ROW_H)
+    if i == 1 then row:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, 0)
+    else row:SetPoint("TOPLEFT", frame.Rows[i - 1], "BOTTOMLEFT", 0, 0) end
+    row:SetPoint("RIGHT", scroll, "RIGHT", 0, 0)
+    row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+
+    local sel = row:CreateTexture(nil, "BACKGROUND")
+    sel:SetTexture("Interface\\Buttons\\WHITE8X8")
+    sel:SetVertexColor(1, 0.82, 0, 0.18)
+    sel:SetAllPoints(row)
+    sel:Hide()
+    row.Sel = sel
+
+    local nameFS = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    nameFS:SetPoint("LEFT", row, "LEFT", 4, 0)
+    nameFS:SetPoint("RIGHT", row, "RIGHT", -78, 0)
+    nameFS:SetJustifyH("LEFT"); nameFS:SetWordWrap(false)
+    row.Name = nameFS
+
+    local resetFS = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    resetFS:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    resetFS:SetJustifyH("RIGHT")
+    row.Reset = resetFS
+
+    -- Stock carries an ID column; this window is too narrow for one, so the raid ID (what players
+    -- actually need when linking/verifying a lockout) goes in the row tooltip instead.
+    row:SetScript("OnEnter", function(self)
+      if not (self._entry and GameTooltip) then return end
+      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+      GameTooltip:SetText(instanceLabel(self._entry), 1, 0.82, 0)
+      if self._entry.id then GameTooltip:AddLine("ID: " .. tostring(self._entry.id), 1, 1, 1) end
+      GameTooltip:AddLine(formatReset(self._entry.reset), 1, 1, 1)
+      if self._entry.extended then GameTooltip:AddLine("Extended", 0.25, 1, 0.25) end
+      GameTooltip:Show()
+    end)
+    row:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+
+    if canExtend() then
+      row:SetScript("OnClick", function(self)
+        if not self._entry then return end
+        frame._selected = self._entry.index
+        SO.RefreshSavedInstances()
+      end)
+    else
+      row:EnableMouse(true)   -- tooltip only; no selection without the extend API
+    end
+
+    row:Hide()
+    frame.Rows[i] = row
+  end
+
+  local empty = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  empty:SetPoint("TOP", content, "TOP", 0, -12)
+  empty:SetText("You are not saved to any instances.")
+  empty:Hide()
+  frame.Empty = empty
+
+  if canExtend() then
+    local ext = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    ext:SetSize(140, 22)
+    ext:SetPoint("BOTTOM", frame, "BOTTOM", 0, 12)
+    ext:SetText("Extend")
+    ext:Disable()
+    ext:SetScript("OnClick", function()
+      local e = frame._selectedEntry
+      if not e then return end
+      pcall(SetSavedInstanceExtend, e.index, not e.extended)
+      if RequestRaidInfo then RequestRaidInfo() end   -- UPDATE_INSTANCE_INFO re-runs the refresh
+      SO.RefreshSavedInstances()
+    end)
+    frame.Extend = ext
+  end
+
+  panel.RaidInfo = frame
+  f.RaidInfo = frame
+  return frame
 end
 
 function SO.RefreshSavedInstances()
   local f = SO.frame
-  local panel = f and f.RaidPanel
-  local block = panel and panel.SavedInstances
-  if not (block and GetNumSavedInstances) then return end
+  local frame = f and f.RaidInfo
+  if not (frame and frame.Rows) then return end
 
-  local n = GetNumSavedInstances() or 0
-  local lines = {}
-  for i = 1, n do
-    local name, _, reset, _, locked, extended, _, isRaid, _, difficultyName = GetSavedInstanceInfo(i)
-    if name and isRaid and locked then
-      local label = (difficultyName and difficultyName ~= "") and (name .. " (" .. difficultyName .. ")") or name
-      local line = string.format("%s - %s", label, formatReset(reset))
-      if extended then line = line .. " |cff40ff40(Extended)|r" end
-      lines[#lines + 1] = line
+  local list = collectSavedInstances()
+  local offset = FauxScrollFrame_GetOffset(frame.Scroll) or 0
+
+  -- Drop a selection whose lockout has since gone away (expired, or the list re-indexed).
+  local selectedEntry
+  for _, e in ipairs(list) do
+    if e.index == frame._selected then selectedEntry = e end
+  end
+  if not selectedEntry then frame._selected = nil end
+  frame._selectedEntry = selectedEntry
+
+  for i = 1, INFO_ROWS do
+    local row = frame.Rows[i]
+    local e = list[offset + i]
+    row._entry = e
+    if e then
+      row.Name:SetText(instanceLabel(e))
+      row.Reset:SetText(formatReset(e.reset))
+      if e.extended then
+        row.Name:SetTextColor(0.25, 1, 0.25)
+        row.Reset:SetTextColor(0.25, 1, 0.25)
+      else
+        row.Name:SetTextColor(1, 1, 1)
+        row.Reset:SetTextColor(0.8, 0.8, 0.8)
+      end
+      -- Explicit Show/Hide rather than the retail one-call setter, which qa/staticcheck flags as a
+      -- 3.3.5a trap (it only works here at all because ClassicAPI shims it onto every region).
+      if frame._selected == e.index then row.Sel:Show() else row.Sel:Hide() end
+      row:Show()
+    else
+      row.Sel:Hide()
+      row:Hide()
     end
   end
-  block.Body:SetText((#lines > 0) and table.concat(lines, "\n") or "You are not saved to any raid instances.")
+  FauxScrollFrame_Update(frame.Scroll, #list, INFO_ROWS, INFO_ROW_H)
+  if #list == 0 then frame.Empty:Show() else frame.Empty:Hide() end
+
+  if frame.Extend then
+    if selectedEntry then
+      frame.Extend:Enable()
+      frame.Extend:SetText(selectedEntry.extended and "Cancel Extend" or "Extend")
+    else
+      frame.Extend:Disable()
+      frame.Extend:SetText("Extend")
+    end
+  end
+end
+
+-- Toggled by the Raid tab's Raid Info button (and re-asked from the server on each open, since
+-- lockout timers only advance client-side between UPDATE_INSTANCE_INFO pushes).
+function SO.ToggleRaidInfo()
+  local f = SO.frame
+  local frame = f and f.RaidInfo
+  if not frame then return end
+  if frame:IsShown() then
+    frame:Hide()
+  else
+    if RequestRaidInfo then RequestRaidInfo() end
+    SO.RefreshSavedInstances()
+    frame:Show()
+  end
 end
 
 -- ---------------------------------------------------------------------------
@@ -152,10 +392,13 @@ local SLOTS_PER_GROUP = 5
 local GROUP_HEADER_H  = 16
 -- SLOT_H 13->12, GROUP_GAP_Y 6->4->3 (owner report 2026-07-17: the class summary strip moved below
 -- the grid, and later enlarged + pushed down further, needs pixels reclaimed from the grid each
--- time to avoid overlapping the outer-chrome buttons).
-local SLOT_H          = 12
+-- time to avoid overlapping the outer-chrome buttons). 2026-07-29: the inline lockout block moved
+-- out to the Raid Info popup, handing 60px back — spent on the rows, which had been squeezed
+-- tightest of anything here. 4 * (16 + 5*14) + 3 * 6 = 362px of content in the 374px the grid now
+-- spans (panel 468 tall, less the 22 top offset and the 72 reserved for the class strip below).
+local SLOT_H          = 14
 local GROUP_BOX_H     = GROUP_HEADER_H + SLOTS_PER_GROUP * SLOT_H
-local GROUP_GAP_Y     = 3
+local GROUP_GAP_Y     = 6
 local COL_GAP_X       = 8
 local LEFT_GROUPS  = { 1, 3, 5, 7 }
 local RIGHT_GROUPS = { 2, 4, 6, 8 }
@@ -302,7 +545,7 @@ local GRID_SIDE_INSET = 15
 
 local function buildGroupGrid(panel)
   local grid = CreateFrame("Frame", nil, panel)
-  grid:SetPoint("TOPLEFT", panel, "TOPLEFT", GRID_SIDE_INSET, -22 - SAVED_BLOCK_H)
+  grid:SetPoint("TOPLEFT", panel, "TOPLEFT", GRID_SIDE_INSET, -22)
   grid:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -GRID_SIDE_INSET, 34 + CLASS_STRIP_GAP + CLASS_STRIP_H)
   panel.Grid = grid
 
@@ -341,9 +584,9 @@ function SO.SetupRaid(f)
   panel.Bg = panelBg
   if NE.nineslice and NE.nineslice.AttachInset then pcall(NE.nineslice.AttachInset, panel, 0, 0, 0, 0) end
 
-  buildSavedInstances(panel)
   local grid = buildGroupGrid(panel)
   buildClassSummary(panel, grid)
+  buildRaidInfoFrame(f, panel)
 
   -- Ready Check (owner steer 2026-07-17, marked with a screenshot annotation in the chrome gap
   -- under the title). Parented to `panel` (so it shows/hides with the Raid tab like everything
@@ -352,14 +595,26 @@ function SO.SetupRaid(f)
   -- DoReadyCheck() (confirmed via the on-client APIDocumentation addon, PartyDocumentation.lua /
   -- RaidDocumentation.lua) works for both a party and a raid; only the leader/an assist can call it,
   -- so the button is enabled/disabled the same way Convert to Raid already is.
+  -- Owner steer 2026-07-29 (issue #45): Raid Info sits to its RIGHT, so the pair is centered as a
+  -- unit rather than Ready Check staying centered with Raid Info hanging off to one side.
+  -- (110 + 6 + 100 = 216 wide; Ready Check's center lands at -216/2 + 110/2 = -53.)
   local ready = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
   ready:SetSize(110, 20)
   ready:SetText(READY_CHECK or "Ready Check")
-  ready:SetPoint("TOP", f, "TOP", 0, -33)
+  ready:SetPoint("TOP", f, "TOP", -53, -33)
   ready:SetScript("OnClick", function()
     if DoReadyCheck then DoReadyCheck() end
   end)
   panel.ReadyCheck = ready
+
+  -- Raid Info — toggles the lockout popup (see buildRaidInfoFrame above). Always enabled: reading
+  -- your own saved instances needs no group and no rank.
+  local info = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  info:SetSize(100, 20)
+  info:SetText(RAID_INFO or "Raid Info")
+  info:SetPoint("LEFT", ready, "RIGHT", 6, 0)
+  info:SetScript("OnClick", function() SO.ToggleRaidInfo() end)
+  panel.RaidInfoButton = info
 
   -- Raid Browser (owner report 2026-07-17: "doesn't open anything" — ToggleRaidBrowser isn't a real
   -- 3.3.5a global, it doesn't exist on this client and the call was silently no-op'ing. Patch 3.3's
@@ -390,8 +645,12 @@ function SO.SetupRaid(f)
   end)
   panel.Convert = convert
 
-  -- Raid Info button REMOVED (owner steer 2026-07-17): the popup is redundant now that its
-  -- lockout info is surfaced inline via buildSavedInstances() above.
+  -- Leaving the Raid tab (or closing the window) takes the lockout popup with it — it's a child of
+  -- `panel`, so it would otherwise pop back into view when the tab is re-selected.
+  panel:HookScript("OnHide", function()
+    if panel.RaidInfo then panel.RaidInfo:Hide() end
+  end)
+
   if RequestRaidInfo then RequestRaidInfo() end
   SO.RefreshSavedInstances()
   SO.RefreshRaid()
