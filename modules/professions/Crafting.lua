@@ -45,6 +45,28 @@ local ATLAS_RECIPE_BG   = C.ATLAS_RECIPE_BG   or "professions-recipe-background"
 local ATLAS_SKILL_BG    = C.ATLAS_SKILL_BG    or "professions-skillbar-bg"
 local ATLAS_SKILL_FRAME = C.ATLAS_SKILL_FRAME or "professions-skillbar-frame"
 
+-- Rank-bar fill geometry, relative to the RankBar's TOPLEFT. Shared by the animated (flipbook)
+-- fill and the plain-bar fill so the two styles can't drift apart.
+-- MEASURED from the frame art (professions-skillbar-frame, 451x29, drawn at the RankBar's TOPLEFT):
+-- its strokes land on x=5 (left), x=445 (right), y=3 (top), y=20 (bottom).
+--
+-- The fit is deliberately ASYMMETRIC, because the four edges are not equivalent:
+--
+--   top/bottom/right — UNDERLAP the stroke by 1px. The frame draws on OVERLAY above the fill and
+--     its strokes are soft-edged; fitted to the strict y 4..19 interior, those semi-transparent
+--     edges fall over dark trough instead of over fill and read as a seam around the whole bar.
+--   left — must respect the interior and start at x=6. It is the one edge exposed at EVERY skill
+--     level (the fill always starts there and grows right), so a 1px underlap here is not hidden
+--     under the stroke at low fill — it hangs visibly outside the border. Cost is a 1px seam at
+--     the far left, which is invisible next to the trough's own feathered edge.
+local FILL_X    = 6     -- first interior column — do NOT drop to 5, it hangs out at low fill
+local FILL_Y    = -3    -- on the top stroke, fill continues under it
+local FILL_H    = 18    -- reaches the bottom stroke at y=20
+local FILL_MAXW = 440   -- x 6..445 — 100% lands under the right stroke
+-- No minimum drawn width, deliberately: a low skill must LOOK low. The fill's width and its
+-- texcoord crop are always derived from the same fraction, so the art never scales — a narrow
+-- bar is a narrow slice of art at 1:1, not a squashed one.
+
 
 -- Max reagent slots shown (retail shows up to 8 on WotLK; WoTLK recipes rarely exceed 6).
 local MAX_REAGENT_SLOTS = 8
@@ -100,6 +122,35 @@ local function infoFromName(name)
     end
   end
 
+  return nil
+end
+
+-- Fallback when the name lookup misses — the trade-skill icon path is English on every client,
+-- so it still resolves the theme when GetTradeSkillLine() is blank/UNKNOWN or a locale table
+-- doesn't cover the profession. Ordered (not pairs) so "mining" can't shadow a later probe.
+local ICON_PATH_PROBES = {
+  { "alchemy",     "Alchemy"        },
+  { "blacksmith",  "Blacksmithing"  },
+  { "enchant",     "Enchanting"     },
+  { "engineer",    "Engineering"    },
+  { "herbal",      "Herbalism"      },
+  { "leather",     "Leatherworking" },
+  { "mining",      "Mining"         },
+  { "skinning",    "Skinning"       },
+  { "tailor",      "Tailoring"      },
+  { "cooking",     "Cooking"        },
+  { "fishing",     "Fishing"        },
+  { "inscription", "Inscription"    },
+  { "jewel",       "Jewelcrafting"  },
+}
+
+local function infoFromIconPath(texPath)
+  if type(texPath) ~= "string" or texPath == "" then return nil end
+  local p = _G.strlower and _G.strlower(texPath) or texPath:lower()
+  for i = 1, #ICON_PATH_PROBES do
+    local probe = ICON_PATH_PROBES[i]
+    if p:find(probe[1], 1, true) then return PROF_MAP[probe[2]] end
+  end
   return nil
 end
 
@@ -193,10 +244,15 @@ end
 
 -- Re-crop an already-running flipbook in the current frame — used when the fill's width fraction
 -- changes so the crop doesn't lag a frame behind the bar.
+-- Returns true if the texture was found and re-cropped. A false return means flipActive no longer
+-- tracks it, so the CALLER must re-crop (see UpdateRank): the texcoord is whatever SetAtlas last
+-- left there — the WHOLE sprite sheet — and scaling all 60 frames into the bar's width is what
+-- produced the smeared, squashed fill at low skill.
 local function refreshFlipFrame(tex)
   for i = 1, #flipActive do
-    if flipActive[i].tex == tex then applyFlipFrame(flipActive[i]); return end
+    if flipActive[i].tex == tex then applyFlipFrame(flipActive[i]); return true end
   end
+  return false
 end
 
 -- Flipbook layout differs by atlas. The themed sheets are 2-column sprite grids.
@@ -710,8 +766,8 @@ function C.buildRankBar(f)
   local baseFill = rb:CreateTexture(nil, "ARTWORK", nil, 1)
   baseFill:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar")
   baseFill:SetVertexColor(0.15, 0.85, 0.25, 1)
-  baseFill:SetSize(441, 15)
-  baseFill:SetPoint("TOPLEFT", rb, "TOPLEFT", 5, -7)
+  baseFill:SetSize(FILL_MAXW, FILL_H)
+  baseFill:SetPoint("TOPLEFT", rb, "TOPLEFT", FILL_X, FILL_Y)
   baseFill:SetTexCoord(0, 1, 0, 1)
   baseFill:Hide()
   rb.BaseFill = baseFill
@@ -719,13 +775,13 @@ function C.buildRankBar(f)
  
   local fill = rb:CreateTexture(nil, "ARTWORK", nil, 2)
   NE.tex.SetAtlas(fill, "skillbar_fill_flipbook_defaultblue", false)
-  fill:SetSize(441, 15)
-  fill:SetPoint("TOPLEFT", rb, "TOPLEFT", 5, -7)
+  fill:SetSize(FILL_MAXW, FILL_H)
+  fill:SetPoint("TOPLEFT", rb, "TOPLEFT", FILL_X, FILL_Y)
   fill:SetBlendMode("ADD")
   fill:SetAlpha(0.95)
   fill:Hide()
   rb.Fill    = fill
-  rb.FillMaxW = 441
+  rb.FillMaxW = FILL_MAXW
 
  
   local border = rb:CreateTexture(nil, "OVERLAY", nil, 1)
@@ -987,7 +1043,9 @@ function C.UpdateRank()
 
   if rank and maxRank and maxRank > 0 then
     local frac = math.max(0, math.min(1, rank / maxRank))
-    local maxW  = rb.FillMaxW or 441
+    local maxW  = rb.FillMaxW or FILL_MAXW
+    -- `w` and the texcoord crop below must both come from `frac`. Deriving one from an adjusted
+    -- fraction and the other from the raw one is what squashes the art.
     local w     = math.max(1, maxW * frac)
 
     rb._profKey = profName
@@ -1021,8 +1079,8 @@ function C.UpdateRank()
         rb.BaseFill:SetTexCoord(0, 1, 0, 1)
         
         rb.BaseFill:ClearAllPoints()
-        rb.BaseFill:SetPoint("TOPLEFT", rb, "TOPLEFT", 6, -3) 
-        rb.BaseFill:SetSize(w, 18)                             
+        rb.BaseFill:SetPoint("TOPLEFT", rb, "TOPLEFT", FILL_X, FILL_Y)
+        rb.BaseFill:SetSize(w, FILL_H)
         rb.BaseFill:SetShown(frac > 0)
       end
 
@@ -1048,8 +1106,8 @@ function C.UpdateRank()
     end
 
     rb.Fill:ClearAllPoints()
-    rb.Fill:SetPoint("TOPLEFT", rb, "TOPLEFT", 5, -3) 
-    rb.Fill:SetHeight(19)                             
+    rb.Fill:SetPoint("TOPLEFT", rb, "TOPLEFT", FILL_X, FILL_Y)
+    rb.Fill:SetHeight(FILL_H)
     rb.Fill:SetWidth(w)
     rb.Fill._frac = frac
     rb.Fill:SetShown(frac > 0)
@@ -1076,9 +1134,12 @@ function C.UpdateRank()
         if atlasChanged or not rb._flipping then
           startFlip(rb.Fill, tc, rows, cols, frames, 7.8, staticFrame)
           rb._flipping = true
-        else
-          -- Already running on this sheet: just re-crop for the new width fraction.
-          refreshFlipFrame(rb.Fill)
+        elseif not refreshFlipFrame(rb.Fill) then
+          -- _flipping said it was running but flipActive had dropped it, so the re-crop no-opped
+          -- and the texture kept SetAtlas's full-sheet texcoord. Restart rather than leave all 60
+          -- frames scaled into the bar.
+          startFlip(rb.Fill, tc, rows, cols, frames, 7.8, staticFrame)
+          rb._flipping = true
         end
       else
         stopFlip(rb.Fill)
@@ -1115,6 +1176,10 @@ function C.UpdateRank()
         local uSpan = FLARE_U1 - FLARE_U0
         local cropU0 = FLARE_U1 - (uSpan * fracW)
 
+        -- ARTWORK (above Fill at sublevel 2), NOT OVERLAY: the flare is additive, so on OVERLAY it
+        -- drew on top of the frame art and bloomed straight over the rounded left cap whenever the
+        -- fill was short enough to sit inside it. Below the border, the frame clips it.
+        rb.Flare:SetDrawLayer("ARTWORK", 3)
         rb.Flare:ClearAllPoints()
         rb.Flare:SetPoint("RIGHT", rb.Fill, "RIGHT", 0, 0)
         rb.Flare:SetSize(fw, 16)
