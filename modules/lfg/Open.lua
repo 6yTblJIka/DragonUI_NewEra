@@ -9,6 +9,11 @@
 --   * ShowUIPanel(LFDParentFrame) — LFG_OPEN_FROM_GOSSIP (Icecrown NPC gossip) shows the native
 --     frame directly; the OnShow hook below catches that path. The native handler has already
 --     run LFDQueueFrame_SetType(dungeonID) by then, so our pane opens on the offered dungeon.
+--
+-- LEVEL GATE: none of these paths check the Dungeon Finder unlock level — only the micro button
+-- greys itself out, and the keybind/eye/gossip routes sail straight past it. The check therefore
+-- lives inside L.Show/L.Toggle (Window.lua's DUNGEONS_MIN_LEVEL), so redirecting here is safe: a
+-- locked request is refused there and the native frame stays suppressed either way.
 
 local NE = DragonUI_NewEra
 if not NE then return end

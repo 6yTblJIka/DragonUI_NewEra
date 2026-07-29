@@ -38,6 +38,42 @@ end
 L.IsEnabled = isModuleEnabled
 
 -- ---------------------------------------------------------------------------
+-- Dungeon Finder unlock gate. The micromenu's LFDMicroButton already greys itself out below the
+-- client's unlock level, but that only covers ONE entry point — the TOGGLELFGPARENT keybind, the
+-- minimap eye and any addon calling the toggles bypass it entirely, and Open.lua reroutes all of
+-- those straight into this window. So the gate lives HERE, at the show/toggle chokepoint every
+-- path funnels through, rather than being re-implemented per entry point.
+--
+-- SHOW_LFD_LEVEL is the client's own constant (the same one the micro button's "requires level N"
+-- state reads), so we stay in lockstep with the micromenu whatever the server sets it to; the
+-- literal is only a fallback for clients that don't define it.
+local DUNGEONS_MIN_LEVEL = SHOW_LFD_LEVEL or 10
+L.DUNGEONS_MIN_LEVEL = DUNGEONS_MIN_LEVEL
+
+-- PLAYER_LEVEL_UP hands us the new level; UnitLevel("player") is not guaranteed to have caught up
+-- yet while that event is being handled, so the event arg wins when it's higher.
+local levelHint = 0
+local function playerLevel()
+  local lvl = UnitLevel("player") or 0
+  if levelHint > lvl then lvl = levelHint end
+  return lvl
+end
+
+-- A category is locked until the player reaches its minLevel (only DUNGEONS declares one).
+local function categoryUnlocked(def)
+  return not def.minLevel or playerLevel() >= def.minLevel
+end
+
+local function lockedMessage(def)
+  return format(FEATURE_BECOMES_AVAILABLE_AT_LEVEL or "This feature becomes available at level %d.",
+                def.minLevel)
+end
+
+function L.IsDungeonsUnlocked()
+  return playerLevel() >= DUNGEONS_MIN_LEVEL
+end
+
+-- ---------------------------------------------------------------------------
 -- Reference geometry tables (PVEFrame.lua, transcribed verbatim where possible).
 -- ---------------------------------------------------------------------------
 
@@ -80,7 +116,8 @@ local RAIL = {
 -- (LFRFrame.xml's $parentIcon, file="Interface\LFGFrame\UI-LFR-PORTRAIT") — ships with the client,
 -- so referencing the path directly is both correct AND needs no custom BLP copy/registration.
 local CATEGORIES = {
-  { key = "DUNGEONS", name = DUNGEONS or "Dungeons", icon = "Interface\\Icons\\INV_Helmet_08", default = true },
+  { key = "DUNGEONS", name = DUNGEONS or "Dungeons", icon = "Interface\\Icons\\INV_Helmet_08", default = true,
+    minLevel = DUNGEONS_MIN_LEVEL },
   { key = "RAIDS",    name = RAIDS or "Raids", icon = "Interface\\LFGFrame\\UI-LFR-PORTRAIT" },
 }
 
@@ -394,6 +431,17 @@ local function buildCategoryButton(parent, def)
   hl:SetSize(224, 80); hl:SetPoint("CENTER")
   hl:SetTexCoord(unpack(BTN_TC.enabled))
 
+  -- Locked categories explain themselves on hover (disabled Buttons still fire OnEnter on 3.3.5a,
+  -- which is exactly how the native micro buttons show their "requires level N" text).
+  b:SetScript("OnEnter", function(self)
+    if categoryUnlocked(def) or not GameTooltip then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(def.name, 1, 1, 1)
+    GameTooltip:AddLine(lockedMessage(def), 1, 0.1, 0.1, true)
+    GameTooltip:Show()
+  end)
+  b:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+
   b.def = def
   return b
 end
@@ -448,14 +496,48 @@ local function showPane(f, key)
   if pane.OnPaneShow then pane.OnPaneShow(pane) end
 end
 
-function L.SelectCategory(key, userInitiated)
+local function categoryDef(key)
+  for _, def in ipairs(CATEGORIES) do
+    if def.key == key then return def end
+  end
+end
+
+-- The category the window should land on when nobody named one: the default, or the first
+-- unlocked category if the default is still level-locked.
+local function defaultCategory()
+  local fallback
+  for _, def in ipairs(CATEGORIES) do
+    if categoryUnlocked(def) then
+      if def.default then return def.key end
+      fallback = fallback or def.key
+    end
+  end
+  return fallback
+end
+L.DefaultCategory = defaultCategory
+
+-- Repaint the rail after a level-up: a category that just unlocked stops rendering greyed.
+function L.RefreshCategories()
   local f = L.frame
   if not f then return end
   for _, def in ipairs(CATEGORIES) do
     local b = f[def.key .. "Button"]
-    if b then setButtonState(b, (def.key == key) and "selected" or "enabled") end
+    if b then
+      local state = "enabled"
+      if not categoryUnlocked(def) then state = "disabled"
+      elseif def.key == f.selectedCategory then state = "selected" end
+      setButtonState(b, state)
+    end
   end
+end
+
+function L.SelectCategory(key, userInitiated)
+  local f = L.frame
+  if not f then return end
+  local def = categoryDef(key)
+  if def and not categoryUnlocked(def) then return end   -- locked: rail button is disabled anyway
   f.selectedCategory = key
+  L.RefreshCategories()
   showPane(f, key)
   if userInitiated and PlaySound then PlaySound("igMainMenuOptionCheckBoxOn") end
 end
@@ -505,15 +587,22 @@ local function createWindow()
   f:RegisterEvent("LFG_ROLE_CHECK_SHOW")
   f:RegisterEvent("LFG_ROLE_CHECK_HIDE")
   f:RegisterEvent("PLAYER_ENTERING_WORLD")
-  f:SetScript("OnEvent", function(self) if self.UpdateEye then self.UpdateEye() end end)
+  f:RegisterEvent("PLAYER_LEVEL_UP")
+  f:SetScript("OnEvent", function(self, event, arg1)
+    if event == "PLAYER_LEVEL_UP" then
+      local newLevel = tonumber(arg1)
+      if newLevel and newLevel > levelHint then levelHint = newLevel end
+      L.RefreshCategories()
+    end
+    if self.UpdateEye then self.UpdateEye() end
+  end)
 
   f:HookScript("OnShow", function(self)
     if self.UpdateEye then self.UpdateEye() end
+    L.RefreshCategories()
     -- Default-select on first open; re-assert the current pane's refresh on every open.
     if not self.selectedCategory then
-      local defaultKey
-      for _, def in ipairs(CATEGORIES) do if def.default then defaultKey = def.key end end
-      L.SelectCategory(defaultKey or CATEGORIES[1].key)
+      L.SelectCategory(defaultCategory() or CATEGORIES[1].key)
     else
       local pane = L.panes[self.selectedCategory]
       if pane and pane.OnPaneShow then pane.OnPaneShow(pane) end
@@ -537,14 +626,34 @@ local function createWindow()
 end
 L.Create = createWindow
 
+-- Every open path (keybind, micro button, minimap eye, gossip, /commands, options panel) lands in
+-- L.Show/L.Toggle, so the unlock check sits here. A locked request opens NOTHING — it doesn't fall
+-- back to the other category — and says why in the error area, matching how the game refuses other
+-- level-gated features. Returns true when the request was refused.
+local function refuseIfLocked(category)
+  local def = categoryDef(category or defaultCategory() or CATEGORIES[1].key)
+  -- No unlocked category at all (defaultCategory() returned nil) → treat as the default one.
+  def = def or categoryDef(CATEGORIES[1].key)
+  if not def or categoryUnlocked(def) then return false end
+  if UIErrorsFrame then UIErrorsFrame:AddMessage(lockedMessage(def), 1.0, 0.1, 0.1, 1.0) end
+  return true
+end
+L.RefuseIfLocked = refuseIfLocked
+
 function L.Show(category)
   if not isModuleEnabled() then return end
+  if refuseIfLocked(category) then return end
   local f = createWindow()
   f:Show()
   if category then L.SelectCategory(category) end
 end
 function L.Hide() if L.frame then L.frame:Hide() end end
 function L.Toggle(category)
+  if not isModuleEnabled() then return end
+  if refuseIfLocked(category) then
+    -- Locked while the window happens to be open on the OTHER category: leave it as it is.
+    return
+  end
   local f = createWindow()
   if f:IsShown() then
     -- Toggling the OTHER category while open switches to it instead of closing (matches how

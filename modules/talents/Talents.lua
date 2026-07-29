@@ -702,9 +702,39 @@ function T.Host()
 end
 
 -- ----------------------------------------------------------------------------
+-- Level gate. A character has no talents until SHOW_TALENT_LEVEL (10 on 3.3.5a), and the native
+-- TalentMicroButton greys itself out below it — but that covers only ONE way in. This module
+-- reroutes ToggleTalentFrame (so the TOGGLETALENTS keybind lands here), the micro button's own
+-- OnClick and /netalents into T.Toggle, and none of those carry the check. So the gate sits on the
+-- show side below, where every entry point meets.
+--
+-- SHOW_TALENT_LEVEL is the client's own constant — the same one the micro button reads — so we
+-- stay in lockstep with the micromenu; the literal is only a fallback if it isn't defined.
+local TALENT_MIN_LEVEL = SHOW_TALENT_LEVEL or 10
+T.MIN_LEVEL = TALENT_MIN_LEVEL
+
+function T.IsUnlocked()
+  return (UnitLevel("player") or 0) >= TALENT_MIN_LEVEL
+end
+
+-- Refuse an open request, saying why in the error area (how the game refuses other level-gated
+-- features). Returns true when the request was refused.
+local function refuseIfLocked()
+  if T.IsUnlocked() then return false end
+  if UIErrorsFrame then
+    UIErrorsFrame:AddMessage(
+      format(FEATURE_BECOMES_AVAILABLE_AT_LEVEL or "This feature becomes available at level %d.",
+             TALENT_MIN_LEVEL), 1.0, 0.1, 0.1, 1.0)
+  end
+  return true
+end
+T.RefuseIfLocked = refuseIfLocked
+
+-- ----------------------------------------------------------------------------
 -- Show / hide / toggle.
 -- ----------------------------------------------------------------------------
 function T.SetShown(shown)
+  if shown and refuseIfLocked() then return end
   local f = T.frame or buildWindow()
   if not f then return end
   if shown then f:Show() else f:Hide() end   -- content runs via OnShow (see buildWindow)
@@ -712,12 +742,16 @@ end
 function T.Open()  T.SetShown(true)  end
 function T.Close() T.SetShown(false) end
 function T.Toggle()
+  -- Closing always works; only OPENING is gated (checked before buildWindow so a locked press
+  -- doesn't even construct the window).
+  if not (T.frame and T.frame:IsShown()) and refuseIfLocked() then return end
   local f = T.frame or buildWindow()
   if not f then return end
   if f:IsShown() then f:Hide() else f:Show() end
 end
 
 function T.OpenGlyphTab()
+  if not (T.frame and T.frame:IsShown()) and refuseIfLocked() then return end
   local f = T.frame or buildWindow()
   if not f then return end
   hideStockPanel(PlayerTalentFrame)
