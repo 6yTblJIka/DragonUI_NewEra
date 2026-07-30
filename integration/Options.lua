@@ -20,6 +20,21 @@ local TAB_ORDER     = 16
 -- The list the builder iterates is owned by Register.lua. Keep a safe handle.
 NE.optionPanels = NE.optionPanels or {}
 
+-- Extension point: a module that owns settings beyond a simple enable toggle appends
+--   { order = <n>, build = function(scroll, Controls) ... end }
+-- here, and the builder renders it after the built-in sections. Added for the Cooldown Manager,
+-- whose ten per-viewer settings live here rather than in an Edit Mode popup (see
+-- modules/cooldownviewer/PORT_PLAN.md §B1). Each section is pcall-guarded so one module's bad
+-- control can't blank the whole tab.
+NE.optionSections = NE.optionSections or {}
+
+function NE.RegisterOptionSection(spec)
+    if type(spec) ~= "table" or type(spec.build) ~= "function" then return end
+    spec.order = spec.order or 999
+    table.insert(NE.optionSections, spec)
+    table.sort(NE.optionSections, function(a, b) return a.order < b.order end)
+end
+
 -- ----------------------------------------------------------------------------
 -- builder(scroll): called by OptionsPanel each time the tab is shown.
 -- `scroll` is an AceGUI ScrollFrame; controls are added via NE.dragon.PanelControls
@@ -179,6 +194,15 @@ local function builder(scroll)
                 C:AddHeading(scroll, w.label)
                 buildColumn(scroll, w.key, w.label)
             end
+        end
+    end
+
+    -- Module-contributed sections (NE.RegisterOptionSection). Guarded individually: a module whose
+    -- section errors must not take the rest of the tab down with it.
+    for _, section in ipairs(NE.optionSections) do
+        local ok, err = pcall(section.build, scroll, C)
+        if not ok and NE._warn then
+            NE._warn("options section '" .. tostring(section.id or "?") .. "' failed: " .. tostring(err))
         end
     end
 end

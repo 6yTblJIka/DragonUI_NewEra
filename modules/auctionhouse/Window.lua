@@ -623,6 +623,9 @@ local function createWindow()
   if AH.frame then return AH.frame end
 
   local f = CreateFrame("Frame", FRAME_NAME, UIParent, "PortraitFrameTemplate")
+  -- The red 3-slice is the addon's standard button; Watch keeps this window's panel buttons
+  -- skinned as its panes are built (core/ButtonSkin.lua). Opt out per button with _neNoSkin.
+  if NE.buttonskin and NE.buttonskin.Watch then pcall(NE.buttonskin.Watch, f) end
   f:SetSize(800, 538)
   -- Default Blizzard UI panels (AuctionFrame included) open pinned to the LEFT side of the
   -- screen, vertically centered -- not screen-CENTER. Match that instead of centering.

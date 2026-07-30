@@ -5,3 +5,11 @@ Thumbs.db
 *~
 /ReferenceAddons
 .claude
+
+# luaparse, installed per qa/offline/README.md
+/qa/offline/node_modules
+
+# cdm-spellgen intermediates — regenerate with dbc.py / resolve.py, never review by hand
+/tools/cdm-spellgen/spells.json
+/tools/cdm-spellgen/resolved.json
+/tools/cdm-spellgen/listing.txt

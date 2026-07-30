@@ -21,6 +21,9 @@ Libs\LibCustomGlow-1.0\LibCustomGlow-1.0.xml
 # These files now only fill the handful of symbols ClassicAPI does NOT provide; C_Timer/C_Texture
 # are fully ClassicAPI-owned and no longer shipped here. See compat/COVERAGE.md.
 compat\Compat.lua
+# Events.lua adds Frame:RegisterUnitEvent (a 5.0 API; ClassicAPI implements the semantics but only
+# inside its private namespace) plus NE.EV_LEARNED_SPELL. Must follow Compat.lua for NE.compat.
+compat\Events.lua
 compat\C_Container.lua
 compat\C_Item.lua
 compat\C_Spell.lua
@@ -40,11 +43,24 @@ core\NineSliceLayouts.lua
 core\PanelChrome.lua
 core\Portrait.lua
 core\Tabs.lua
+# Menu = a MenuUtil-shaped context-menu builder over UIDropDownMenu. Resolves its backend lazily,
+# so it does not care where ClassicAPI sits in the load order.
+core\Menu.lua
 core\ButtonSkin.lua
 core\ScrollbarReskin.lua
 core\ItemButton.lua
 core\ItemGrid.lua
 core\Modules.lua
+# --- core: HUD-layer primitives (added for the Cooldown Manager port; reusable) ---
+# GridLayout    = Lua reimplementation of retail's GridLayoutFrame template (absent on 3.3.5a).
+# CooldownNumbers = countdown text on Cooldown frames (the widget draws none on this client).
+# AuraSnapshot  = one UnitBuff/UnitDebuff walk per unit per frame, shared addon-wide.
+# SpellRanks    = per-ability rank ids from the live spellbook. Load-bearing: GetSpellInfo's 7th
+#                 return is castTime here, NOT the spellID it is on modern clients.
+core\GridLayout.lua
+core\CooldownNumbers.lua
+core\AuraSnapshot.lua
+core\SpellRanks.lua
 
 # --- textures: art + atlas registration data (owner: Asset Pipeline Engineer) ---
 Textures\Assets.lua
@@ -203,6 +219,74 @@ modules\encounterjournal\EncounterPage.lua
 modules\encounterjournal\NavBar.lua
 modules\encounterjournal\EncounterJournal.lua
 modules\encounterjournal\MicroButton.lua
+
+# --- Cooldown Manager (downport of NewEra/CooldownViewer) — PHASE 1: Essential + Utility ---
+# Retail's Cooldown Manager runs on C_CooldownViewer, which exists on no Classic-family client;
+# NewEra rebuilt it as retail's visual model over curated per-class data, and that is what ports.
+# Load order: ClassData (pure tables) -> CooldownViewer (core: settings store, spell-list
+# resolution) -> ItemMixins (the per-tile mixin) -> Viewers (frames built in Lua, replacing
+# CooldownViewer.xml — MaskTexture and GridLayoutFrame are both unavailable here) -> Register
+# (movers + options tab, replacing EditModeRegister.lua). See modules/cooldownviewer/PORT_PLAN.md.
+modules\cooldownviewer\ClassData.lua
+# WotLK seed: additive appends onto the vanilla lists above, plus the whole of Death Knight. Every
+# id is generated from this client's own Spell.dbc + SkillLineAbility.dbc, never hand-typed.
+# Must load AFTER ClassData (it appends to those tables) and BEFORE the viewer core reads them.
+modules\cooldownviewer\CdmSeedWotLK.lua
+# Phase 7d: the per-class catalog of trackable SELF-BUFFS — what the Tracked Buffs/Bars picker
+# OFFERS, standing in for retail's curated per-spec aura set. Also generated from this client's own
+# data (tools/cdm-spellgen/gen_auracatalog.py), and read by CooldownViewer's catalog accessor.
+modules\cooldownviewer\CdmAuraCatalog.lua
+modules\cooldownviewer\CooldownViewer.lua
+# Phase 8a: the VIEWERS' art (the /cdm window's own is SettingsAssets.lua, far below). Must load
+# before ItemMixins/AuraItemMixins, whose OnLoad resolves these atlases as each tile is built.
+modules\cooldownviewer\Assets.lua
+# On-use trinket discovery + the per-token assignment registry. Overrides CooldownViewer.lua's
+# GetEquipItemsForCategory fallback, so it must load after it and before Viewers reads it.
+modules\cooldownviewer\Equip.lua
+modules\cooldownviewer\ItemMixins.lua
+modules\cooldownviewer\Viewers.lua
+# Phase 3, the aura-driven viewers. AuraItemMixins needs M.CropIcon/M.TooltipSetSpell from
+# ItemMixins; BuffViewers needs M.BaseViewerMixin from Viewers — so both load after those two.
+modules\cooldownviewer\AuraItemMixins.lua
+modules\cooldownviewer\BuffViewers.lua
+# Phase 4a: per-cooldown alerts and ready sounds. The ENGINE and its stores only — assignment UI
+# belongs to the Phase 4b settings panel. AlertData is generated
+# (tools/cdm-spellgen/gen_alertdata.py) and must precede Alerts, which reads it.
+modules\cooldownviewer\AlertData.lua
+modules\cooldownviewer\SoundAlertData.lua
+modules\cooldownviewer\Alerts.lua
+# Phase 4b-1: the standalone /cdm settings window (shell). SettingsAssets registers the side-tab
+# art and must load before the panel builds tabs from it. Both need core/Tabs.lua and
+# core/PanelChrome.lua, which load far earlier.
+modules\cooldownviewer\SettingsAssets.lua
+modules\cooldownviewer\SettingsPanel.lua
+# 4b-2: the category model and the grids that render it. CdmArsenal is generated
+# (tools/cdm-spellgen/gen_arsenal.py) and feeds the adapter's Hidden catalog, so it loads first;
+# SettingsCategories replaces the panel's RefreshLayout stub, so it loads after the panel.
+modules\cooldownviewer\CdmArsenal.lua
+modules\cooldownviewer\SettingsAdapter.lua
+modules\cooldownviewer\SettingsCategories.lua
+# 4b-3: the right-click item menu and the settings cog — the assignment surface that finally makes
+# the Phase 4a alert and ready-sound stores reachable. Needs core/Menu.lua and CDS.adapter.
+modules\cooldownviewer\SettingsMenu.lua
+# 4b-4: drag to reorder and reassign. Needs the adapter's ReorderTo/AssignAt and the tiles built by
+# SettingsCategories, which supplies the OnDragStart that calls in here.
+modules\cooldownviewer\SettingsReorder.lua
+# 4b-5: named layouts, import/export, and the snapshot/restore pair that finally makes the panel's
+# Revert button real. Needs core/Menu.lua for the footer menu and CDS.RefreshLayout from
+# SettingsCategories, so it loads last of the settings files.
+modules\cooldownviewer\SettingsPresets.lua
+# 4c: the Settings tab. SettingsControls is the widget kit (checkbox / slider / menu-button over the
+# client's own templates, since DragonUI's AceGUI option controls only render inside an AceGUI
+# container); SettingsOptions is the page it builds. The page reads M.VIEWER_SPECS, which Register.lua
+# defines below — that is fine, it is read when the tab is first opened, not at load.
+modules\cooldownviewer\SettingsControls.lua
+modules\cooldownviewer\SettingsOptions.lua
+# Each viewer's own settings as a dialog beside the frame in edit mode, retail's shape.
+# Needs the SettingsControls kit above and NE.RegisterHUDFrame's `editorSettings` seam; Register.lua
+# below hands it one opener per viewer at PLAYER_LOGIN.
+modules\cooldownviewer\EditorPanel.lua
+modules\cooldownviewer\Register.lua
 
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---
 core\_HelloDemo.lua

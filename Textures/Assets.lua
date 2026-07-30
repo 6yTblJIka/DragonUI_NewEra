@@ -52,6 +52,22 @@ NE.tex.RegisterLocal(1723831, P .. "Common\\1723831-uiframe-inner.blp")         
 NE.tex.RegisterLocal(1723832, P .. "Common\\1723832-uiframe-inner.blp")             -- 64x256  DXT5; !UI-Frame-Inner{Left,Right}Tile (3x256)
 NE.tex.RegisterLocal(1723833, P .. "Common\\1723833-uiframe-inner.blp")             -- 256x128 DXT5; _UI-Frame-Inner{Top,Bot}Tile band
 
+-- --- BigRedThreeSliceButton (1536801) — the red dialog button. core/ButtonSkin.lua has been written
+--     against this sheet since Sprint 0 and, without it, fail-safed to native art on every call: the
+--     LFG role buttons and the edit-mode dialog's Revert/Reset were all silently unskinned.
+NE.tex.RegisterLocal(1536801, P .. "Common\\1536801-128redbutton.blp")              -- 512x2048; caps, tile, 3 states + highlight
+
+-- --- DiamondMetal "Dialog" border — retail's clean thin dialog frame (the ESC menu and every
+--     modern dialog wear it). Core art, not a module's: the Metal family above is panel chrome and
+--     wrong on a small floating dialog, so anything dialog-shaped needs this instead.
+NE.tex.RegisterLocal(3056750, P .. "Common\\3056750-diamondmetal-frame.blp")        -- corners + top/bottom edges
+NE.tex.RegisterLocal(3056755, P .. "Common\\3056755-diamondmetal-edges.blp")        -- !-tile left/right edges
+
+-- --- Modern dropdown trigger (5390329) — common-dropdown-textholder (the body) plus the
+--     a-button arrow and its five states. 3.3.5a has no WowStyle1DropdownTemplate to carry these,
+--     so the widget is assembled from them in SettingsControls.
+NE.tex.RegisterLocal(5390329, P .. "Common\\5390329-common-dropdown-bg.blp")        -- 512x512; textholder + a-button states
+
 -- --- RedButton close-button sheet (4698972) — the Dragonflight red "X". One sheet carries all
 --     four states (exit / pressed / highlight / disabled) via texcoords in core/NineSliceLayouts.
 --     Consumed by PanelChrome.ModernizeCloseButton; without it the close button falls back to the
@@ -71,3 +87,9 @@ NE.tex.RegisterLocal(4331838, P .. "Common\\4331838-minimal-scrollbar.blp")     
 NE.tex.RegisterLocal(4332072, P .. "Common\\4332072-minimal-scrollbar-track-middle.blp")          -- !track-middle 1px tile
 NE.tex.RegisterLocal(5142784, P .. "Common\\5142784-minimal-scrollbar-small-thumb-middle.blp")    -- small thumb middle strip
 NE.tex.RegisterLocal(5142787, P .. "Common\\5142787-minimal-scrollbar-small.blp")                 -- small thumb top/bottom caps
+
+-- MinimalSliderWithSteppers (sheet 4567914) — the whole horizontal slider on one 32x128 sheet: both
+-- rounded track caps, the 1px tiled run between them, the DIAMOND thumb, and both chevron steppers.
+-- Supplied by the owner; it is not in the NewEra Art set, which is why NE.scrollbar.SkinSlider first
+-- shipped built out of the vertical scrollbar's pieces turned on their side.
+NE.tex.RegisterLocal(4567914, P .. "Common\\4567914-minimalsliderbar.blp")                        -- track caps + run + diamond + steppers

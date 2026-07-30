@@ -729,9 +729,16 @@ local function cbpSync(bar)
   local range = (sf.GetVerticalScrollRange and sf:GetVerticalScrollRange()) or 0
   if range <= 0 then
     bar:Hide()
+    -- The arrows are reparented OFF the stock slider (see BuildCustomPixel) so they can outlive its
+    -- Hide(), which also makes them SIBLINGS of bar rather than children — hiding bar alone leaves
+    -- them floating over nothing. Same trap, same fix as cbSync's.
+    if bar._upBtn then bar._upBtn:Hide() end
+    if bar._downBtn then bar._downBtn:Hide() end
     return
   end
   bar:Show()
+  if bar._upBtn then bar._upBtn:Show() end
+  if bar._downBtn then bar._downBtn:Show() end
 
   local trackH = bar:GetHeight() or 0
   if trackH <= 0 then return end
@@ -779,18 +786,98 @@ function NE.scrollbar.BuildCustomPixel(scrollFrame, opts)
   opts = opts or {}
   local xInset = opts.x ~= nil and -opts.x or CB_X_INSET
 
+  -- ---- the STOCK bar, if this ScrollFrame came from a template -------------
+  -- BuildCustomPixel was written for a BARE CreateFrame("ScrollFrame") (the character stats
+  -- sidebar), which has no stock scrollbar to get out of the way of — so it never dealt with one.
+  -- A UIPanelScrollFrameTemplate ScrollFrame does have one, complete with arrow buttons, and
+  -- without this the player gets BOTH bars side by side. BuildCustom has always done this for the
+  -- Faux case; this is the same handling for the pixel case.
+  --
+  -- Resolved by GLOBAL NAME first: 3.3.5a's UIPanelScrollFrameTemplate declares its slider as
+  -- `$parentScrollBar` with no parentKey, so `scrollFrame.ScrollBar` is nil on this client and any
+  -- `if scrollFrame.ScrollBar` guard silently finds nothing. That is the same shape as the
+  -- PortraitFrameTemplate `$parentBg` trap, and it is why NE.scrollbar.Reskin — which checks only
+  -- the parentKey — quietly did nothing at all on a frame like this.
+  local sfName = scrollFrame.GetName and scrollFrame:GetName()
+  local stock  = (sfName and _G[sfName .. "ScrollBar"]) or scrollFrame.ScrollBar or scrollFrame.scrollBar
+  local stockName = stock and stock.GetName and stock:GetName()
+  local upBtn   = stock and ((stockName and _G[stockName .. "ScrollUpButton"])   or stock.ScrollUpButton)
+  local downBtn = stock and ((stockName and _G[stockName .. "ScrollDownButton"]) or stock.ScrollDownButton)
+  local wantArrows = opts.arrows ~= false and upBtn and downBtn
+
+  if stock then
+    -- Hidden, not removed: the template's own OnScrollRangeChanged still writes to it, and reading
+    -- it back is harmless. The re-hide guard is what makes it stay gone.
+    stock:Hide()
+    if stock.HookScript then stock:HookScript("OnShow", function(s) s:Hide() end) end
+  end
+  if wantArrows then
+    -- The arrows are children of the stock slider, and a hidden parent hides its children whatever
+    -- their own state. Reparent them so they survive the Hide above.
+    local newParent = scrollFrame:GetParent() or scrollFrame
+    upBtn:SetParent(newParent)
+    downBtn:SetParent(newParent)
+  elseif stock then
+    if upBtn then upBtn:Hide() end
+    if downBtn then downBtn:Hide() end
+  end
+
   -- ---- the custom bar frame (= the track) ----------------------------------
   -- Parented to the scrollFrame's own parent, not the scrollFrame itself -- see the matching
   -- note in BuildCustom above (a ScrollFrame clips all its children to its own rect, and this bar
   -- is deliberately anchored outside it).
   local bar = CreateFrame("Frame", nil, scrollFrame:GetParent() or scrollFrame)
   bar:SetWidth(CB_WIDTH)
+  -- With arrows, inset the track by exactly what they occupy so track + arrows together still fit
+  -- the scrollFrame's own bounds — no caller has to carve out extra room. Same arithmetic as
+  -- BuildCustom's barYInset.
+  local barYInset = wantArrows and (CB_ARROW_H + CB_ARROW_GAP) or 0
   bar:ClearAllPoints()
-  bar:SetPoint("TOPLEFT",    scrollFrame, "TOPRIGHT",    xInset, 0)
-  bar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT", xInset, 0)
+  bar:SetPoint("TOPLEFT",    scrollFrame, "TOPRIGHT",    xInset, -barYInset)
+  bar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT", xInset,  barYInset)
   bar:SetFrameStrata("HIGH")
   bar:SetFrameLevel((scrollFrame:GetFrameLevel() or 1) + 6)
   bar._scrollFrame = scrollFrame
+
+  if wantArrows then
+    cbReskinArrow(upBtn,   "minimal-scrollbar-arrow-top",    "minimal-scrollbar-arrow-top-over",    "minimal-scrollbar-arrow-top-down",    bar, "TOP")
+    cbReskinArrow(downBtn, "minimal-scrollbar-arrow-bottom", "minimal-scrollbar-arrow-bottom-over", "minimal-scrollbar-arrow-bottom-down", bar, "BOTTOM")
+    for _, b in ipairs({ upBtn, downBtn }) do
+      b:SetFrameStrata(bar:GetFrameStrata())
+      b:SetFrameLevel(bar:GetFrameLevel() + 1)
+    end
+    bar._upBtn, bar._downBtn = upBtn, downBtn
+
+    -- Reparenting breaks the template's inline OnClick, which drives `self:GetParent()` and assumes
+    -- that is the slider. Once the button hangs off the panel instead, GetValue is nil there and
+    -- every click errors. Scroll the frame directly — the same sink the wheel and the thumb use.
+    local function arrowClick(dir)
+      return function()
+        local range = (scrollFrame.GetVerticalScrollRange and scrollFrame:GetVerticalScrollRange()) or 0
+        if range <= 0 then return end
+        local cur  = (scrollFrame.GetVerticalScroll and scrollFrame:GetVerticalScroll()) or 0
+        local step = opts.wheelStep or 30
+        local v = cur + dir * step
+        if v < 0 then v = 0 elseif v > range then v = range end
+        scrollFrame:SetVerticalScroll(v)
+        if PlaySound then pcall(PlaySound, "UChatScrollButton") end
+      end
+    end
+    upBtn:SetScript("OnClick",   arrowClick(-1))
+    downBtn:SetScript("OnClick", arrowClick(1))
+
+    -- Range-aware re-hide, not a blanket one: something in the stock machinery can Show() these
+    -- back independently of cbpSync, which is the asymmetry BuildCustom hit twice (shown worked,
+    -- hidden did not stick).
+    for _, b in ipairs({ upBtn, downBtn }) do
+      if b.HookScript then
+        b:HookScript("OnShow", function(self)
+          local range = (scrollFrame.GetVerticalScrollRange and scrollFrame:GetVerticalScrollRange()) or 0
+          if range <= 0 then self:Hide() end
+        end)
+      end
+    end
+  end
 
   -- track: top cap + bottom cap + tiled middle
   local tTop = bar:CreateTexture(nil, "BACKGROUND")
@@ -1160,6 +1247,72 @@ function NE.scrollbar.BuildCustomMessageFrame(scrollFrame, opts)
   cbmSync(bar)
   if C_Timer and C_Timer.After then C_Timer.After(0, function() cbmSync(bar) end) end
   return bar
+end
+
+-- ============================================================================
+-- NE.scrollbar.SkinSlider — retail's MinimalSliderWithSteppers, for a horizontal Slider.
+--
+-- NewEra builds every edit-mode slider from MinimalSliderWithSteppersTemplate
+-- (EditMode/SettingsPopup.lua:173). The template is retail-only, but the ART is one 32x128 sheet
+-- (4567914) carrying the whole widget: both rounded track caps, the ONE-PIXEL run that tiles between
+-- them, the little DIAMOND thumb, and both chevron steppers. So the widget is rebuilt here out of its
+-- own pieces at their own sizes — no rotation, no substitution.
+--
+-- (It first shipped built from the vertical scrollbar's pieces turned 90 degrees, because this sheet
+-- is absent from the NewEra Art set. The owner supplied it; the workaround came back out.)
+--
+-- WHAT THIS DELIBERATELY DOES NOT DO IS STATES. The sheet has no hover or pressed variants, because
+-- retail's minimal slider does not change art on either — the feedback is the thumb moving. Inventing
+-- a tint here would be this addon's idea, not the reference's.
+--
+-- OptionsSliderTemplate's own groove goes whole: it is a BACKDROP (bgFile UI-SliderBar-Background
+-- inside edgeFile UI-SliderBar-Border), not a region that could be re-pointed at other art.
+--
+-- Idempotent via slider._neMinimalSlider. Fail-safe: SetAtlas returns false when the art is missing,
+-- leaving the piece untextured rather than erroring, so a stripped Textures/ still boots.
+-- ============================================================================
+
+local SL_TRACK_H = 17   -- native height of the track pieces
+local SL_CAP_W   = 11   -- native width of one rounded cap
+local SL_THUMB_W = 20   -- the diamond, at its own size
+local SL_THUMB_H = 19
+
+function NE.scrollbar.SkinSlider(slider)
+  if not slider then return end
+  if slider._neMinimalSlider then return slider._neMinimalSlider end
+
+  if slider.SetBackdrop then pcall(slider.SetBackdrop, slider, nil) end
+  -- Sized to the DIAMOND, not the track: the thumb is two pixels taller than the bar it rides, which
+  -- is what makes it read as a knob rather than as part of the groove.
+  slider:SetHeight(SL_THUMB_H)
+
+  local d = {}
+
+  d.Left = slider:CreateTexture(nil, "BACKGROUND")
+  NE.tex.SetAtlas(d.Left, "minimal_sliderbar_left", true)
+  d.Left:SetPoint("LEFT", slider, "LEFT", 0, 0)
+
+  d.Right = slider:CreateTexture(nil, "BACKGROUND")
+  NE.tex.SetAtlas(d.Right, "minimal_sliderbar_right", true)
+  d.Right:SetPoint("RIGHT", slider, "RIGHT", 0, 0)
+
+  -- Only the middle stretches, and it is one pixel of source, so it stretches invisibly. The caps keep
+  -- their own width or the rounded ends smear — the same rule as the dropdown's textholder.
+  d.Middle = slider:CreateTexture(nil, "BACKGROUND")
+  NE.tex.SetAtlas(d.Middle, "_minimal_sliderbar_middle", false)
+  d.Middle:SetHeight(SL_TRACK_H)
+  d.Middle:SetPoint("LEFT",  d.Left,  "RIGHT")
+  d.Middle:SetPoint("RIGHT", d.Right, "LEFT")
+
+  local thumb = slider.GetThumbTexture and slider:GetThumbTexture()
+  if thumb then
+    NE.tex.SetAtlas(thumb, "minimal_sliderbar_button", true)
+    thumb:SetSize(SL_THUMB_W, SL_THUMB_H)
+    d.Thumb = thumb
+  end
+
+  slider._neMinimalSlider = d
+  return d
 end
 
 -- AttachBottomShadow — DOWNPORT STUB. Needs WowScrollBox callbacks (BaseScrollBoxEvents,

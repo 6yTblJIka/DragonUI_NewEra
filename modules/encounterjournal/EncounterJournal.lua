@@ -523,6 +523,9 @@ local frame
 local function build()
   if frame then return frame end
   frame = CreateFrame("Frame", "NE_EncounterJournal", UIParent, "PortraitFrameTemplate")
+  -- The red 3-slice is the addon's standard button; Watch keeps this window's panel buttons
+  -- skinned as its panes are built (core/ButtonSkin.lua). Opt out per button with _neNoSkin.
+  if NE.buttonskin and NE.buttonskin.Watch then pcall(NE.buttonskin.Watch, frame) end
   frame:SetSize(FRAME_W, FRAME_H)
   frame:SetPoint("CENTER")
   if NE.panelmgr then NE.panelmgr.Register(frame) end   -- absent on 3.3.5a; guarded

@@ -138,6 +138,9 @@ local function buildFrame()
   if CP.frame then return CP.frame end
 
   local f = CreateFrame("Frame", FRAME_NAME, UIParent)
+  -- The red 3-slice is the addon's standard button; Watch keeps this window's panel buttons
+  -- skinned as its panes are built (core/ButtonSkin.lua). Opt out per button with _neNoSkin.
+  if NE.buttonskin and NE.buttonskin.Watch then pcall(NE.buttonskin.Watch, f) end
   f:SetSize(FRAME_W_EXPANDED, FRAME_H)   -- unified panel width (all tabs); see setSidebarExpanded
   f:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
   f:SetFrameStrata("HIGH")

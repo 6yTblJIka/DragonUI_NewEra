@@ -33,6 +33,7 @@ simply already satisfied for the symbols it owns.
 | `C_Map.GetBestMapForUnit` / `IsWorldMap` / `WorldMap` | `Util/C_Map.lua` |
 | `C_NewItems.*` | `Util/C_NewItems.lua` |
 | `GetItemInfoInstant`, `GetPhysicalScreenSize`, `SearchBoxTemplate` (XML) | `Util/C_Item.lua`, `Util/PixelUtil.lua`, `Templates/UIPanelTemplates.*` |
+| `C_UIDropDownMenu_Initialize` / `_AddButton` / `_CreateInfo` / `C_UIDropDownMenuTemplate` | `Templates/C_UIDropDownMenu.{lua,xml}`, reached via `Load.xml` → `Templates/Load.xml`. Note for any menu deeper than two levels: this grows `C_UIDROPDOWNMENU_MAXLEVELS` on demand (`:124-130`), which the 3.3.5a global does not. **Consumer: `core/Menu.lua`** — it prefers these over the native `UIDropDownMenu_*` for exactly that reason (the Cooldown Manager's ready-sound menu is three levels), and falls back to the native two-level API if ClassicAPI is ever absent. |
 
 `C_GetContainerItemInfo` table fields ClassicAPI returns
 (`iconFileID/stackCount/isLocked/quality/isReadable/hasLoot/hyperlink/isFiltered/hasNoValue/itemID/isBound`)

@@ -406,6 +406,9 @@ local function buildChrome()
   if not G then log("NE.itemgrid missing (core/ItemGrid.lua not loaded); combined bag unavailable"); return nil end
 
   frame = CreateFrame("Frame", "NE_CombinedBagFrame", UIParent)
+  -- The red 3-slice is the addon's standard button; Watch keeps this window's panel buttons
+  -- skinned as its panes are built (core/ButtonSkin.lua). Opt out per button with _neNoSkin.
+  if NE.buttonskin and NE.buttonskin.Watch then pcall(NE.buttonskin.Watch, frame) end
   frame:SetFrameStrata("HIGH")
   frame:SetToplevel(true)
   frame:Hide()

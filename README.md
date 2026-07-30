@@ -163,6 +163,23 @@ A standalone Dragonflight-style **Adventure Guide**, downported from NewEra's En
 - **Loot browsing** — every boss's drops with icon, name, and armor/weapon type, split correctly across 10/25-man and Normal/Heroic where the source data distinguishes them.
 - **Search + breadcrumb navigation** — filter the instance grid by name, drill into an instance and back out via the nav bar.
 
+### Cooldown Manager
+
+![Cooldown Manager](screenshots/cooldownmanager.png)
+
+Retail's **Cooldown Manager** (a *War Within* feature) downported from NewEra — four HUD viewers that track what's ready, what's running, and what's on you, plus the window that decides what goes in them. Open it with **`/cdm`**; the viewers themselves are placed from **`/dragonui edit`**.
+
+- **Four viewers** — **Essential** and **Utility** cooldown icon rows, a **Buff Icons** row, and **Tracked Bars** with names and countdowns. Each one is independently placed, sized, and toggled.
+- **Curated per class, then filtered by you** — spell lists come from the client's own DBC data (never hand-typed IDs), gated on the talents you've actually spent points in, and grouped into *Essential* / *Utility* / *Not Displayed*. Drag a tile between sections to move it; search to find one.
+- **Tracked buffs** — a generated per-class aura catalog plus a live registry of every buff the scanner has actually seen on you, so procs that aren't in any list still turn up and can be tracked.
+- **Trinkets** — on-use trinkets are discovered from what you're wearing, no configuration.
+- **A spell's frame lights gold while its own buff is up**, so you can see at a glance which of your cooldowns is currently *doing* something rather than merely off cooldown.
+- **Alerts** — right-click any tile to pick a trigger (*Available*, *Refresh*, *Active*, *Usable*), an **FX Style**, a refresh window, and a **ready sound** from the client's full sound catalogue. A small badge marks every tile that has one configured.
+- **Edit mode** — `/dragonui edit` gives each viewer a mover and a settings dialog: orientation, icon limit and direction, icon size, padding, opacity, visibility, timers, and tooltips.
+- **Layouts** — save and apply layouts, share them as import/export strings, drop back to a starter layout, and undo the last layout change with **Revert**. Layouts are stored **per spec**, so your dual-spec setups don't fight each other.
+
+Note: Module is off by default
+
 ## Roadmap
 
 Faithfully downporting the remaining NewEra panels to 3.3.5a:
@@ -177,6 +194,7 @@ Faithfully downporting the remaining NewEra panels to 3.3.5a:
 - [x] ~~**Looking For Group**~~ — *done* (unified Dungeon Finder + Raid Browser window: Dungeons/Raids category rail, role selection, raid queue + browse)
 - [x] ~~**Adventure Guide (Encounter Journal)**~~ — *done* (Classic/TBC/Wrath instances, per-boss abilities + loot pages, search + breadcrumb nav)
 - [x] ~~**Collections**~~ — *done* (standalone Mounts + Pet Journal window with list/model/info layout, search, filter, favourites, summon)
+- [x] ~~**Cooldown Manager**~~ — *done* (Essential/Utility/Buff-icon/Tracked-bar viewers, DBC-sourced talent-gated spell lists, tracked buffs + trinkets, right-click alerts and ready sounds, edit-mode movers and per-viewer settings, per-spec layouts with import/export)
 - [ ] **Bags** — *work in progress* (retail combined bag + individual-bag restyle: grid, smart sort, separated specialty-bag sections, keyring row, rarity/usable cues, money + currency band)
 - [ ] **Quest Log**
 - [ ] **Merchant**
