@@ -30,6 +30,7 @@
 --   * pcall every stat getter inside the render/tooltip loops.
 
 local NE = DragonUI_NewEra
+local L = NE:GetLocale()
 NE.charpanel = NE.charpanel or {}
 local CP = NE.charpanel
 
@@ -43,11 +44,36 @@ local function log(msg)
   if NE.Log then NE.Log("SIDEBAR", msg); return end
 end
 
--- Localized-string-with-fallback helper.
-local function L(global, fallback)
-  local v = _G[global]
-  if type(v) == "string" and v ~= "" then return v end
+local function getLocaleString(global, fallback)
+  if type(global) == "string" and global ~= "" then
+    local v = _G[global]
+    if type(v) == "string" and v ~= "" then
+      return v
+    end
+  end
+  if type(L) == "table" and type(fallback) == "string" and fallback ~= "" then
+    local rawVal = rawget(L, fallback)
+    if type(rawVal) == "string" and rawVal ~= "" then
+      return rawVal
+    end
+    local ok, res = pcall(function() return L[fallback] end)
+    if ok and type(res) == "string" and res ~= "" then
+      return res
+    end
+  end
   return fallback
+end
+
+if type(L) == "table" then
+  local mt = getmetatable(L) or {}
+  mt.__call = function(self, global, fallback)
+    return getLocaleString(global, fallback)
+  end
+  setmetatable(L, mt)
+else
+  L = function(global, fallback)
+    return getLocaleString(global, fallback)
+  end
 end
 
 -- ----------------------------------------------------------------------------
@@ -160,7 +186,7 @@ local SECTIONS = {
       { id = "health", name = L("HEALTH", "Health"), func = function()
           local hp = UnitHealthMax("player") or 0
           return tostring(hp), (L("HEALTH", "Health") .. " " .. hp),
-                 "Maximum Health. If your health reaches zero, you will die."
+				L("MAX_HEALTH_TOOLTIP", "Maximum Health. If your health reaches zero, you will die.")
         end },
       { id = "power", name = (function()
           local _, token = UnitPowerType("player")
@@ -170,7 +196,7 @@ local SECTIONS = {
           local _, token = UnitPowerType("player")
           local plabel = (token and _G[token]) or L("MANA", "Mana")
           return tostring(pmax), (plabel .. " " .. pmax),
-                 format("Your maximum %s.", plabel:lower())
+                 format(L["Your maximum %s."], plabel)
         end },
     },
   },
@@ -197,7 +223,7 @@ local SECTIONS = {
           func = function()
             local base, eff, posBuff, negBuff = UnitStat("player", i)
             local frameText, tip = formatStat(statName, base, posBuff, negBuff)
-            return frameText, tip, ATTR_DESC[i]
+            return frameText, tip, L(ATTR_DESC[i], ATTR_DESC[i])
           end,
         }
       end
@@ -254,32 +280,32 @@ local SECTIONS = {
           local frameText = format("%.2f", speed or 0)
           if offSpeed then frameText = frameText .. " / " .. format("%.2f", offSpeed) end
           return frameText, (L("ATTACK_SPEED", "Attack Speed") .. " " .. frameText),
-                 "Seconds between melee swings.\n" .. hasteLine(CR_HASTE_MELEE or 18)
+				L("Seconds between melee swings.", "Seconds between melee swings.") .. "\n" .. hasteLine(CR_HASTE_MELEE or 18)
         end },
       { id = "hit", name = L("COMBAT_RATING_NAME6", "Hit Rating"), func = function()
           local r = rating(CR_HIT_MELEE)
           return tostring(r), (L("COMBAT_RATING_NAME6", "Hit") .. " " .. r),
-                 format("Improves your chance to hit by %.2f%%.", ratingBonus(CR_HIT_MELEE))
+                 format(L["Improves your chance to hit by %.2f%%."], ratingBonus(CR_HIT_MELEE))
         end },
       { id = "crit", name = L("MELEE_CRIT_CHANCE", "Crit Chance"), func = function()
           local crit = (GetCritChance and GetCritChance()) or 0
           local str = format("%.2f%%", crit)
           return str, (L("MELEE_CRIT_CHANCE", "Crit Chance") .. " " .. str),
-                 "Chance of melee attacks dealing extra damage."
+                 L["Chance of melee attacks dealing extra damage."]
         end },
-      { id = "arp", name = "Armor Penetration", func = function()
-          local r = rating(CR_ARMOR_PENETRATION)
-          local ok, pct = pcall(GetArmorPenetration)
-          return tostring(r), ("Armor Penetration " .. r),
-                 format("Reduces the target's armor by up to %.2f%%.", (ok and pct) or 0)
-        end },
+      { id = "arp", name = L["Armor Penetration"], func = function()
+		local r = rating(CR_ARMOR_PENETRATION)
+		local ok, pct = pcall(GetArmorPenetration)
+		return tostring(r), (L["Armor Penetration"] .. " " .. r),
+           format(L["Reduces the target's armor by up to %.2f%%."], (ok and pct) or 0)
+		end },
       { id = "expertise", name = L("STAT_EXPERTISE", "Expertise"), func = function()
           local ok, exp, offExp = pcall(GetExpertise)
           if not ok then return "--" end
           local speed, offSpeed = UnitAttackSpeed("player")
           local r = offSpeed and (exp .. " / " .. (offExp or 0)) or tostring(exp)
           return r, (L("STAT_EXPERTISE", "Expertise") .. " " .. r),
-                 "Reduces the chance your attacks are dodged or parried."
+                 L["Reduces the chance your attacks are dodged or parried."]
         end },
     },
   },
@@ -328,13 +354,13 @@ local SECTIONS = {
       { id = "r_hit", name = L("STAT_HIT_CHANCE", "Hit Chance"), func = function()
           if not hasRanged() then return L("NOT_APPLICABLE", "N/A") end
           local hit = (GetHitModifier and GetHitModifier()) or 0
-          return format("%.2f%%", hit), L("STAT_HIT_CHANCE", "Hit Chance"), "Reduces your chance to miss."
+          return format("%.2f%%", hit), L("STAT_HIT_CHANCE", "Hit Chance"), L["Reduces your chance to miss."]
         end },
       { id = "r_crit", name = L("STAT_CRITICAL_STRIKE", "Crit Chance"), func = function()
           if not hasRanged() then return L("NOT_APPLICABLE", "N/A") end
           local crit = (GetRangedCritChance and GetRangedCritChance()) or 0
           return format("%.2f%%", crit), (L("CRIT_CHANCE", "Crit Chance") .. format(" %.2f%%", crit)),
-                 "Chance of ranged attacks dealing extra damage."
+                 L["Chance of ranged attacks dealing extra damage."]
         end },
     },
   },
@@ -351,12 +377,12 @@ local SECTIONS = {
             minMod = min(minMod, b)
           end
           return tostring(minMod), (L("BONUS_DAMAGE", "Spell Power") .. " " .. minMod),
-                 "Lowest bonus damage across schools. Hover the paper-doll stat for a breakdown."
+                 L["Lowest bonus damage across schools. Hover the paper-doll stat for a breakdown."]
         end },
       { id = "s_healing", name = L("BONUS_HEALING", "Bonus Healing"), func = function()
           local heal = (GetSpellBonusHealing and GetSpellBonusHealing()) or 0
           return format(" %d", heal), (L("BONUS_HEALING", "Bonus Healing") .. " " .. heal),
-                 "Bonus power applied to healing spells."
+                 L["Bonus power applied to healing spells."]
         end },
       { id = "s_hit", name = L("COMBAT_RATING_NAME8", "Spell Hit"), func = function()
           local r = rating(CR_HIT_SPELL)
@@ -381,7 +407,7 @@ local SECTIONS = {
           base    = floor((base or 0) * 5.0)
           casting = floor((casting or 0) * 5.0)
           return tostring(base), (L("MANA_REGEN", "Mana Regen") .. " " .. base),
-                 format("Not casting: %d / 5s\nWhile casting: %d / 5s", base, casting)
+                 format(L["Not casting: %d / 5s\nWhile casting: %d / 5s"], base, casting)
         end },
       { id = "s_crit", name = L("SPELL_CRIT_CHANCE", "Spell Crit"), func = function()
           local holy = 2
@@ -393,12 +419,12 @@ local SECTIONS = {
           end
           local str = format("%.2f%%", minCrit)
           return str, (L("SPELL_CRIT_CHANCE", "Spell Crit") .. " " .. str),
-                 "Chance of spells dealing extra damage."
+                 L["Chance of spells dealing extra damage."]
         end },
-      { id = "s_haste", name = "Haste Rating", func = function()
+      { id = "s_haste", name = L["Haste Rating"], func = function()
           local cr = CR_HASTE_SPELL or 20
           local r = rating(cr)
-          return tostring(r), ("Haste Rating " .. r),
+          return tostring(r), (L["Haste Rating"] .. " " .. r),
                  format(_G.SPELL_HASTE_TOOLTIP or "Increases the speed that your spells cast by %.2f%%.", ratingBonus(cr))
         end },
     },
@@ -424,32 +450,32 @@ local SECTIONS = {
           local posBuff = modifier > 0 and modifier or 0
           local negBuff = modifier < 0 and modifier or 0
           local frameText, tip = formatStat(L("DEFENSE", "Defense"), base, posBuff, negBuff)
-          return frameText, tip, "Reduces chance to be hit and crit; raises block/dodge/parry."
+          return frameText, tip, L["Reduces chance to be hit and crit; raises block/dodge/parry."]
         end },
       { id = "dodge", name = L("DODGE", "Dodge"), func = function()
           local v = (GetDodgeChance and GetDodgeChance()) or 0
           local str = format(" %.2f%%", v)
-          return str, (L("DODGE_CHANCE", "Dodge Chance") .. str), "Chance to dodge enemy melee attacks."
+          return str, (L("DODGE_CHANCE", "Dodge Chance") .. str), L["Chance to dodge enemy melee attacks."]
         end },
       { id = "parry", name = L("PARRY", "Parry"), func = function()
           local v = (GetParryChance and GetParryChance()) or 0
           local str = format(" %.2f%%", v)
-          return str, (L("PARRY_CHANCE", "Parry Chance") .. str), "Chance to parry. Requires a weapon."
+          return str, (L("PARRY_CHANCE", "Parry Chance") .. str), L["Chance to parry. Requires a weapon."]
         end },
       { id = "block", name = L("BLOCK", "Block"), func = function()
           local v = (GetBlockChance and GetBlockChance()) or 0
           local str = format(" %.2f%%", v)
           local blockVal = (GetShieldBlock and GetShieldBlock()) or 0
           return str, (L("BLOCK_CHANCE", "Block Chance") .. str),
-                 format("Chance to block. Requires a shield.\nBlock Value: %d", blockVal)
+                 format(L["Chance to block. Requires a shield.\nBlock Value: %d"], blockVal)
         end },
-      { id = "resilience", name = "Resilience", func = function()
-          local cr = CR_CRIT_TAKEN_MELEE or 15   -- resilience rating (drives all three crit-taken schools)
-          local r = rating(cr)
-          return tostring(r), ("Resilience " .. r),
-                 format("Reduces the chance you'll be critically hit by %.2f%% and reduces critical damage taken.",
-                        ratingBonus(cr))
-        end },
+      { id = "resilience", name = L["Resilience"], func = function()
+		local cr = CR_CRIT_TAKEN_MELEE or 15   -- resilience rating (drives all three crit-taken schools)
+		local r = rating(cr)
+		return tostring(r), (L["Resilience"] .. " " .. r),
+				format(L["Reduces the chance you'll be critically hit by %.2f%% and reduces critical damage taken."],
+                  ratingBonus(cr))
+		end },
     },
   },
 
@@ -483,7 +509,7 @@ local SECTIONS = {
               if negative < 0 then tip = tip .. RED .. " " .. negative .. CLOSE end
               tip = tip .. ")"
             end
-            return frameText, tip, ("Reduces " .. schoolName:lower() .. " damage taken.")
+            return frameText, tip, (L("RESISTANCE_TOOLTIP_DESC", "Reduces magic damage taken."))
           end,
         }
       end
