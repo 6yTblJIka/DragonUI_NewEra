@@ -953,6 +953,58 @@ assertf(DragonUI.EditableFrames["CooldownViewerEssential"] ~= nil, "essential re
 assertf(DragonUI.EditableFrames["CooldownViewerUtility"] ~= nil, "utility registered as EditableFrame")
 assertf(#NE.optionSections == 1, "options section registered")
 
+-- ── SHIPS DISABLED ──
+-- Owner's decision, and the only module here that does: four viewers in the middle of the screen are
+-- new HUD furniture rather than a replacement for something the player already had, so it waits to be
+-- asked. Asserted BEFORE anything turns it on, because "off by default" is exactly the state the rest
+-- of this file spends its time not being in.
+assertf(M.IsEnabled() == false, "the Cooldown Manager ships disabled")
+assertf(M.viewers.essential:IsShown() == false, "…so no viewer is on screen on a fresh profile")
+assertf(DragonUI.EditableFrames["CooldownViewerEssential"].editorVisible() == false,
+        "…and /dui edit offers no handle for it, so edit mode does not open onto four empty rectangles")
+-- The frames are still BUILT and still registered — the flag is the whole gate, so turning it on has
+-- no first-run path of its own to get wrong.
+assertf(M.viewers.buffBar ~= nil and DragonUI.EditableFrames["CooldownViewerBuffBar"] ~= nil,
+        "…while the frames themselves are built and registered regardless")
+
+-- Events are dropped while it is off, or every player who never turns it on pays for
+-- SPELL_UPDATE_COOLDOWN and UNIT_AURA all session to repaint tiles nobody can see.
+fireEvent("PLAYER_ENTERING_WORLD")
+drain()
+assertf(#M.viewers.essential.items == 0, "…and its viewers ignore events entirely while it is off")
+
+-- The AURA viewers need their own gate and so need their own assertion: UNIT_AURA and
+-- PLAYER_TARGET_CHANGED are answered in BuffViewers' own handler and never reach the base's, so a gate
+-- only in the base would leave an off Cooldown Manager rebuilding both of them on every aura tick —
+-- the one path where the cost is measurable. Probed by `_lastShownCount`, which is nil until a rebuild
+-- has actually run: the item count would be 0 either way on a profile with nothing tracked yet, so
+-- asserting on THAT would pass against the missing gate.
+fireEvent("UNIT_AURA", "player")
+drain()
+assertf(M.viewers.buffIcon._lastShownCount == nil and M.viewers.buffBar._lastShownCount == nil,
+        "…including the aura viewers, which answer UNIT_AURA on their own and are gated separately")
+
+-- THE WINDOW GOES WITH THEM (owner's steer). It configures the viewers, so an off Cooldown Manager has
+-- no window: not from /cdm, not from the options button, not from OpenTo. Gated before the panel is
+-- BUILT, which is the point — that is several hundred frames a player who never turns it on should
+-- never pay for. `CDS.panel` staying nil is how the harness can see the difference between "refused"
+-- and "built it, then hid it".
+do
+  local S = NE.cooldownviewersettings
+  SlashCmdList["NECDMSETTINGS"]()
+  assertf(S.panel == nil, "/cdm builds nothing while the Cooldown Manager is off")
+  M.OpenSettingsPanel("spells")
+  assertf(S.panel == nil, "…and neither does the options button's entry point")
+end
+
+-- ON for everything below. This is the one call standing in for a player ticking the box; the whole
+-- suite past this line is about what the Cooldown Manager does once it has been asked for.
+M.SetEnabled(true)
+assertf(M.IsEnabled() == true and M.viewers.essential:IsShown(),
+        "turning it on shows the viewers, no reload")
+assertf(#M.viewers.essential.items > 0,
+        "…and populates them on the way up, because Show fires OnShow and OnShow is Rebuild")
+
 print("\n=== EVENTS: login ===")
 local ranks = NE.spellbook.KnownRankIDs("Mind Blast")
 assertf(ranks ~= nil and #ranks == 3, "spellbook rank table built (Mind Blast x3)")
@@ -1147,7 +1199,16 @@ do
   profile.widgets.neMigrateTest = nil
   profile.widgets["neMigrateTest-Testpriest-Test Realm"] = nil
 end
-assertf(edEss.editorVisible() == true, "always offered in edit mode")
+-- Offered whenever the module is ON, empty or not — an empty viewer still has to be positionable, which
+-- is what showTest is for. It is the master enable, and only that, which takes the handle away; the
+-- boot block above asserts the off case, and this is the pair to it.
+assertf(edEss.editorVisible() == true, "offered in edit mode whenever the module is on")
+do
+  M.SetCategoryEnabled("essential", false)
+  assertf(edEss.editorVisible() == true,
+          "…including a viewer switched off by its own category, which still needs a home")
+  M.SetCategoryEnabled("essential", true)
+end
 
 -- THE bug this whole round-trip existed to catch: the registered frame must be a CreateUIFrame
 -- ANCHOR (which carries the drag scripts), not the bare content frame.
@@ -1604,6 +1665,26 @@ assertf(mb:GetSettingsKey() == 8092, "…but its settings key is the listed rank
 print("\n=== ALERT ENGINE (Phase 4) ===")
 local tickFn = AL._ticker:GetScript("OnUpdate")
 local function tick() tickFn(AL._ticker, 1) end
+
+-- OFF MEANS SILENT, and the READY SOUND is why the ticker needs a gate of its own rather than leaving it
+-- to "the tiles are hidden anyway". A player who assigns sounds, switches the Cooldown Manager off, and
+-- then keeps hearing it announce cooldowns for viewers that are not on screen has a haunted UI.
+--
+-- Spying on HasAny, because the gate sits in FRONT of it: the question is whether the tick did any work
+-- at all, and every visible consequence downstream is hidden by then anyway. M.IsEnabled is stubbed
+-- rather than toggled for real — SetEnabled would rebuild all four viewers underneath the alert tests
+-- that follow, to prove something about a branch that only reads this one function.
+do
+  local realEnabled, realHasAny, calls = M.IsEnabled, AL.HasAny, 0
+  AL.HasAny = function() calls = calls + 1; return realHasAny() end
+  M.IsEnabled = function() return false end
+  tick()
+  assertf(calls == 0, "the alert ticker does no work at all while the module is off")
+  M.IsEnabled = realEnabled
+  tick()
+  assertf(calls == 1, "…and picks straight back up when it is switched on")
+  AL.HasAny = realHasAny
+end
 
 local function itemFor(name)
   for _, it in ipairs(ess.items) do if it.spellName == name then return it end end
@@ -3738,15 +3819,25 @@ do
           "…and no viewer settings at all (" .. rec.sliders .. " sliders, " .. rec.drops .. " dropdowns)")
 
   assertf(rec.toggles[1].getFunc() == M.IsEnabled(), "its toggle reads the master enable")
+  -- Switching it off from here, with the window up, is the one route by which a live panel can outlive
+  -- the module — so the toggle has to take the window with it, or it sits there configuring four frames
+  -- it can no longer show, behind a Position button that leads to a hidden editor handle.
+  S.ShowPanel()
+  assertf(panel:IsShown(), "the window is up before the module is switched off")
   rec.toggles[1].setFunc(false)
   assertf(M.IsEnabled() == false, "…and writes it")
   assertf(not M.viewers.essential:IsShown(), "…which hides the viewers immediately, no reload")
+  assertf(not panel:IsShown(), "…and closes the window, which configures viewers that are now gone")
+  S.ShowPanel()
+  assertf(not panel:IsShown(), "…and it will not re-open while the module is off")
   rec.toggles[1].setFunc(true)
 
   S.HidePanel()
   rec.buttons[1].callback()
-  assertf(panel:IsShown() and S.GetDisplayMode() == "settings",
-          "its button opens /cdm on the Settings tab")
+  -- SPELLS, not Settings. What anyone wants first after switching the module on is to see what it
+  -- tracks; Settings is one click away on a tab that is already on screen. (Owner's steer.)
+  assertf(panel:IsShown() and S.GetDisplayMode() == "spells",
+          "its button opens /cdm on the Spells tab (" .. tostring(S.GetDisplayMode()) .. ")")
 
   -- ── The way to a viewer's settings (Phase 6: §G.4's last undecided item) ──
   -- One button per viewer, in place of the four sections that used to hold their controls. This is the

@@ -178,6 +178,8 @@ Retail's **Cooldown Manager** (a *War Within* feature) downported from NewEra �
 - **Edit mode** — `/dragonui edit` gives each viewer a mover and a settings dialog: orientation, icon limit and direction, icon size, padding, opacity, visibility, timers, and tooltips.
 - **Layouts** — save and apply layouts, share them as import/export strings, drop back to a starter layout, and undo the last layout change with **Revert**. Layouts are stored **per spec**, so your dual-spec setups don't fight each other.
 
+Note: Module is off by default
+
 ## Roadmap
 
 Faithfully downporting the remaining NewEra panels to 3.3.5a:

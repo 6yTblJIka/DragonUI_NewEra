@@ -345,16 +345,43 @@ function M.GetBuffIconOpt(key)  return getOpt(M.FRAME_ID.buffIcon,  key) end
 function M.GetBuffBarOpt(key)   return getOpt(M.FRAME_ID.buffBar,   key) end
 
 -- ── Enable toggles ──────────────────────────────────────────────────────────────────────────────
+--
+-- OFF by default, by the owner's decision, and it is the only module here that ships that way.
+--
+-- Everything else NewEra adds REPLACES something the player already had — a nicer character sheet, a
+-- nicer guild window — so shipping it on is shipping an improvement. Four viewers that appear in the
+-- middle of the screen are not a replacement for anything: they are new HUD furniture, sized and
+-- placed by us, over whatever the player has already arranged there. Deciding that for them on first
+-- login is the one thing a HUD addon should not do.
+--
+-- The flag is the whole of it. Nothing else keys off `enabled`, so turning it on later reads exactly
+-- the same curated lists, layouts and alerts a profile that had it on all along would read — there is
+-- no seed to miss and no first-run path that only happens while it is on. See M.SetEnabled.
+--
+-- NOTE for existing profiles: a profile that never touched this toggle stored nothing, so it lands on
+-- the new default and the viewers are hidden after this change. One tick in DragonUI's options brings
+-- back the exact setup that was there, because disabling has never deleted anything.
 function M.IsEnabled()
   local cd = store(false)
   if cd and cd.enabled ~= nil then return cd.enabled end
-  return true
+  return false
 end
 
+-- Live both ways, and UpdateVisibility is genuinely all it takes. A viewer that was hidden all session
+-- has stale (or no) items, but the Show inside UpdateVisibility fires OnShow, and OnShow is Rebuild —
+-- so switching on mid-session populates the viewers on the way up. That is what lets this be the only
+-- gate: no boot-time work is skipped while it is off, so nothing has to be caught up afterwards.
 function M.SetEnabled(v)
   local cd = store(true)
   if cd then cd.enabled = v and true or false end
   M.ForEachViewer(function(viewer) viewer:UpdateVisibility() end)
+  -- The window goes with the viewers. SettingsPanel refuses to OPEN while the module is off; this is
+  -- the other half of that — a window already up would otherwise sit there configuring four frames it
+  -- can no longer show, with a Position button that leads nowhere.
+  if not v then
+    local CDS = NE.cooldownviewersettings
+    if CDS and CDS.HidePanel then CDS.HidePanel() end
+  end
 end
 
 -- Per-category enable. Retail's HUDLayout preset has all four viewers on.

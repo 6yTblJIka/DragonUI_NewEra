@@ -246,6 +246,11 @@ local function auraViewerOnLoad(self)
 end
 
 local function auraViewerOnEvent(self, event, ...)
+  -- The same master-enable gate BaseViewerMixin:OnEvent carries, repeated because the two hottest
+  -- events on this client — UNIT_AURA and PLAYER_TARGET_CHANGED — are answered here and never reach it.
+  -- A gate only in the base would have left an off Cooldown Manager rebuilding both aura viewers on
+  -- every aura tick, which is the one path where that cost is actually measurable.
+  if not M.IsEnabled() then return end
   if event == "UNIT_AURA" then
     local unit = ...
     if unit == "player" or unit == "target" then safeRebuild(self) end

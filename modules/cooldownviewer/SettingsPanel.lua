@@ -453,10 +453,28 @@ function CDS.RefreshLayout() end
 
 -- ── Public entry points ─────────────────────────────────────────────────────────────────────────
 
+-- THE WINDOW IS PART OF THE MODULE, so an off Cooldown Manager has no window (owner's decision). Every
+-- route in — /cdm, the DragonUI options button, OpenTo from anywhere — funnels through ShowPanel, so
+-- this is the one gate, and it sits BEFORE build(): the panel is several hundred frames built lazily on
+-- first open, and a player who never turns the module on should never pay for them.
+--
+-- It also answers the question that off-by-default would otherwise leave open — where a player goes to
+-- switch it on. Not here: the window would be a dead end that configures viewers it cannot show. The
+-- switch is in DragonUI's options, which is where every other module's is, so the message names it.
+local function windowAvailable()
+  if M.IsEnabled() then return true end
+  if DEFAULT_CHAT_FRAME then
+    DEFAULT_CHAT_FRAME:AddMessage("|cff1784d1Cooldown Manager|r is turned off. Enable it in DragonUI's "
+      .. "options, under New Era > Cooldown Manager.")
+  end
+  return false
+end
+
 -- Always through SetDisplayMode, never a bare RefreshLayout: which body is on screen, which chrome is
 -- shown, and which refresher runs all depend on the mode, and re-opening on the settings tab has to
 -- re-read the store rather than rebuild the grids.
 function CDS.ShowPanel()
+  if not windowAvailable() then return end
   build()
   CDS.SetDisplayMode(currentMode or "spells")
   if CDS.RefreshLayoutDropdown then CDS.RefreshLayoutDropdown() end
@@ -468,14 +486,21 @@ function CDS.HidePanel()
   if panel then panel:Hide() end
 end
 
+-- Closing is never gated. The window can be up when the module goes off — open /cdm, then untick the
+-- toggle in DragonUI's options — and /cdm has to stay the way to shut it. (M.SetEnabled closes it for
+-- exactly that reason; this is the case where the player gets there first.)
 function CDS.TogglePanel()
-  build()
-  if panel:IsShown() then panel:Hide() else CDS.ShowPanel() end
+  if panel and panel:IsShown() then panel:Hide(); return end
+  CDS.ShowPanel()
 end
 
--- Open with a viewer category pre-selecting the right tab. `category` may also be a display mode, so
--- the DragonUI options button can open straight onto "settings".
+-- Open with a viewer category pre-selecting the right tab. `category` may also be a display mode, so a
+-- caller can open straight onto "settings".
+--
+-- Gated before build() for the same reason ShowPanel is — this is a public entry point in its own right
+-- (M.OpenSettingsPanel), and reaching build() through it would defeat the point of gating the other.
 function CDS.OpenTo(category)
+  if not windowAvailable() then return end
   build()
   currentMode = CATEGORY_TO_MODE[category]
     or ((category == "spells" or category == "auras" or category == "settings") and category)

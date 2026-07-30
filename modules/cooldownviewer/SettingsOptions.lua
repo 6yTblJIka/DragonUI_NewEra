@@ -71,6 +71,11 @@ local function positionViewer(category)
     say("that viewer doesn't exist yet — it builds at login.")
     return
   end
+  -- No master-enable check here on purpose, though a disabled Cooldown Manager registers no editor
+  -- handle (Register.lua's editorVisible) and this would land a settings dialog beside a frame that is
+  -- not on screen. It cannot be reached in that state: the window refuses to open while the module is
+  -- off, and M.SetEnabled closes one that is already up. A guard for it would be a comment describing
+  -- something that cannot happen, which is worse than no guard at all.
   if not NE.OpenFrameEditor then
     say("editor mode isn't available in this DragonUI build. Type /dui edit to position frames.")
     return

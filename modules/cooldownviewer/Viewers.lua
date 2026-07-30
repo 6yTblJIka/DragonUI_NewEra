@@ -210,7 +210,19 @@ end
 
 -- Fail-safe: this event path touches live cooldown/aura/inventory reads, and a single bad read must
 -- never error in combat. Contain it, and capture the site to NE.Log so it stays diagnosable.
+--
+-- AND: nothing to update while the module is off, which is now the DEFAULT (see M.IsEnabled). Without
+-- this gate every player who never turns the Cooldown Manager on still pays for SPELL_UPDATE_COOLDOWN,
+-- UNIT_AURA, BAG_UPDATE_COOLDOWN and the rest for the whole session, re-reading cooldowns to repaint
+-- tiles that are not on screen. Registration is left alone rather than deferred: these are frame
+-- events, and unregistering four frames' worth on a toggle is more moving parts than one early return.
+--
+-- SAFE TO DROP rather than queue. Switching on runs through UpdateVisibility, whose Show fires OnShow,
+-- and OnShow is Rebuild — so the catch-up is a full re-read from scratch, the same one a viewer gets
+-- when its category is re-enabled. Deliberately NOT gated on IsShown(): a viewer hidden by its own
+-- category or by "In Combat" still has to track state, or it would come back wrong.
 function BaseViewerMixin:OnEvent(event, ...)
+  if not M.IsEnabled() then return end
   local ok, err = pcall(self.HandleEvent, self, event, ...)
   if not ok and NE.Log then
     NE.Log("CDM", "viewer event '" .. tostring(event) .. "' error: " .. tostring(err))

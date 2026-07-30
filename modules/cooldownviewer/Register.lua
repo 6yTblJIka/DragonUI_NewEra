@@ -75,6 +75,14 @@ local function boot()
         -- no reason to inherit a Priest's placement. Existing shared positions are seeded into each
         -- character's slot on first login, so nothing moves on upgrade.
         perCharacter = true,
+        -- No handles while the module is off. RegisterHUDFrame defaults this to "always offer it",
+        -- which is right for a HUD frame that is merely EMPTY right now — that is what showTest is
+        -- for. It is wrong for one the player has not turned on: the Cooldown Manager ships disabled
+        -- (see M.IsEnabled), so out of the box `/dui edit` would open onto four green rectangles for
+        -- a feature that has never been on screen, and showTest would fill them with demo icons.
+        -- DragonUI honours a false here by hiding the anchor and skipping showTest entirely
+        -- (core/api.lua:1239).
+        editorVisible = function() return M.IsEnabled() end,
         -- Retail keeps a system's settings ON the frame in Edit Mode, not in a separate options
         -- window. EditorPanel.lua builds that dialog; integration/Register.lua owns when it opens.
         editorSettings = function(editorAnchor)
@@ -323,15 +331,17 @@ NE.RegisterOptionSection({
     if C.AddSpacer then C:AddSpacer(scroll) end
     C:AddHeading(scroll, "Cooldown Manager")
     C:AddDescription(scroll,
-      "Retail's Cooldown Manager, driven from curated per-class cooldown lists. Every setting — which "
-      .. "spells and buffs are tracked, each viewer's layout, size and visibility, alerts and ready "
-      .. "sounds — lives in the Cooldown Manager window itself (/cdm). Drag the viewers with DragonUI's "
-      .. "editor mode to reposition them, and right-click one there for its own layout settings.")
+      "Retail's Cooldown Manager, driven from curated per-class cooldown lists. |cffffcc55Off by "
+      .. "default|r — it adds four viewers to the middle of your screen, so it waits to be asked. Every "
+      .. "setting — which spells and buffs are tracked, each viewer's layout, size and visibility, alerts "
+      .. "and ready sounds — lives in the Cooldown Manager window itself (/cdm). Drag the viewers with "
+      .. "DragonUI's editor mode to reposition them, and right-click one there for its own layout settings.")
 
     C:AddToggle(scroll, {
       label   = "Enable Cooldown Manager",
-      desc    = "Turn off to hide all four viewers. Takes effect immediately, and nothing is forgotten — "
-                .. "turning it back on restores your setup exactly.",
+      desc    = "Off by default. Turn on to show the four viewers; turn off to hide them again. Takes "
+                .. "effect immediately either way, and nothing is forgotten — this switch stores one flag "
+                .. "and touches nothing else, so your setup comes back exactly as you left it.",
       getFunc = function() return M.IsEnabled() end,
       setFunc = function(v) M.SetEnabled(v) end,
     })
@@ -339,9 +349,15 @@ NE.RegisterOptionSection({
     if C.AddButton then
       C:AddButton(scroll, {
         label    = "Open Cooldown Manager",
-        desc     = "Opens the Cooldown Manager window (/cdm) on its Settings tab.",
+        -- SPELLS, not Settings (owner's steer). This is the front door: the first thing anyone wants
+        -- after turning the module on is to see and change what it tracks, which is the Spells tab.
+        -- Settings is where you go once you already know what is in the viewers, and the tabs are right
+        -- there. (The link on the edit-mode dialog still opens on Settings — that one exists to reach
+        -- the non-per-viewer settings by name, so it means it.)
+        desc     = "Opens the Cooldown Manager window (/cdm) on its Spells tab. Needs the module on — "
+                   .. "the window configures the viewers, so it goes away with them.",
         callback = function()
-          if M.OpenSettingsPanel then M.OpenSettingsPanel("settings") end
+          if M.OpenSettingsPanel then M.OpenSettingsPanel("spells") end
         end,
       })
     else

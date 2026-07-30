@@ -3043,6 +3043,73 @@ button belongs to exactly one list forever and its name already says which.
 918 assertions. Six mutations fail by name: no fix at all, anchored to the row, the ownership guard
 dropped, the wrong corner, the old points left in place, and the off-screen flip removed.
 
+#### H.3.18. The module ships disabled
+
+> "I want this module to be set to disabled by default."
+> "When disabled the cdm window shouldnt be loadable via settings or /cdm."
+> "When going to the window via the settings menu it should go to the Spells tab by default."
+
+Owner's decision, and the only NewEra module that ships off. The reasoning is worth recording because it
+does not generalise: everything else here **replaces** something the player already had — a nicer
+character sheet, a nicer guild window — so shipping it on ships an improvement. Four viewers in the
+middle of the screen replace nothing. They are new HUD furniture, sized and placed by us, over whatever
+the player has already arranged there, and deciding that for them on first login is the one thing a HUD
+addon should not do.
+
+`M.IsEnabled` fell through to `true`; it now falls through to `false`. That single flag is the whole
+gate, deliberately — nothing else keys off it, so a profile that switches it on later reads exactly the
+same curated lists, layouts and alerts as one that had it on all along. There is no seed to miss and no
+first-run path that only happens while it is on.
+
+Flipping the default turned four places that had been merely *quiet* while disabled into places that were
+**wrong**, because "disabled" had never been the state anyone actually shipped in:
+
+* **Edit mode offered four handles for it.** `NE.RegisterHUDFrame` defaults `editorVisible` to "always
+  offer it", which is right for a HUD frame that is only *empty* right now — that is what `showTest` is
+  for — and wrong for one the player has never turned on. Out of the box `/dui edit` would have opened
+  onto four green rectangles full of demo icons for a feature that has never been on screen. DragonUI
+  honours a false `editorVisible` by hiding the anchor and skipping `showTest` (`core/api.lua:1239`).
+* **The viewers kept working.** Frame events do not care whether a frame is shown, so every player who
+  never turned the Cooldown Manager on would still have paid for `SPELL_UPDATE_COOLDOWN`, `UNIT_AURA`,
+  `BAG_UPDATE_COOLDOWN` and the rest for the whole session, re-reading cooldowns to repaint tiles nobody
+  can see. Gated at both `OnEvent` entry points — the base's, and `auraViewerOnEvent`, which answers the
+  two hottest events on this client itself and never reaches the base. Safe to **drop** events rather
+  than queue them: switching on runs through `UpdateVisibility`, whose `Show` fires `OnShow`, and
+  `OnShow` is `Rebuild`, so the catch-up is a full re-read from scratch. Not gated on `IsShown()` — a
+  viewer hidden by its own category or by "In Combat" still has to track state or it comes back wrong.
+* **The ready sounds kept playing.** The alert ticker early-outs when nothing is assigned, which is not
+  the same question. A player who assigns sounds, switches the module off, and then keeps hearing it
+  announce cooldowns for viewers that are not on screen has a haunted UI. (A latent fault before this,
+  since the toggle already existed; off-by-default is what made it worth fixing.)
+* **The window was still reachable, and configured viewers it could not show.** The owner's answer, on
+  the second message: the window is part of the module, so an off Cooldown Manager has no window. Every
+  route in — `/cdm`, the options button, `OpenTo` — funnels through `ShowPanel`, so one gate covers it,
+  and it sits **before** `build()`: the panel is several hundred frames built lazily on first open, and
+  a player who never turns the module on should never pay for them. `M.SetEnabled` closes a window that
+  is already up, for the one case the player can reach — open `/cdm`, then untick the toggle. Closing is
+  never gated, so `/cdm` stays the way to shut it either way.
+
+That last one also settles a question off-by-default would otherwise leave open: **where** a player goes
+to switch it on. Not the window, which would be a dead end configuring viewers it cannot show — the
+switch is in DragonUI's options, where every other module's is, and the refusal message names it.
+
+And the options button now opens on **Spells**, not Settings. The first thing anyone wants after turning
+the module on is to see and change what it tracks; Settings is one click away on a tab already on screen.
+The link on the edit-mode dialog still opens on Settings — that one exists to reach the non-per-viewer
+settings by name, so it means it.
+
+**Existing profiles:** one that never touched the toggle stored nothing, so it lands on the new default
+and the viewers are hidden after this change. One tick brings back the exact setup that was there —
+disabling has never deleted anything — and the branch is unreleased, so no adoption migration was added.
+
+934 assertions, and the boot block asserts the *off* state before anything turns it on, since that is the
+state the rest of the file spends its time not being in. Nine mutations fail by name: the default back to
+`true` (10 failures), `editorVisible` dropped, either event gate dropped, the ticker gate dropped, the
+window gate always allowing, `OpenTo` gated only via `ShowPanel`, `SetEnabled` not closing the window,
+and the options button back on Settings. The aura-viewer gate is probed through `_lastShownCount` rather
+than the item count — a profile with nothing tracked yet has zero items either way, so asserting on the
+count would have passed against the missing gate.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

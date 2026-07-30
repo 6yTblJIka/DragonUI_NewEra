@@ -618,6 +618,11 @@ ticker:SetScript("OnUpdate", function(self, delta)
   self.elapsed = self.elapsed + delta
   if self.elapsed < TICK then return end
   self.elapsed = 0
+  -- Off means off, and a ready SOUND is the reason this cannot be left to "the tiles are hidden
+  -- anyway". A player who assigns sounds, turns the Cooldown Manager off, and then keeps hearing it
+  -- announce cooldowns for viewers that are not on screen has a haunted UI. Cheaper than HasAny too,
+  -- which walks the whole alert table 5 times a second.
+  if not M.IsEnabled() then return end
   if not (AL.HasAny() or (M.HasAnyReadySound and M.HasAnyReadySound())) then return end
   -- ForEachViewer rather than a hand-written list, so this cannot go stale against M.viewers again —
   -- and so it matches AL.Stop and M.ResetAlerts, which have always used it.
