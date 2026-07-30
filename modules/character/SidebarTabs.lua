@@ -15,6 +15,7 @@
 -- tab plays the stock tab SFX. The strip mirrors InsetRight's visibility via OnShow/OnHide hooks.
 
 local NE = DragonUI_NewEra
+local L = NE:GetLocale()
 NE.charpanel = NE.charpanel or {}
 local CP = NE.charpanel
 
@@ -40,10 +41,36 @@ local TC = {
   equipIcon    = { 0.01562500, 0.53125000, 0.46875000, 0.60546875 },  -- Tab3 icon
 }
 
-local function L(global, fallback)
-  local v = _G[global]
-  if type(v) == "string" and v ~= "" then return v end
+local function getLocaleString(global, fallback)
+  if type(global) == "string" and global ~= "" then
+    local v = _G[global]
+    if type(v) == "string" and v ~= "" then
+      return v
+    end
+  end
+  if type(L) == "table" and type(fallback) == "string" and fallback ~= "" then
+    local rawVal = rawget(L, fallback)
+    if type(rawVal) == "string" and rawVal ~= "" then
+      return rawVal
+    end
+    local ok, res = pcall(function() return L[fallback] end)
+    if ok and type(res) == "string" and res ~= "" then
+      return res
+    end
+  end
   return fallback
+end
+
+if type(L) == "table" then
+  local mt = getmetatable(L) or {}
+  mt.__call = function(self, global, fallback)
+    return getLocaleString(global, fallback)
+  end
+  setmetatable(L, mt)
+else
+  L = function(global, fallback)
+    return getLocaleString(global, fallback)
+  end
 end
 
 -- Build one tab. iconKind: "face" = player portrait (Tab1); "tex" = sub-rect of the sheet.
