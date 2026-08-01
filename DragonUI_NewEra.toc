@@ -81,6 +81,7 @@ modules\character\ModelArea.lua
 modules\character\ModelControls.lua
 modules\character\SlotFrames.lua
 modules\character\SlotQuality.lua
+modules\character\SlotItemLevel.lua
 modules\character\InnerBorder.lua
 modules\character\LevelText.lua
 modules\character\PaperDoll.lua
@@ -97,6 +98,7 @@ modules\character\Honor.lua
 modules\character\Currency.lua
 modules\character\PetPaperDoll.lua
 modules\character\CloseButton.lua
+modules\character\SettingsCog.lua
 modules\character\EditModeRegister.lua
 
 # --- Collections (standalone retail-style Mounts & Pet Journal window) ---
