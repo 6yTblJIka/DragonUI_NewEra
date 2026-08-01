@@ -284,14 +284,43 @@ function BS.IsItemLevelShown()
   return (not cfg) or cfg.bags ~= false   -- missing key defaults to ON, matching DragonUI
 end
 
-function BS.SetItemLevelShown(on)
+-- Drive the SAME call chain the Enhancements checkbox uses. Its setFunc is
+--   EnsureModuleTable("itemlevel")[key] = val ; addon:RefreshItemLevel()
+-- where EnsureModuleTable is addon.PanelControls:EnsureModuleTable — so when DragonUI_Options is
+-- loaded we call that method itself rather than reimplementing where the flag lives. Only if the
+-- options addon isn't loaded (it's OptionalDeps + load-on-demand) do we walk the profile ourselves,
+-- which is what that method does anyway.
+local function itemLevelConfigTable()
   local d = NE.dragon
-  if not (d and d.db and d.db.profile) then return end
+  if not d then return nil end
+
+  local C = d.PanelControls
+  if C and type(C.EnsureModuleTable) == "function" then
+    local ok, tbl = pcall(C.EnsureModuleTable, C, ITEMLEVEL_MODULE)
+    if ok and type(tbl) == "table" then return tbl end
+  end
+
+  if not (d.db and d.db.profile) then return nil end
   local profile = d.db.profile
   profile.modules = profile.modules or {}
   profile.modules[ITEMLEVEL_MODULE] = profile.modules[ITEMLEVEL_MODULE] or {}
-  profile.modules[ITEMLEVEL_MODULE].bags = on and true or false
-  if d.RefreshItemLevel then pcall(d.RefreshItemLevel, d) end
+  return profile.modules[ITEMLEVEL_MODULE]
+end
+
+function BS.SetItemLevelShown(on)
+  local cfg = itemLevelConfigTable()
+  if not cfg then return end
+  cfg.bags = on and true or false
+
+  local d = NE.dragon
+  if d and d.RefreshItemLevel then pcall(d.RefreshItemLevel, d) end
+
+  -- Repaint our own grid DIRECTLY rather than trusting the RefreshItemLevel hook to do it.
+  -- RefreshItemLevel hides every text it owns (ours included) and then re-runs only ITS update
+  -- paths; the hook in CombinedBag is what normally brings ours back, but this is the one caller
+  -- that must not depend on that hook having registered. Calling both is harmless — the repaint is
+  -- idempotent — and it means the menu entry works even if the hook never took.
+  if NE.combinedbag and NE.combinedbag.Refresh then pcall(NE.combinedbag.Refresh) end
 end
 
 function BS.ApplyItemLevel(btn, bagID, slot)
