@@ -21,6 +21,8 @@
 -- cumulative Y positions (header 40 + 2 gap, rows 15 each) inside a plain ScrollFrame, and scroll by
 -- PIXELS. The custom scrollbar drives the ScrollFrame's SetVerticalScroll via NE.scrollbar.
 -- BuildCustomPixel. Collapse-on-header-click hides a section's rows and re-runs the cumulative layout.
+-- Shift+left-drag on a header reorders the blocks (see the reorder section); both the collapse state
+-- and the block order persist per character in NE.db.charStats.
 --
 -- 3.3.5 GOTCHAS (§B) applied here:
 --   * No SetShown — Show()/Hide() only.
@@ -216,6 +218,93 @@ local function averageItemLevel()
   return avgIlvl, avgQuality
 end
 
+-- ----------------------------------------------------------------------------
+-- Movement speed, as a percentage of normal running speed (retail's convention: 100% = base run,
+-- epic ground mount 200%, epic flight 380%).
+--
+-- DOWNPORT: 3.3.5a exposes ONLY `GetUnitSpeed(unit)` -> the unit's CURRENT speed in yards/second.
+-- Retail's 4-return form (currentSpeed, runSpeed, flightSpeed, swimSpeed) that PaperDollFrame's own
+-- movement-speed stat reads is Cata+, so there is no way to ask this client "what WOULD my run speed
+-- be" — standing at the character sheet genuinely reads 0.
+--
+-- So we sample while moving, tagged with the movement CONTEXT the sample was taken in (mounted /
+-- flying / swimming / shapeshift form), and report the fastest RECENT sample for the current context.
+-- Deliberately NOT the live reading: walking is a flat 2.5 yd/s (36%) and backpedalling 4.5 (64%),
+-- and this row answers "what is my movement speed stat" — 100 / 120 / 80 — not "how fast am I
+-- physically travelling this instant". Walk-speed samples are dropped outright (WALK_FLOOR) and
+-- taking the max means backpedalling can't pull the figure down while you're also moving forward.
+-- Mount up and the on-foot 100% isn't shown as if it were current — samples are per context.
+-- With no sample at all we assume 100%: normal run speed is the right default, and it self-corrects
+-- on your first step.
+-- ----------------------------------------------------------------------------
+local BASE_SPEED   = 7     -- yards/second at 100%. DOWNPORT: BASE_MOVEMENT_SPEED is Cata+.
+local SPEED_ID     = "movespeed"
+-- Walking is a flat 2.5 yd/s (36%). Below this we assume walking rather than a slow effect: the
+-- slowest real snares land around 50-60%, and a full root reports speed 0 (never sampled at all).
+local WALK_FLOOR   = 40
+-- Seconds after which a stored measurement stops outranking a newer, slower one. This is what lets
+-- an expired Sprint decay back to 100% WITHOUT invalidating on UNIT_AURA — an aura-driven reset
+-- fires constantly in combat and would leave the row bouncing to whatever you did in the instant
+-- after each proc, backpedalling included.
+local SPEED_WINDOW = 6
+local speedSamples = {}    -- movement context -> { pct = fastest % measured, t = when }
+
+local function speedContext()
+  local form = (GetShapeshiftForm and GetShapeshiftForm()) or 0
+  return format("%d-%d-%d-%d",
+    IsMounted  and IsMounted()  and 1 or 0,
+    IsFlying   and IsFlying()   and 1 or 0,
+    IsSwimming and IsSwimming() and 1 or 0,
+    tonumber(form) or 0)
+end
+
+-- Returns percent-of-base, measured. measured=false means nothing has been sampled in this context
+-- yet and the 100% baseline is being assumed.
+-- Samples are kept PER context rather than in one slot, so dismounting restores the on-foot figure
+-- immediately instead of falling back to the assumed baseline until you take another step.
+local function movementSpeedPct()
+  local cur = (GetUnitSpeed and GetUnitSpeed("player")) or 0
+  local ctx = speedContext()
+  local pct = cur / BASE_SPEED * 100
+  if pct >= WALK_FLOOR then
+    local now  = (GetTime and GetTime()) or 0
+    local best = speedSamples[ctx]
+    -- Take the sample if it's faster, or if what we're holding has gone stale (a buff that expired).
+    if not best or pct >= best.pct or (now - best.t) > SPEED_WINDOW then
+      speedSamples[ctx] = { pct = pct, t = now }
+    end
+  end
+  local best = speedSamples[ctx]
+  if best then return best.pct, true end
+  return 100, false
+end
+
+local function movementSpeedText()
+  return format("%d%%", floor(movementSpeedPct() + 0.5))
+end
+
+-- ----------------------------------------------------------------------------
+-- Equipment durability as a percentage: total current / total maximum across everything equipped.
+-- GetInventoryItemDurability returns nil for items with no durability at all (rings, neck, trinkets,
+-- shirt, tabard, and heirlooms) — those must be SKIPPED, not counted as 0, or a fully-kitted
+-- character would read far below its real condition. Nothing durable equipped -> nil -> "--".
+-- Also reports the single worst-condition slot, which is the number that actually matters (an
+-- average of 90% still means something is about to break at 5%).
+-- ----------------------------------------------------------------------------
+local function equipmentDurability()
+  local cur, maxTotal, worst = 0, 0, nil
+  for slot = 1, 19 do   -- INVSLOT_HEAD .. INVSLOT_TABARD; non-durable slots return nil and are skipped
+    local ok, c, m = pcall(GetInventoryItemDurability, slot)
+    if ok and c and m and m > 0 then
+      cur, maxTotal = cur + c, maxTotal + m
+      local pct = c / m * 100
+      if not worst or pct < worst then worst = pct end
+    end
+  end
+  if maxTotal == 0 then return nil end
+  return cur / maxTotal * 100, cur, maxTotal, worst
+end
+
 -- 7 sections, in the locked NewEra order. Each `stats` is a list of element defs.
 local SECTIONS = {
   {
@@ -235,6 +324,29 @@ local SECTIONS = {
           local plabel = (token and _G[token]) or L("MANA", "Mana")
           return tostring(pmax), (plabel .. " " .. pmax),
                  format(L["Your maximum %s."], plabel)
+        end },
+      { id = SPEED_ID, name = L("STAT_MOVEMENT_SPEED", "Movement Speed"), func = function()
+          local label = L("STAT_MOVEMENT_SPEED", "Movement Speed")
+          local pct, measured = movementSpeedPct()
+          local val = format("%d%%", floor(pct + 0.5))
+          return val, (label .. " " .. val), format(
+            "Your running speed. 100%% is normal (%d yards/second); mounts and speed effects raise it,"
+            .. " slows lower it. Walking and backpedalling are ignored."
+            .. (measured and "" or "\nAssuming the 100%% baseline — move a step to measure it."),
+            BASE_SPEED)
+        end },
+      { id = "durability", name = L("DURABILITY", "Durability"), func = function()
+          local label = L("DURABILITY", "Durability")
+          local pct, cur, maxTotal, worst = equipmentDurability()
+          if not pct then
+            return "--", label, "You have nothing equipped that can take durability damage."
+          end
+          local val = format("%d%%", floor(pct + 0.5))
+          return val, (label .. " " .. val), format(
+            "Condition of your equipment: %d of %d durability across every equipped item that has it."
+            .. "\nWorst slot: %d%%."
+            .. "\nItems with no durability (rings, neck, trinkets, shirt, tabard) are not counted.",
+            cur, maxTotal, floor(worst + 0.5))
         end },
     },
   },
@@ -676,10 +788,17 @@ local function activeSections()
   return CP._sidebarPetMode and PET_SECTIONS or SECTIONS
 end
 
+-- The Item Level block isn't a SECTIONS entry (it's built separately), but it IS a reorderable
+-- block, so it needs an id that lives in the same namespace as the section ids.
+local ITEMLEVEL_ID = "itemlevel"
+
 -- ----------------------------------------------------------------------------
 -- Collapse state (defaults: General collapsed, the rest expanded — NewEra/DUIC default).
 -- ----------------------------------------------------------------------------
 local sectionExpanded = {
+  -- itemlevel isn't a SECTIONS entry (it's built separately), but it lives in this table so it
+  -- collapses like every other header AND rides the same per-character persistence.
+  itemlevel = true,
   general = false, attributes = true, melee = true, ranged = true,
   spell = true, defense = true, resistance = true,
   -- Pet sections default all-expanded.
@@ -687,9 +806,55 @@ local sectionExpanded = {
   pet_defense = true, pet_resistance = true,
 }
 
--- Persist the section collapse state PER CHARACTER (NE.db.charStats[charKey]). The defaults above hold
--- until a saved state is loaded (once NE.db is ready); every header toggle writes it back — so a /reload
--- restores each section's open/closed state for that character.
+-- ----------------------------------------------------------------------------
+-- Block ORDER (shift+drag reorder). The sidebar lays blocks out in this order instead of the
+-- hardcoded SECTIONS order, so Item Level can be dragged to the bottom, Defense above Melee, etc.
+-- Player mode and pet mode keep separate orders (their block sets don't overlap).
+-- ----------------------------------------------------------------------------
+local blockOrder = { player = nil, pet = nil }   -- id arrays; built lazily, overwritten on DB load
+
+local function defaultOrderFor(petMode)
+  local t = {}
+  if petMode then
+    for _, s in ipairs(PET_SECTIONS) do t[#t + 1] = s.id end
+  else
+    t[1] = ITEMLEVEL_ID   -- retail pins Item Level at the top; that's only the DEFAULT now
+    for _, s in ipairs(SECTIONS) do t[#t + 1] = s.id end
+  end
+  return t
+end
+
+-- A saved order is untrusted: it can hold ids from an older addon version, duplicates, or be missing
+-- blocks added since. Keep the valid saved ids in their saved order, then splice any missing block
+-- back in at its default index, so a new section appears where it was designed to instead of last.
+local function sanitizeOrder(saved, default)
+  local valid, seen, out = {}, {}, {}
+  for _, id in ipairs(default) do valid[id] = true end
+  if type(saved) == "table" then
+    for _, id in ipairs(saved) do
+      if valid[id] and not seen[id] then seen[id] = true; out[#out + 1] = id end
+    end
+  end
+  for i, id in ipairs(default) do
+    if not seen[id] then
+      seen[id] = true
+      tinsert(out, i <= #out + 1 and i or #out + 1, id)
+    end
+  end
+  return out
+end
+
+-- The order array for the mode that's showing now (lazily seeded with the defaults pre-DB).
+local function currentOrder()
+  local key = CP._sidebarPetMode and "pet" or "player"
+  if not blockOrder[key] then blockOrder[key] = defaultOrderFor(key == "pet") end
+  return blockOrder[key]
+end
+
+-- Persist the section collapse state + block order PER CHARACTER (NE.db.charStats[charKey]). The
+-- defaults above hold until a saved state is loaded (once NE.db is ready); every header toggle and
+-- every completed reorder drag writes it back — so a /reload restores each section's open/closed
+-- state AND the block order for that character.
 local _stateLoaded = false
 local function statsStore(create)
   if not (NE.db and NE.CharKey) then return nil end
@@ -708,15 +873,127 @@ local function loadSectionState()
   _stateLoaded = true
   local store = statsStore(false)
   if store then
+    -- Collapse flags are stored as bare id->bool at the top level, so skip the two ORDER keys
+    -- (they're arrays, and sectionExpanded has no entry for them — the nil check already does it).
     for id, v in pairs(store) do
       if sectionExpanded[id] ~= nil then sectionExpanded[id] = v and true or false end
     end
   end
+  blockOrder.player = sanitizeOrder(store and store.sectionOrder, defaultOrderFor(false))
+  blockOrder.pet    = sanitizeOrder(store and store.petSectionOrder, defaultOrderFor(true))
 end
 local function saveSectionState()
   local store = statsStore(true)
   if not store then return end
   for id, v in pairs(sectionExpanded) do store[id] = v and true or false end
+  store.sectionOrder    = blockOrder.player or defaultOrderFor(false)
+  store.petSectionOrder = blockOrder.pet    or defaultOrderFor(true)
+end
+
+-- ----------------------------------------------------------------------------
+-- SHIFT + LEFT-DRAG a category header (or the Item Level header) to reorder the blocks.
+--
+-- The dragged block is NOT detached to follow the cursor — the content frame is a ScrollFrame child
+-- and a detached header would be clipped at the pane edge. Instead the list REFLOWS underneath the
+-- cursor: the dragged header dims, and whenever the cursor crosses the midpoint of the neighbouring
+-- block, the two swap and the sidebar re-lays out. Comparing against one neighbour at a time (rather
+-- than computing an absolute insertion index) is what keeps variable-height blocks — a collapsed
+-- 40px header vs an expanded 7-row section — from overshooting past each other.
+--
+-- layoutSidebar publishes pane._blockLayout: the shown blocks in visual order as {id, y, h}, where y
+-- is the offset DOWN from the content frame's top. Cursor Y is converted into that same space.
+-- ----------------------------------------------------------------------------
+local REORDER_EDGE   = 16   -- cursor within this many px of the pane edge auto-scrolls
+local REORDER_SCROLL = 8    -- px per tick of auto-scroll
+local REORDER_THROTTLE = 0.03
+
+local dragState = {}
+local dragDriver = CreateFrame("Frame")
+dragDriver:Hide()
+
+local function stopReorder()
+  if dragState.button then dragState.button:SetAlpha(1) end
+  dragState.id, dragState.button = nil, nil
+  dragDriver:Hide()
+  saveSectionState()   -- persist the new order per character
+end
+
+-- Swap two ids in the active order array (by id, not by index — pane._blockLayout only holds the
+-- SHOWN blocks, so its indices aren't guaranteed to line up with the order array's).
+local function swapBlocks(idA, idB)
+  local order = currentOrder()
+  local ia, ib
+  for i, id in ipairs(order) do
+    if id == idA then ia = i elseif id == idB then ib = i end
+  end
+  if not (ia and ib) then return false end
+  order[ia], order[ib] = order[ib], order[ia]
+  return true
+end
+
+dragDriver:SetScript("OnUpdate", function(self, elapsed)
+  self._t = (self._t or 0) + (elapsed or 0)
+  if self._t < REORDER_THROTTLE then return end
+  self._t = 0
+
+  local pane = CP._sidebar
+  local content = pane and pane._content
+  local blocks = pane and pane._blockLayout
+  -- The button can be released off-frame (or the panel closed mid-drag) without OnDragStop firing.
+  if not (dragState.id and content and blocks) or not IsMouseButtonDown("LeftButton") then
+    return stopReorder()
+  end
+
+  local _, cursorY = GetCursorPosition()
+  cursorY = cursorY / (content:GetEffectiveScale() or 1)
+  local top = content:GetTop()
+  if not top then return end
+  local offset = top - cursorY   -- px down from the content top == the same space as block.y
+
+  -- Auto-scroll when dragging against either edge, so a block can reach an off-screen position.
+  local scroll = pane._scroll
+  if scroll and scroll.GetVerticalScrollRange then
+    local sTop, sBottom = scroll:GetTop(), scroll:GetBottom()
+    local cur = scroll:GetVerticalScroll() or 0
+    if sTop and cursorY > sTop - REORDER_EDGE then
+      scroll:SetVerticalScroll(max(0, cur - REORDER_SCROLL))
+    elseif sBottom and cursorY < sBottom + REORDER_EDGE then
+      scroll:SetVerticalScroll(min(scroll:GetVerticalScrollRange() or 0, cur + REORDER_SCROLL))
+    end
+  end
+
+  local cur
+  for i, b in ipairs(blocks) do if b.id == dragState.id then cur = i break end end
+  if not cur then return end
+
+  local swapWith
+  local above, below = blocks[cur - 1], blocks[cur + 1]
+  if above and offset < above.y + above.h / 2 then
+    swapWith = above.id
+  elseif below and offset > below.y + below.h / 2 then
+    swapWith = below.id
+  end
+
+  if swapWith and swapBlocks(dragState.id, swapWith) then
+    if PlaySound then pcall(PlaySound, "igMainMenuOptionCheckBoxOn") end
+    if CP.LayoutSidebar then CP.LayoutSidebar() end
+  end
+end)
+
+-- Make a header a shift-drag reorder handle. Shared by createCategoryHeader and createItemLevelRow.
+local function enableHeaderReorder(button, blockId)
+  button._blockId = blockId
+  button:RegisterForDrag("LeftButton")
+  button:SetScript("OnDragStart", function(self)
+    -- Plain (unmodified) drag stays inert, as it was before reorder existed — requiring the modifier
+    -- means a user dragging across headers to read them can't scramble their layout by accident.
+    if not IsShiftKeyDown() then return end
+    dragState.id, dragState.button = blockId, self
+    self:SetAlpha(0.55)
+    dragDriver._t = 0
+    dragDriver:Show()
+  end)
+  button:SetScript("OnDragStop", stopReorder)
 end
 
 -- ----------------------------------------------------------------------------
@@ -780,11 +1057,15 @@ local function createCategoryHeader(content, section)
 
   row:RegisterForClicks("LeftButtonUp")
   row:SetScript("OnClick", function()
+    -- Shift is the reorder modifier — a shift-click that never passed the drag threshold must not
+    -- also collapse the section, or every abandoned drag silently toggles it.
+    if IsShiftKeyDown() then return end
     sectionExpanded[section.id] = not sectionExpanded[section.id]
     saveSectionState()   -- persist per character so /reload keeps this section's open/closed state
     if PlaySound then pcall(PlaySound, "igCharacterInfoTab") end
     if CP.LayoutSidebar then CP.LayoutSidebar() end
   end)
+  enableHeaderReorder(row, section.id)
   return row
 end
 
@@ -839,26 +1120,51 @@ local function createStatRow(content, el)
   return row
 end
 
--- The retail "Item Level" block: pinned above General, not collapsible (no toggle, no tooltip).
--- Structured exactly like a category section — the SAME 197x40 header art carrying only the centered
--- "Item Level" title, with the quality-colored number sitting BELOW the box on the dark pane, the way
--- stat rows sit under their own headers. DOWNPORT: _G.ITEM_LEVEL is a format template
--- ("Item Level %d"), not a plain label — use a literal string here instead of formatting it in.
+-- The retail "Item Level" block: pinned above General. Structured exactly like a category section —
+-- the SAME 197x40 header art carrying the centered "Item Level" title and the same +/- toggle, with
+-- the quality-colored number sitting BELOW the box on the dark pane, the way stat rows sit under
+-- their own headers. Collapsing hides the number and shrinks the block to the bare header, matching
+-- how the stat categories behave. DOWNPORT: _G.ITEM_LEVEL is a format template ("Item Level %d"),
+-- not a plain label — use a literal string here instead of formatting it in.
+--
+-- The container is a Frame with the header as a Button CHILD (not a Button itself), so only the
+-- 197x40 art toggles — clicking the number strip below it does nothing, same as a stat row area.
 local function createItemLevelRow(content)
   local row = CreateFrame("Frame", nil, content)
   row:SetSize(HEADER_W, ITEMLEVEL_ROW_H)
 
   -- Header box: top 197x40 of the block, identical art/'title' treatment to createCategoryHeader.
-  local bg = row:CreateTexture(nil, "ARTWORK", nil, 0)
-  bg:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
-  bg:SetSize(HEADER_W, HEADER_H)
+  local header = CreateFrame("Button", nil, row)
+  header:SetSize(HEADER_W, HEADER_H)
+  header:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+  row._header = header
+
+  local bg = header:CreateTexture(nil, "ARTWORK", nil, 0)
+  bg:SetAllPoints(header)
   if not (NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(bg, "UI-Character-Info-Title", false)) then
     bg:SetTexture(0.16, 0.13, 0.10, 0.9)  -- DOWNPORT: tint fallback for the missing title atlas
   end
 
-  local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  -- Collapse/expand toggle — same art, placement and tint as createCategoryHeader's.
+  local toggle = header:CreateTexture(nil, "OVERLAY")
+  toggle:SetSize(14, 14)
+  toggle:SetPoint("LEFT", header, "LEFT", 6, 0)
+  toggle:SetVertexColor(1, 0.82, 0)
+  row._toggle = toggle
+
+  local label = header:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   label:SetPoint("CENTER", bg, "CENTER", 0, 1)
   label:SetText(L("ITEM_LEVEL_LABEL", "Item Level"))
+
+  header:RegisterForClicks("LeftButtonUp")
+  header:SetScript("OnClick", function()
+    if IsShiftKeyDown() then return end   -- shift is the reorder modifier (see enableHeaderReorder)
+    sectionExpanded[ITEMLEVEL_ID] = not sectionExpanded[ITEMLEVEL_ID]
+    saveSectionState()   -- persist per character, exactly like a category header toggle
+    if PlaySound then pcall(PlaySound, "igCharacterInfoTab") end
+    if CP.LayoutSidebar then CP.LayoutSidebar() end
+  end)
+  enableHeaderReorder(header, ITEMLEVEL_ID)
 
   -- The number, centered on the strip BELOW the box (not inside the art).
   local value = row:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -868,13 +1174,83 @@ local function createItemLevelRow(content)
   return row
 end
 
+-- Lay out the Item Level block at `y` and return its visual height (nil = not shown). Player mode
+-- only — retail doesn't show item level for pets. Collapsed = header art only, so the block shrinks
+-- to HEADER_H, the number hides, and the 17-slot ilvl scan is skipped entirely.
+local function layoutItemLevelBlock(pane, content, y)
+  local ilvlRow = pane._itemLevelRow
+  if not ilvlRow then return nil end
+  if CP._sidebarPetMode then ilvlRow:Hide(); return nil end
+
+  local expanded = sectionExpanded[ITEMLEVEL_ID]
+  ilvlRow._toggle:SetTexture(expanded
+    and "Interface\\Buttons\\UI-MinusButton-Up"
+    or  "Interface\\Buttons\\UI-PlusButton-Up")
+
+  local valueFS = ilvlRow._value
+  if expanded then
+    local avg, quality = averageItemLevel()
+    valueFS:SetText(tostring(floor(avg + 0.5)))
+    local qc = quality and _G.ITEM_QUALITY_COLORS and _G.ITEM_QUALITY_COLORS[quality]
+    if qc then valueFS:SetTextColor(qc.r, qc.g, qc.b) else valueFS:SetTextColor(1, 1, 1) end
+    valueFS:Show()
+  else
+    valueFS:Hide()
+  end
+
+  local blockH = expanded and ITEMLEVEL_ROW_H or HEADER_H
+  ilvlRow:SetHeight(blockH)
+  ilvlRow:ClearAllPoints()
+  ilvlRow:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
+  ilvlRow:Show()
+  return blockH
+end
+
+-- Lay out one stat section at `y` and return its visual height (nil = no such block in this mode).
+local function layoutSectionBlock(pane, content, sectionId, y)
+  local sr = pane._sectionRows[sectionId]
+  if not sr then return nil end
+
+  -- Header at the fixed content right edge, at the running Y.
+  local header = sr.header
+  header:ClearAllPoints()
+  header:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
+  header:Show()
+  header._toggle:SetTexture(sectionExpanded[sectionId]
+    and "Interface\\Buttons\\UI-MinusButton-Up"
+    or  "Interface\\Buttons\\UI-PlusButton-Up")
+
+  local blockH = HEADER_H
+  if sectionExpanded[sectionId] then
+    local anchorAbove, anchorIsHeader = header, true
+    local statInCat = 0
+    for _, row in ipairs(sr.rows) do
+      statInCat = statInCat + 1
+      row:ClearAllPoints()
+      row:SetPoint("TOPRIGHT", anchorAbove, "BOTTOMRIGHT", anchorIsHeader and FIRST_ROW_INSET or 0, 0)
+      -- Alternating bg by position within the section.
+      if (statInCat % 2) == 0 then row._bounce:Show() else row._bounce:Hide() end
+      row:Show()
+      anchorAbove, anchorIsHeader = row, false
+      blockH = blockH + ROW_H
+    end
+  else
+    for _, row in ipairs(sr.rows) do row:Hide() end
+  end
+  return blockH
+end
+
 -- ----------------------------------------------------------------------------
 -- Lay out all header+stat rows at cumulative Y honoring collapse state, set content height, resync bar.
 -- Headers anchor to content.TOPRIGHT at the running Y (anti-cascade); first row after a header anchors
 -- TOPRIGHT(-5,0) to the header's BOTTOMRIGHT; subsequent rows chain TOPRIGHT(0,0) row→row.
+--
+-- Block sequence comes from currentOrder() (shift+drag reorderable, saved per character), NOT from
+-- the SECTIONS array — so Item Level is no longer hard-pinned to the top. Each block is followed by
+-- HEADER_GAP of empty space, matching the pre-reorder spacing exactly.
 -- ----------------------------------------------------------------------------
 local function layoutSidebar()
-  loadSectionState()   -- restore per-character collapse state once NE.db is ready (idempotent)
+  loadSectionState()   -- restore per-character collapse state + order once NE.db is ready (idempotent)
   local pane = CP._sidebar
   if not (pane and pane._content and pane._sectionRows) then return end
   local content = pane._content
@@ -887,53 +1263,16 @@ local function layoutSidebar()
   end
 
   local runningY = 0
+  local blocks = {}          -- shown blocks in visual order — the reorder drag's hit-test map
+  pane._blockLayout = blocks
 
-  -- Item Level: pinned above General, player mode only (retail doesn't show it for pets).
-  if pane._itemLevelRow then
-    if CP._sidebarPetMode then
-      pane._itemLevelRow:Hide()
-    else
-      local avg, quality = averageItemLevel()
-      local valueFS = pane._itemLevelRow._value
-      valueFS:SetText(tostring(floor(avg + 0.5)))
-      local qc = quality and _G.ITEM_QUALITY_COLORS and _G.ITEM_QUALITY_COLORS[quality]
-      if qc then valueFS:SetTextColor(qc.r, qc.g, qc.b) else valueFS:SetTextColor(1, 1, 1) end
-      pane._itemLevelRow:ClearAllPoints()
-      pane._itemLevelRow:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -runningY)
-      pane._itemLevelRow:Show()
-      runningY = runningY + ITEMLEVEL_ROW_H + HEADER_GAP
-    end
-  end
-
-  for _, section in ipairs(activeSections()) do
-    local sr = pane._sectionRows[section.id]
-    if sr then
-      -- Header at the fixed content right edge, at the running Y.
-      local header = sr.header
-      header:ClearAllPoints()
-      header:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -runningY)
-      header:Show()
-      header._toggle:SetTexture(sectionExpanded[section.id]
-        and "Interface\\Buttons\\UI-MinusButton-Up"
-        or  "Interface\\Buttons\\UI-PlusButton-Up")
-      runningY = runningY + HEADER_H + HEADER_GAP
-
-      if sectionExpanded[section.id] then
-        local anchorAbove, anchorIsHeader = header, true
-        local statInCat = 0
-        for _, row in ipairs(sr.rows) do
-          statInCat = statInCat + 1
-          row:ClearAllPoints()
-          row:SetPoint("TOPRIGHT", anchorAbove, "BOTTOMRIGHT", anchorIsHeader and FIRST_ROW_INSET or 0, 0)
-          -- Alternating bg by position within the section.
-          if (statInCat % 2) == 0 then row._bounce:Show() else row._bounce:Hide() end
-          row:Show()
-          anchorAbove, anchorIsHeader = row, false
-          runningY = runningY + ROW_H
-        end
-      else
-        for _, row in ipairs(sr.rows) do row:Hide() end
-      end
+  for _, id in ipairs(currentOrder()) do
+    local blockH = (id == ITEMLEVEL_ID)
+      and layoutItemLevelBlock(pane, content, runningY)
+      or  layoutSectionBlock(pane, content, id, runningY)
+    if blockH then
+      blocks[#blocks + 1] = { id = id, y = runningY, h = blockH }
+      runningY = runningY + blockH + HEADER_GAP
     end
   end
 
@@ -966,6 +1305,9 @@ local function refreshSidebar()
           end
           local ok, frameText = pcall(row._el.func)
           row._value:SetText((ok and frameText ~= nil) and tostring(frameText) or "--")
+          -- Remember the movement-speed row so the ticker below can repaint just that one value
+          -- instead of re-running all ~40 getters + a full relayout several times a second.
+          if row._el and row._el.id == SPEED_ID then pane._speedRow = row end
         end
       end
     end
@@ -973,6 +1315,28 @@ local function refreshSidebar()
   layoutSidebar()
 end
 CP.RefreshSidebar = refreshSidebar
+
+-- ----------------------------------------------------------------------------
+-- Live movement-speed ticker. GetUnitSpeed reports CURRENT speed and fires no event, so the one stat
+-- in this panel that can't be event-driven has to be polled. Bounded hard: the driver only runs
+-- while the stats pane is actually shown (buildSidebar hooks it to the pane's OnShow/OnHide), and it
+-- repaints a single FontString rather than calling refreshSidebar.
+-- ----------------------------------------------------------------------------
+local SPEED_TICK = 0.2
+local speedTicker = CreateFrame("Frame")
+speedTicker:Hide()
+speedTicker:SetScript("OnUpdate", function(self, elapsed)
+  self._t = (self._t or 0) + (elapsed or 0)
+  if self._t < SPEED_TICK then return end
+  self._t = 0
+  local pane = CP._sidebar
+  -- IsVisible, not IsShown: the pane frame's own shown flag stays true while the whole character
+  -- panel is closed, so IsShown would keep repainting a row nobody can see.
+  local row = pane and pane._speedRow
+  if not (row and row._value and row:IsVisible()) then return end
+  local ok, text = pcall(movementSpeedText)
+  row._value:SetText(ok and text or "--")
+end)
 
 -- ----------------------------------------------------------------------------
 -- Build the sidebar: NE_CharacterStatsPane (in InsetRight) → ScrollFrame → tall content → all rows.
@@ -995,6 +1359,12 @@ local function buildSidebar()
   pane:SetPoint("BOTTOMRIGHT", insetRight, "BOTTOMRIGHT", -PANE_INSET,  2)
   CP._sidebar = pane
 
+  -- Gate the movement-speed poll on the pane's visibility (nothing to poll for while it's hidden).
+  -- CreateFrame returns a SHOWN frame, so OnShow won't fire for the state it's already in — sync once.
+  pane:SetScript("OnShow", function() speedTicker._t = 0; speedTicker:Show() end)
+  pane:SetScript("OnHide", function() speedTicker:Hide() end)
+  if pane:IsShown() then speedTicker:Show() end
+
   -- The pane exists now — let PaperDoll.lua attach the class-themed background.
   if CP.ApplyClassBackground then pcall(CP.ApplyClassBackground) end
 
@@ -1014,7 +1384,8 @@ local function buildSidebar()
   scroll:SetScrollChild(content)
   pane._content = content
 
-  -- The non-collapsible Item Level line, pinned above General (player mode only).
+  -- The Item Level block (player mode only). Collapsible, and reorderable like any other block —
+  -- layoutSidebar places it wherever currentOrder() says, defaulting to the top.
   pane._itemLevelRow = createItemLevelRow(content)
 
   -- Build all header + stat rows ONCE, grouped per section. DOWNPORT/REPORT: build BOTH the player
@@ -1197,6 +1568,7 @@ local REFRESH_EVENTS = {
   "UNIT_ATTACK_SPEED", "UNIT_RANGEDDAMAGE", "UNIT_RESISTANCES", "UNIT_MAXHEALTH", "UNIT_MAXPOWER",
   "PLAYER_DAMAGE_DONE_MODS", "COMBAT_RATING_UPDATE", "PLAYER_EQUIPMENT_CHANGED",
   "SPELL_POWER_CHANGED", "PLAYER_LEVEL_UP",
+  "UPDATE_INVENTORY_DURABILITY",   -- the Durability row's only trigger (repairs + damage taken)
 }
 for _, ev in ipairs(REFRESH_EVENTS) do pcall(refresher.RegisterEvent, refresher, ev) end
 refresher:SetScript("OnEvent", function(_, event, unit)
