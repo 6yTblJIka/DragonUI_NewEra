@@ -1597,11 +1597,10 @@ local function itemLevelMenuItem()
     text    = label,
     checked = BS.IsItemLevelShown(),
     func    = function() BS.SetItemLevelShown(not BS.IsItemLevelShown()) end,
-    -- Say out loud that this reaches past the bag: it drives DragonUI's "bags" AND "character"
-    -- contexts, so a switch in the bag menu also changes the character panel. Surprising unless
-    -- stated, and the per-frame checkboxes are still there for anyone who wants them apart.
+    -- It's the master switch, so say so: this is the same checkbox as "Enable Item Level" in
+    -- DragonUI's options and it governs every frame, not just the bag.
     tooltipOnButton = true, tooltipTitle = label,
-    tooltipText = NE.L["Covers this bag and the character panel. DragonUI's options (Enhancements > Item Level) can set each frame separately."],
+    tooltipText = NE.L["The same setting as Enable Item Level in DragonUI's options (Enhancements > Item Level). Covers the character panel and every other frame too."],
   }
 end
 

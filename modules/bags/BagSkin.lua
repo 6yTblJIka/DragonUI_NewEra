@@ -260,50 +260,36 @@ end
 --
 -- Silently absent on an older DragonUI without the module: no number, no error.
 -- ----------------------------------------------------------------------------
--- The bag menu's copy of the item level switch. It reads and writes DRAGONUI'S OWN "bags" context
--- flag — NewEra stores no value of its own — so the menu entry and the checkbox in Options ->
--- Enhancements -> Item Level are two controls over ONE setting and cannot disagree. The write
--- mirrors DragonUI_Options' per-context setFunc exactly: set the flag, then RefreshItemLevel()
--- (which our CombinedBag hook rides to repaint the open bag).
+-- The bag menu's item level checkbox IS the "Enable Item Level" checkbox in Options ->
+-- Enhancements -> Item Level. Not a mirror, not a copy: the same single flag
+-- (profile.modules.itemlevel.enabled), read and written through DragonUI's own accessors, with the
+-- same side effects its setFunc runs. Flip either one and the other is already showing the new
+-- state next time it's drawn, because there is only one value in existence.
+--
+-- Being the MASTER switch, it governs every frame the module draws on — this bag, the character
+-- panel, bank, merchant, loot, mail and the rest. DragonUI's per-frame checkboxes underneath it are
+-- untouched and keep working as the finer control.
 local ITEMLEVEL_MODULE = "itemlevel"
 
--- The contexts this one switch drives. DragonUI keeps a separate checkbox per frame ("bags",
--- "character", "bank", "merchant", …); these are the two NewEra owns a window for, and the player
--- wants one control over both rather than hunting two checkboxes in another addon's options.
--- Everything else (bank, merchant, loot, mail, auction, inspect, guild bank) is left alone — this
--- is a convenience switch for OUR windows, not a master override of DragonUI's module.
-local ITEMLEVEL_CONTEXTS = { "bags", "character" }
-
--- False when DragonUI has no item level module, or its master switch is off — in which case the
--- per-context flag is inert and the menu entry says so rather than silently doing nothing.
+-- False only when DragonUI has no item level module at all (an older build) — then there is no
+-- checkbox to be in sync with, and the menu entry greys out instead of pretending.
 function BS.CanToggleItemLevel()
   local d = NE.dragon
-  if not (d and d.UpdateItemLevelSlot and d.IsModuleEnabled) then return false end
+  return (d and d.RefreshItemLevel and d.IsModuleEnabled) and true or false
+end
+
+-- Exactly what the options checkbox's getFunc reads: addon:IsModuleEnabled("itemlevel").
+function BS.IsItemLevelShown()
+  if not BS.CanToggleItemLevel() then return false end
+  local d = NE.dragon
   local ok, enabled = pcall(d.IsModuleEnabled, d, ITEMLEVEL_MODULE)
   return (ok and enabled) and true or false
 end
 
--- ON only when EVERY context it drives is on. If the two have been set differently from DragonUI's
--- own options the switch reads off, and one click brings them back in step — predictable, and it
--- never claims "on" while one of the two windows is actually bare.
-function BS.IsItemLevelShown()
-  if not BS.CanToggleItemLevel() then return false end
-  local d = NE.dragon
-  local ok, cfg = pcall(d.GetModuleConfig, d, ITEMLEVEL_MODULE)
-  if not ok then return false end
-  if not cfg then return true end   -- no config table yet: DragonUI's defaults are all ON
-  for _, context in ipairs(ITEMLEVEL_CONTEXTS) do
-    if cfg[context] == false then return false end   -- missing key defaults to ON, matching DragonUI
-  end
-  return true
-end
-
--- Drive the SAME call chain the Enhancements checkbox uses. Its setFunc is
---   EnsureModuleTable("itemlevel")[key] = val ; addon:RefreshItemLevel()
--- where EnsureModuleTable is addon.PanelControls:EnsureModuleTable — so when DragonUI_Options is
--- loaded we call that method itself rather than reimplementing where the flag lives. Only if the
--- options addon isn't loaded (it's OptionalDeps + load-on-demand) do we walk the profile ourselves,
--- which is what that method does anyway.
+-- Where the flag lives. The options checkbox writes EnsureModuleTable("itemlevel"), which is
+-- addon.PanelControls:EnsureModuleTable — so when DragonUI_Options is loaded we call that method
+-- itself rather than reimplementing it. Only if the options addon isn't loaded (it's OptionalDeps +
+-- load-on-demand) do we walk the profile ourselves, which is all that method does anyway.
 local function itemLevelConfigTable()
   local d = NE.dragon
   if not d then return nil end
@@ -321,19 +307,24 @@ local function itemLevelConfigTable()
   return profile.modules[ITEMLEVEL_MODULE]
 end
 
+-- The options checkbox's setFunc, step for step:
+--   EnsureModuleTable("itemlevel").enabled = val
+--   if val then addon.ApplyItemLevelSystem() end     -- re-installs the module's hooks
+--   addon:RefreshItemLevel()                         -- repaints, or tears the system back down
+-- Anything less and the two controls would behave differently for the same flag, which is the whole
+-- thing this is meant to avoid.
 function BS.SetItemLevelShown(on)
   local cfg = itemLevelConfigTable()
   if not cfg then return end
-  for _, context in ipairs(ITEMLEVEL_CONTEXTS) do
-    cfg[context] = on and true or false
-  end
+  cfg.enabled = on and true or false
 
   -- RefreshItemLevel repaints the character slots for us: its UpdateAll -> UpdateAllCharacterSlots
   -- walks the stock Character*Slot globals, which our panel REPARENTS rather than replaces, so they
   -- are the very buttons on screen. Only the bag grid needs the extra nudge below, because those
   -- buttons are ours and DragonUI has never heard of them.
   local d = NE.dragon
-  if d and d.RefreshItemLevel then pcall(d.RefreshItemLevel, d) end
+  if on and d.ApplyItemLevelSystem then pcall(d.ApplyItemLevelSystem) end
+  if d.RefreshItemLevel then pcall(d.RefreshItemLevel, d) end
 
   -- Repaint our own grid DIRECTLY rather than trusting the RefreshItemLevel hook to do it.
   -- RefreshItemLevel hides every text it owns (ours included) and then re-runs only ITS update
