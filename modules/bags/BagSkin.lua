@@ -247,6 +247,36 @@ function BS.ApplyQuality(btn, bagID, slot)
 end
 
 -- ----------------------------------------------------------------------------
+-- Item level number on a bag slot — drawn by DRAGONUI's item level module (its modules/itemlevel
+-- .lua), not by us. It owns the font family/outline/size, the number's position, and the per-context
+-- checkboxes in Options -> Enhancements -> Item Level; NewEra shipping a second implementation just
+-- put two numbers on every icon (which is exactly what happened, and why ours was removed).
+--
+-- addon.UpdateItemLevelSlot(button, link, anchorTo, context) is its public per-button entry point —
+-- the same one Bagster uses for its own recycled slots, so this is the supported seam rather than a
+-- reach into its internals. It does ALL the gating itself (module enabled + the context's checkbox)
+-- and hides the text when the slot is empty or the setting is off, so there is nothing to test here
+-- and nothing to clean up when the player turns it off.
+--
+-- Silently absent on an older DragonUI without the module: no number, no error.
+-- ----------------------------------------------------------------------------
+function BS.ApplyItemLevel(btn, bagID, slot)
+  if not btn then return end
+  local dragon = NE.dragon
+  if not (dragon and dragon.UpdateItemLevelSlot) then return end
+
+  -- Stock global, matching DragonUI's own container path — no compat shim in the way.
+  local link
+  if bagID and slot and GetContainerItemLink then
+    link = GetContainerItemLink(bagID, slot)
+  end
+
+  -- Bank bags are their own checkbox over there; mirror its ContainerContext() split exactly.
+  local context = (bagID and bagID >= 5 and bagID <= 11) and "bank" or "bags"
+  pcall(dragon.UpdateItemLevelSlot, btn, link, nil, context)
+end
+
+-- ----------------------------------------------------------------------------
 -- Window content background, inside the metal border. Applied on top of ApplyModernChrome's
 -- frame.Bg (which we retexture). Idempotent.
 -- ----------------------------------------------------------------------------

@@ -752,6 +752,7 @@ local function refresh()
       NE.bagskin.ApplyQuality(b, b._bagID, b._slotID)
       NE.bagskin.ApplyUsableTint(b, b._bagID, b._slotID, CB._redUnusable)
       NE.bagskin.SetSearchDim(b, searching and not CB.SlotMatches(b._bagID, b._slotID, text))
+      NE.bagskin.ApplyItemLevel(b, b._bagID, b._slotID)
     end)
   end
 
@@ -775,6 +776,7 @@ local function refresh()
           NE.bagskin.ApplyQuality(b, b._bagID, b._slotID)
           NE.bagskin.ApplyUsableTint(b, b._bagID, b._slotID, CB._redUnusable)
           NE.bagskin.SetSearchDim(b, searching and not CB.SlotMatches(b._bagID, b._slotID, text))
+          NE.bagskin.ApplyItemLevel(b, b._bagID, b._slotID)
         end)
       end
       if (rows or 0) > 0 then
@@ -812,6 +814,7 @@ local function refresh()
         NE.bagskin.ApplyQuality(b, b._bagID, b._slotID)
         NE.bagskin.ApplyUsableTint(b, b._bagID, b._slotID, CB._redUnusable)
         NE.bagskin.SetSearchDim(b, searching and not CB.SlotMatches(b._bagID, b._slotID, text))
+        NE.bagskin.ApplyItemLevel(b, b._bagID, b._slotID)
       end)
     end
     if CB.ShowKeys() and (keyRows or 0) > 0 then
@@ -832,6 +835,23 @@ local function refresh()
   frame:SetSize(maxW + PADDING_WIDTH, flowH + TOP_HEADER + keysSectionH + BAND_RESERVE)
 end
 CB.Refresh = refresh
+
+-- Repaint when DragonUI's item level settings change. Its RefreshItemLevel hides EVERY text it owns
+-- (ours included — our slots' FontStrings live in its own registry) and then re-runs only ITS update
+-- paths, which don't know about this grid. Without this hook, turning the setting back on, or
+-- changing the font or position, leaves our slots blank until the next bag event repaints them.
+do
+  local dragon = NE.dragon
+  local function repaintIfOpen()
+    if frame and frame:IsShown() then pcall(refresh) end
+  end
+  if dragon and type(dragon.RefreshItemLevel) == "function" then
+    hooksecurefunc(dragon, "RefreshItemLevel", repaintIfOpen)
+  end
+  if dragon and type(dragon.RefreshItemLevelPosition) == "function" then
+    hooksecurefunc(dragon, "RefreshItemLevelPosition", repaintIfOpen)
+  end
+end
 
 -- ----------------------------------------------------------------------------
 -- Show / hide / toggle. Showing suppresses the stock container frames.
