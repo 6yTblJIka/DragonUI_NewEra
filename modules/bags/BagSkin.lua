@@ -29,10 +29,13 @@ BS.SLOT_LOCKED_PATH = P .. "BagsItemSlotClose.blp"
 -- UI-ActionButton-Border is a stock 3.3.5a soft-glow ring present on every client, ADD-blended and
 -- tinted by quality colour it reads as the rarity glow.
 BS.QUALITY_GLOW_PATH = "Interface\\Buttons\\UI-ActionButton-Border"
--- Window interior fill: the soft dark "marble" cloud texture (what the target's combined window
--- actually uses — UI-Background-Marble). It's near-black GREY with gentle cloud variation. The
--- retail bag reads "warm bronze" because the tightly-packed warm slot recesses dominate, not the
--- fill. To lean warmer, we multiply the grey marble by a warm vertex tint (bronze). Tunable.
+-- Window interior fill. Default: the SHARED dark rock body fill (NE.chrome.ApplyBodyFill /
+-- PC.BODY_TINT) so the bag reads identically to the character panel and the rest of the window set —
+-- one tint, tuned in one place, no drift.
+BS.USE_SHARED_BODY_FILL = true
+-- Set the above false to restore the bag's old bespoke look: the soft "marble" cloud texture
+-- (UI-Background-Marble — near-black grey with gentle cloud variation) multiplied by a warm bronze
+-- vertex tint, which leaned the window warm to echo the tightly-packed warm slot recesses. Tunable.
 BS.BG_PATH          = P .. "9900002-ui-background-marble.blp"
 BS.BG_TINT          = { 1.0, 0.82, 0.58 }   -- warm bronze wash over the grey marble (r,g,b multiply)
 
@@ -244,11 +247,21 @@ function BS.ApplyQuality(btn, bagID, slot)
 end
 
 -- ----------------------------------------------------------------------------
--- Window content background — the warm-dark backpack texture, inside the metal border. Applied on
--- top of ApplyModernChrome's frame.Bg (which we retexture). Idempotent.
+-- Window content background, inside the metal border. Applied on top of ApplyModernChrome's
+-- frame.Bg (which we retexture). Idempotent.
 -- ----------------------------------------------------------------------------
 function BS.ApplyWindowBackground(frame)
   if not frame then return end
+
+  -- Shared dark rock fill — the same texture and PC.BODY_TINT the character panel body uses, so the
+  -- two windows match. ApplyBodyFill already handles the missing-art degrade (a solid near-black),
+  -- so a false return still leaves a DARK frame — don't fall through to the warm marble there, or a
+  -- client without the rock sheet would be the only one showing the old bronze bag.
+  if BS.USE_SHARED_BODY_FILL and NE.chrome and NE.chrome.ApplyBodyFill then
+    NE.chrome.ApplyBodyFill(frame)
+    return
+  end
+
   local bg = frame.Bg
   if not bg then
     bg = frame:CreateTexture(nil, "BACKGROUND")

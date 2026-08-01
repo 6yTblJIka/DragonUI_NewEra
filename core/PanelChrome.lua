@@ -170,30 +170,41 @@ local function applyFallbackBackdrop(f)
   end
 end
 
+-- DOWNPORT: the raw UI-Background-Rock sheet renders mid-brown on first paint (retail darkens it via
+-- panel composition). This explicit dark tint is what makes every NewEra window read dark immediately
+-- instead of only after a /reload settles it. It's the SHARED body tone for the whole window set —
+-- retune it here and the character panel, bags and every other chrome'd window move together.
+PC.BODY_TINT = { 0.32, 0.32, 0.32 }
+
+-- Paint f.Bg with the standard dark rock body fill. Returns true when the rock art was available,
+-- false when it degraded to the solid near-black fill — callers that want to know if real art landed
+-- can branch on it, but both outcomes are dark and safe to leave as-is.
+function PC.ApplyBodyFill(f)
+  if not f then return false end
+  ensureBg(f)
+  local localPath = NE.tex.localFiles and NE.tex.localFiles[ROCK_FDID]
+  if not localPath then
+    -- DOWNPORT: rock sheet not registered → solid fill (graceful degrade).
+    f.Bg:SetTexture(0.07, 0.07, 0.09, 0.95)
+    f.Bg:Show()
+    return false
+  end
+  f.Bg:SetTexture(localPath, "REPEAT", "REPEAT")
+  f.Bg:SetHorizTile(true)
+  f.Bg:SetVertTile(true)
+  f.Bg:SetTexCoord(0, 1, 0, 1)   -- reset: a caller may have stretched a non-tiling fill in here
+  f.Bg:SetVertexColor(PC.BODY_TINT[1], PC.BODY_TINT[2], PC.BODY_TINT[3])
+  f.Bg:Show()
+  return true
+end
+
 -- layout (optional): which registered NineSlice layout to apply. Default "PortraitFrameTemplate".
 function PC.ApplyModernChrome(f, layout)
   if not f then return end
   layout = layout or "PortraitFrameTemplate"
 
   -- Bg → tiled UI-Background-Rock (retail default), if the art is shipped; else a solid fill.
-  ensureBg(f)
-  do
-    local localPath = NE.tex.localFiles and NE.tex.localFiles[ROCK_FDID]
-    if localPath then
-      f.Bg:SetTexture(localPath, "REPEAT", "REPEAT")
-      f.Bg:SetHorizTile(true)
-      f.Bg:SetVertTile(true)
-      -- DOWNPORT: the raw UI-Background-Rock sheet renders mid-brown on first paint (retail darkens
-      -- it via panel composition). Apply an explicit dark tint so the content area reads dark
-      -- immediately, instead of only after a /reload settles it. (Tunable.)
-      f.Bg:SetVertexColor(0.32, 0.32, 0.32)
-      f.Bg:Show()
-    else
-      -- DOWNPORT: rock sheet not registered → solid fill (graceful degrade).
-      f.Bg:SetTexture(0.07, 0.07, 0.09, 0.95)
-      f.Bg:Show()
-    end
-  end
+  PC.ApplyBodyFill(f)
 
   -- Modern nineslice on f.NineSlice. If NONE of the pieces resolve, fall back to a flat border.
   local ns = ensureNineSlice(f)
