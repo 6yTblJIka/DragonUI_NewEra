@@ -32,6 +32,8 @@ local RACE_BG_FDIDS = {
   Tauren   = {131109, 131110, 131111, 131112},
   Gnome    = {455998, 455999, 456000, 456001},
   Troll    = {456006, 456007, 456008, 456009},
+  Draenei  = {131085, 131086, 131087, 131088},
+  BloodElf = {131081, 131082, 131083, 131084},
 }
 
 -- Per-race overlay alpha (retail PaperDollFrame.lua). Default (Human/Dwarf/Tauren/Gnome) -> 0.7.

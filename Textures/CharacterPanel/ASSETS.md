@@ -23,11 +23,12 @@ All paths are `Interface\AddOns\DragonUI_NewEra\Textures\CharacterPanel\<file>`.
 | 4571485 | 4571485-options-listexpand.blp | 128x128 | **ARGB8888** | options_listexpand_* (collapsible headers) |
 | 136567 | 136567-ui-character-reputationbar.blp | 256x64 | DXT5 | Reputation bar end caps |
 | 4499236 | 4499236-campaign-headericon.blp | 2048x1024 | **ARGB8888** | campaign_headericon_* (Skills collapse) |
+| 131081-131088 | RaceBackground/*-DressUpBackground-{BloodElf,Draenei}<1-4>.blp | (same quarters) | DXT5 | TBC race model BGs (8 files) |
 | 131089-131112 | RaceBackground/*-DressUpBackground-<Race><1-4>.blp | 256x256 / 64x256 / 256x128 / 64x128 | DXT5 | Race model BGs: Dwarf/Human/NightElf/Orc/Scourge/Tauren (24 files) |
 | 455998-456001 | RaceBackground/*-DressUpBackground-Gnome<1-4>.blp | (same quarters) | DXT5 | Gnome model BG (4 files) |
 | 456006-456009 | RaceBackground/*-DressUpBackground-Troll<1-4>.blp | (same quarters) | DXT5 | Troll model BG (4 files) |
 
-Total: **22,860,208 bytes (21.80 MB)**, 44 files (12 top-level + 32 RaceBackground).
+Total: **9,540,548 bytes (9.10 MB)**, 53 files (13 top-level + 40 RaceBackground).
 
 ## Atlas-coord families registered (via NE.tex.RegisterAtlases)
 

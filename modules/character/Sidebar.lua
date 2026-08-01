@@ -88,6 +88,8 @@ local HEADER_GAP      = 2      -- 2px gap below each header before its first row
 local FIRST_ROW_INSET = -5     -- first row after a header: TOPRIGHT(-5,0) (row 187 vs header 197)
 local SCROLLBAR_W     = 8      -- custom pixel scrollbar width
 local SCROLLBAR_GAP   = SCROLLBAR_W + 2   -- room for the bar on the right of the viewport
+-- Item Level block = the 197x40 header box + a strip beneath it for the number (like a stat row).
+local ITEMLEVEL_ROW_H = HEADER_H + 22
 
 -- ----------------------------------------------------------------------------
 -- Stat formatting helpers (ported from DUIC StatsPanel.lua — the proven 3.3.5 forms).
@@ -176,6 +178,42 @@ local function hasRanged()
   local relicOk, relic = pcall(function() return UnitHasRelicSlot and UnitHasRelicSlot("player") end)
   if relicOk and relic then return false end
   return true
+end
+
+-- ----------------------------------------------------------------------------
+-- Average item level (retail's PaperDollFrame ItemLevelFrame, pinned above the General category).
+-- 3.3.5a has no GetAverageItemLevel API, so we compute it ourselves: 17 gear slots (retail's own
+-- formula excludes Shirt/Tabard — they don't count), GetInventoryItemLink + GetItemInfo (4th return
+-- = itemLevel) per slot, pcall'd — an uncached link just contributes 0 until GetItemInfo caches it,
+-- matching how every other stat getter in this file degrades (§B).
+-- ----------------------------------------------------------------------------
+local ILVL_SLOTS = {
+  INVSLOT_HEAD or 1, INVSLOT_NECK or 2, INVSLOT_SHOULDER or 3, INVSLOT_BACK or 15,
+  INVSLOT_CHEST or 5, INVSLOT_WRIST or 9, INVSLOT_HAND or 10, INVSLOT_WAIST or 6,
+  INVSLOT_LEGS or 7, INVSLOT_FEET or 8, INVSLOT_FINGER1 or 11, INVSLOT_FINGER2 or 12,
+  INVSLOT_TRINKET1 or 13, INVSLOT_TRINKET2 or 14, INVSLOT_MAINHAND or 16,
+  INVSLOT_OFFHAND or 17, INVSLOT_RANGED or 18,
+}
+
+-- Average item level across those 17 slots (empty slots count as 0, matching retail's formula), plus
+-- the average QUALITY of the slots that ARE filled — retail colors the number by an ilvl/content
+-- tier we have no data for on 3.3.5a, so we approximate with the standard item-quality palette
+-- instead (ITEM_QUALITY_COLORS, the same table item borders/links use everywhere else in the client).
+local function averageItemLevel()
+  local total, qTotal, qCount = 0, 0, 0
+  for _, slotId in ipairs(ILVL_SLOTS) do
+    local link = GetInventoryItemLink("player", slotId)
+    if link then
+      local ok, _, _, quality, ilvl = pcall(GetItemInfo, link)
+      if ok then
+        if ilvl then total = total + ilvl end
+        if quality then qTotal = qTotal + quality; qCount = qCount + 1 end
+      end
+    end
+  end
+  local avgIlvl = total / #ILVL_SLOTS
+  local avgQuality = (qCount > 0) and floor(qTotal / qCount + 0.5) or nil
+  return avgIlvl, avgQuality
 end
 
 -- 7 sections, in the locked NewEra order. Each `stats` is a list of element defs.
@@ -801,6 +839,35 @@ local function createStatRow(content, el)
   return row
 end
 
+-- The retail "Item Level" block: pinned above General, not collapsible (no toggle, no tooltip).
+-- Structured exactly like a category section — the SAME 197x40 header art carrying only the centered
+-- "Item Level" title, with the quality-colored number sitting BELOW the box on the dark pane, the way
+-- stat rows sit under their own headers. DOWNPORT: _G.ITEM_LEVEL is a format template
+-- ("Item Level %d"), not a plain label — use a literal string here instead of formatting it in.
+local function createItemLevelRow(content)
+  local row = CreateFrame("Frame", nil, content)
+  row:SetSize(HEADER_W, ITEMLEVEL_ROW_H)
+
+  -- Header box: top 197x40 of the block, identical art/'title' treatment to createCategoryHeader.
+  local bg = row:CreateTexture(nil, "ARTWORK", nil, 0)
+  bg:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+  bg:SetSize(HEADER_W, HEADER_H)
+  if not (NE.tex and NE.tex.SetAtlas and NE.tex.SetAtlas(bg, "UI-Character-Info-Title", false)) then
+    bg:SetTexture(0.16, 0.13, 0.10, 0.9)  -- DOWNPORT: tint fallback for the missing title atlas
+  end
+
+  local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  label:SetPoint("CENTER", bg, "CENTER", 0, 1)
+  label:SetText(L("ITEM_LEVEL_LABEL", "Item Level"))
+
+  -- The number, centered on the strip BELOW the box (not inside the art).
+  local value = row:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  value:SetPoint("TOP", bg, "BOTTOM", 0, -3)
+  row._value = value
+
+  return row
+end
+
 -- ----------------------------------------------------------------------------
 -- Lay out all header+stat rows at cumulative Y honoring collapse state, set content height, resync bar.
 -- Headers anchor to content.TOPRIGHT at the running Y (anti-cascade); first row after a header anchors
@@ -820,6 +887,24 @@ local function layoutSidebar()
   end
 
   local runningY = 0
+
+  -- Item Level: pinned above General, player mode only (retail doesn't show it for pets).
+  if pane._itemLevelRow then
+    if CP._sidebarPetMode then
+      pane._itemLevelRow:Hide()
+    else
+      local avg, quality = averageItemLevel()
+      local valueFS = pane._itemLevelRow._value
+      valueFS:SetText(tostring(floor(avg + 0.5)))
+      local qc = quality and _G.ITEM_QUALITY_COLORS and _G.ITEM_QUALITY_COLORS[quality]
+      if qc then valueFS:SetTextColor(qc.r, qc.g, qc.b) else valueFS:SetTextColor(1, 1, 1) end
+      pane._itemLevelRow:ClearAllPoints()
+      pane._itemLevelRow:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -runningY)
+      pane._itemLevelRow:Show()
+      runningY = runningY + ITEMLEVEL_ROW_H + HEADER_GAP
+    end
+  end
+
   for _, section in ipairs(activeSections()) do
     local sr = pane._sectionRows[section.id]
     if sr then
@@ -928,6 +1013,9 @@ local function buildSidebar()
   content:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, 0)
   scroll:SetScrollChild(content)
   pane._content = content
+
+  -- The non-collapsible Item Level line, pinned above General (player mode only).
+  pane._itemLevelRow = createItemLevelRow(content)
 
   -- Build all header + stat rows ONCE, grouped per section. DOWNPORT/REPORT: build BOTH the player
   -- sections AND the pet sections (unique ids) into the same content frame; layoutSidebar shows only

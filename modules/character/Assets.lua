@@ -64,18 +64,20 @@ NE.tex.RegisterLocal(4499236, P .. "4499236-campaign-headericon.blp")        -- 
 
 -- Race DressUpBackground quarters — stitched 4-per-race behind the 3D model.
 -- Path mirrors retail Interface\DressUpFrame\DressUpBackground-<Race><1-4>.blp keyed by UnitRace.
--- All 8 Era races shipped (incl. Gnome/Troll, which Era's CASC lacks → maps Gnome->Dwarf, Troll->Orc).
+-- All 10 WOTLK races shipped (incl. Gnome/Troll, which Era's CASC lacks → maps Gnome->Dwarf, Troll->Orc).
 for _, fr in ipairs({
   -- Alliance
   {131089, "Dwarf1"},    {131090, "Dwarf2"},    {131091, "Dwarf3"},    {131092, "Dwarf4"},
   {131093, "Human1"},    {131094, "Human2"},    {131095, "Human3"},    {131096, "Human4"},
   {131097, "NightElf1"}, {131098, "NightElf2"}, {131099, "NightElf3"}, {131100, "NightElf4"},
   {455998, "Gnome1"},    {455999, "Gnome2"},    {456000, "Gnome3"},    {456001, "Gnome4"},
+  {131085, "Draenei1"},  {131086, "Draenei2"},  {131087, "Draenei3"},  {131088, "Draenei4"},
   -- Horde
   {131101, "Orc1"},      {131102, "Orc2"},      {131103, "Orc3"},      {131104, "Orc4"},
   {131105, "Scourge1"},  {131106, "Scourge2"},  {131107, "Scourge3"},  {131108, "Scourge4"},
   {131109, "Tauren1"},   {131110, "Tauren2"},   {131111, "Tauren3"},   {131112, "Tauren4"},
   {456006, "Troll1"},    {456007, "Troll2"},    {456008, "Troll3"},    {456009, "Troll4"},
+  {131081, "BloodElf1"}, {131082, "BloodElf2"}, {131083, "BloodElf3"}, {131084, "BloodElf4"},
 }) do
   NE.tex.RegisterLocal(fr[1], P .. "RaceBackground\\" .. fr[1] .. "-DressUpBackground-" .. fr[2] .. ".blp")
 end
