@@ -94,7 +94,7 @@ end
 --   (1) profile.newera.modules[id] = { enabled = true }   (default)
 --   (2) NE.modules.Register  (our boot dispatcher, from Core agent)
 --   (3) NE.dragon.ModuleRegistry:Register  (DragonUI's module list)
---   (4) NE.dragon.MoversSystem:RegisterMover  (drag-to-move the frame)
+--   (4) NE.dragon.MoversSystem:RegisterMover  (legacy; removed from DragonUI — skipped when absent)
 --   (5) NE.qa.modules  (the /dnetest harness)
 --   (6) NE.optionPanels  (the "New Era" options tab)
 -- Every step is independently guarded.
@@ -104,18 +104,21 @@ end
 --   spec = { name, frame, section, key, editorVisible, showTest, hideTest, onHide,
 --            perCharacter, editorSettings, editorTip }
 --
--- The HUD-frame counterpart to RegisterPanel. RegisterPanel is for toggled WINDOWS: it wires a
--- MoversSystem mover, which is fine for a window you drag by its title bar.
+-- The HUD-frame counterpart to RegisterPanel. RegisterPanel is for toggled WINDOWS, which drag by
+-- their own title bar and persist through NE.FrameUtil.PersistWindowPosition.
 --
--- It is the WRONG seam for an always-on HUD element, because DragonUI has TWO independent
--- positioning systems and `/dui edit` only drives one of them:
+-- It is the WRONG seam for an always-on HUD element. DragonUI historically had TWO independent
+-- positioning systems and `/dui edit` only ever drove one of them:
 --
---   addon.MoversSystem   (core/movers.lua)  -- what RegisterPanel uses. Its ToggleConfigMode is
+--   addon.MoversSystem   (core/movers.lua)  -- what RegisterPanel wired. Its ToggleConfigMode was
 --                                              reachable only from a dead `elseif` branch in
---                                              core/commands.lua:31 (addon.EditorMode always
---                                              exists, so the first branch always wins).
---   addon.EditableFrames (core/api.lua:551) -- what /dui edit actually shows, via
+--                                              core/commands.lua (addon.EditorMode always exists,
+--                                              so the first branch always won). Now DELETED from
+--                                              DragonUI outright — core/movers.lua is no longer in
+--                                              core/core.xml's load list.
+--   addon.EditableFrames (core/api.lua)     -- what /dui edit actually shows, via
 --                                              EditorMode:Show -> addon:ShowAllEditableFrames.
+--                                              The only surviving system, and the one this uses.
 --
 -- So a HUD frame must register as an EditableFrame or it is simply invisible to edit mode.
 --
@@ -510,7 +513,25 @@ function NE.RegisterPanel(spec)
         end
     end
 
-    -- (4) Mover. Guard if MoversSystem or the frame is absent.
+    -- (4) Mover — OPTIONAL, and absent on current DragonUI.
+    --
+    -- DragonUI deleted this system: core/core.xml now reads "module_base.lua / movers.lua removed —
+    -- EditableFrames + PositionPresets own layout". core/movers.lua is still on disk but no longer
+    -- in the load manifest, so addon.MoversSystem is simply nil. That used to print a red error per
+    -- registered window on every /reload (six of them: Professions, AuctionHouse, Guild, Social,
+    -- LFG, EncounterJournal), which is noise, not a fault.
+    --
+    -- NOTHING IS LOST. Every NewEra window drags itself — its own StartMoving/StopMovingOrSizing
+    -- handlers, and NE.FrameUtil.PersistWindowPosition (db.windowPos[key]) for the ones that persist
+    -- across sessions. And the mover was already inert here anyway: its drag overlay only appears in
+    -- MoversSystem config mode, reachable solely from a dead `elseif` in DragonUI's core/commands.lua
+    -- (addon.EditorMode always exists, so the first branch always won), so it never saved a position.
+    --
+    -- Deliberately NOT migrated to dragon:RegisterEditableFrame. That is the HUD seam — see
+    -- NE.RegisterHUDFrame below — and putting toggled WINDOWS in it would have `/dui edit` show and
+    -- reposition them through a second system that fights their own persisted position.
+    --
+    -- Kept live for older DragonUI installs that still ship movers.lua.
     if dragon and dragon.MoversSystem and type(dragon.MoversSystem.RegisterMover) == "function" then
         if spec.frame then
             local ok, err = pcall(function()
@@ -528,9 +549,8 @@ function NE.RegisterPanel(spec)
         end
         -- No frame yet (lazily-created panel): the panel re-calls RegisterPanel
         -- or registers its mover itself once the frame exists. Silent by design.
-    elseif dragon and not dragon.MoversSystem then
-        warn("DragonUI.MoversSystem absent; '" .. id .. "' not movable.")
     end
+    -- No `else` warn: MoversSystem being absent is the expected state on current DragonUI (see above).
 
     -- (5) QA harness list.
     if NE.qa then
