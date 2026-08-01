@@ -1,5 +1,5 @@
 -- DragonUI_NewEra/modules/character/SlotItemLevel.lua — the item level number drawn on each equipped
--- PaperDoll slot, toggled from the character panel's settings cog (SettingsCog.lua).
+-- PaperDoll slot, with its on/off toggle in the New Era options tab under "Character Panel".
 --
 -- Structured after SlotQuality.lua, which does the same job for the quality border: the same 19 slot
 -- buttons, the same PLAYER_EQUIPMENT_CHANGED per-slot / login full-pass event shape.
@@ -134,6 +134,32 @@ local function updateAllWithRetry()
   else
     retry:Hide()
   end
+end
+
+-- ----------------------------------------------------------------------------
+-- Options tab entry. Registered from HERE, by the module that owns the setting — the same shape
+-- modules/levelup/Register.lua and modules/cooldownviewer/Register.lua use — so the toggle and the
+-- getter/setter it drives can never drift apart. integration/Options.lua loads first (.toc), so
+-- NE.RegisterOptionSection exists by the time this runs.
+--
+-- No reload flag: SetSlotItemLevelShown repaints the slots immediately.
+-- ----------------------------------------------------------------------------
+if NE.RegisterOptionSection then
+  NE.RegisterOptionSection({
+    id    = "characterpanel",
+    order = 30,   -- ahead of Cooldown Manager (40) and Level Up Display (45)
+    build = function(scroll, C)
+      if C.AddSpacer then C:AddSpacer(scroll) end
+      C:AddHeading(scroll, "Character Panel")
+      C:AddToggle(scroll, {
+        label   = "Show item level on equipped items",
+        desc    = "Draws each equipped item's level in the corner of its slot, coloured by item "
+                  .. "quality. On by default. Takes effect immediately.",
+        getFunc = function() return CP.IsSlotItemLevelShown() end,
+        setFunc = function(v) CP.SetSlotItemLevelShown(v) end,
+      })
+    end,
+  })
 end
 
 local boot = CreateFrame("Frame")
