@@ -326,6 +326,16 @@ function BS.SetItemLevelShown(on)
   if on and d.ApplyItemLevelSystem then pcall(d.ApplyItemLevelSystem) end
   if d.RefreshItemLevel then pcall(d.RefreshItemLevel, d) end
 
+  -- Redraw the options window if it's sitting on the Enhancements tab, so its "Enable Item Level"
+  -- checkbox visibly follows this click instead of showing the old state until you switch tabs.
+  -- SelectTab on the CURRENT tab is DragonUI's own rebuild path and preserves the scroll offset —
+  -- its comment calls out "a toggle refreshing disabled states", which is exactly this.
+  local P = d.OptionsPanel
+  if P and P.SelectTab and P.currentTab == "enhancements"
+     and P.frame and P.frame.IsShown and P.frame:IsShown() then
+    pcall(P.SelectTab, P, "enhancements")
+  end
+
   -- Repaint our own grid DIRECTLY rather than trusting the RefreshItemLevel hook to do it.
   -- RefreshItemLevel hides every text it owns (ours included) and then re-runs only ITS update
   -- paths; the hook in CombinedBag is what normally brings ours back, but this is the one caller
@@ -333,6 +343,36 @@ function BS.SetItemLevelShown(on)
   -- idempotent — and it means the menu entry works even if the hook never took.
   if NE.combinedbag and NE.combinedbag.Refresh then pcall(NE.combinedbag.Refresh) end
 end
+
+-- ----------------------------------------------------------------------------
+-- ONE-TIME REPAIR of state earlier builds of this menu left behind.
+--
+-- Before it drove the master switch, this checkbox wrote DragonUI's PER-FRAME context flags —
+-- first "bags", then "bags" plus "character". Anyone who clicked it off in one of those builds
+-- still has those flags false in their saved profile, and the master switch it drives now cannot
+-- clear them: the module reports itself enabled while IsContextEnabled("bags") stays false, so the
+-- numbers are simply absent from the bag with nothing on screen to explain why.
+--
+-- Set the two flags we ever wrote back to DragonUI's own default (on), exactly once, tracked by a
+-- flag in OUR db so it can never fight a deliberate choice made afterwards in the options panel.
+-- Bails without marking itself done if the config isn't reachable yet, so it retries next login.
+-- ----------------------------------------------------------------------------
+local function repairStompedContexts()
+  if not NE.db or NE.db.itemLevelContextRepair then return end
+  local cfg = itemLevelConfigTable()
+  if not cfg then return end
+  NE.db.itemLevelContextRepair = true
+  cfg.bags, cfg.character = true, true
+  local d = NE.dragon
+  if d and d.RefreshItemLevel then pcall(d.RefreshItemLevel, d) end
+end
+
+local repairBoot = CreateFrame("Frame")
+repairBoot:RegisterEvent("PLAYER_LOGIN")
+repairBoot:SetScript("OnEvent", function(self)
+  pcall(repairStompedContexts)
+  self:UnregisterAllEvents()
+end)
 
 function BS.ApplyItemLevel(btn, bagID, slot)
   if not btn then return end
