@@ -260,6 +260,40 @@ end
 --
 -- Silently absent on an older DragonUI without the module: no number, no error.
 -- ----------------------------------------------------------------------------
+-- The bag menu's copy of the item level switch. It reads and writes DRAGONUI'S OWN "bags" context
+-- flag — NewEra stores no value of its own — so the menu entry and the checkbox in Options ->
+-- Enhancements -> Item Level are two controls over ONE setting and cannot disagree. The write
+-- mirrors DragonUI_Options' per-context setFunc exactly: set the flag, then RefreshItemLevel()
+-- (which our CombinedBag hook rides to repaint the open bag).
+local ITEMLEVEL_MODULE = "itemlevel"
+
+-- False when DragonUI has no item level module, or its master switch is off — in which case the
+-- per-context flag is inert and the menu entry says so rather than silently doing nothing.
+function BS.CanToggleItemLevel()
+  local d = NE.dragon
+  if not (d and d.UpdateItemLevelSlot and d.IsModuleEnabled) then return false end
+  local ok, enabled = pcall(d.IsModuleEnabled, d, ITEMLEVEL_MODULE)
+  return (ok and enabled) and true or false
+end
+
+function BS.IsItemLevelShown()
+  if not BS.CanToggleItemLevel() then return false end
+  local d = NE.dragon
+  local ok, cfg = pcall(d.GetModuleConfig, d, ITEMLEVEL_MODULE)
+  if not ok then return false end
+  return (not cfg) or cfg.bags ~= false   -- missing key defaults to ON, matching DragonUI
+end
+
+function BS.SetItemLevelShown(on)
+  local d = NE.dragon
+  if not (d and d.db and d.db.profile) then return end
+  local profile = d.db.profile
+  profile.modules = profile.modules or {}
+  profile.modules[ITEMLEVEL_MODULE] = profile.modules[ITEMLEVEL_MODULE] or {}
+  profile.modules[ITEMLEVEL_MODULE].bags = on and true or false
+  if d.RefreshItemLevel then pcall(d.RefreshItemLevel, d) end
+end
+
 function BS.ApplyItemLevel(btn, bagID, slot)
   if not btn then return end
   local dragon = NE.dragon

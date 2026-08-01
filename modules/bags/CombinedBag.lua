@@ -1575,6 +1575,31 @@ function CB.ToggleMenu(anchor)
   end
 end
 
+-- The item level entry. It's DragonUI's setting, not ours (see BagSkin's BS.SetItemLevelShown) —
+-- this is a second CONTROL over one value, not a second copy of it, so it can't drift from the
+-- checkbox in Options -> Enhancements -> Item Level. Surfaced here because hunting through another
+-- addon's options tab to change how the bag looks is a poor trade for one line of menu.
+--
+-- When DragonUI's master "Enable Item Level" is off the per-context flag is inert, so the entry
+-- greys out and its tooltip says where the master lives — better than a switch that does nothing.
+local function itemLevelMenuItem()
+  local BS = NE.bagskin
+  local label = NE.L["Show item level on items"]
+  -- Greyed but still a checkbox, so the row doesn't reflow against its neighbours when it's inert.
+  if not (BS and BS.CanToggleItemLevel and BS.CanToggleItemLevel()) then
+    return {
+      text = label, checked = false, disabled = true,
+      tooltipOnButton = true, tooltipTitle = label,
+      tooltipText = NE.L["Turn on Item Level in DragonUI's options (Enhancements > Item Level) first."],
+    }
+  end
+  return {
+    text    = label,
+    checked = BS.IsItemLevelShown(),
+    func    = function() BS.SetItemLevelShown(not BS.IsItemLevelShown()) end,
+  }
+end
+
 -- Bag-options dropdown (native EasyMenu / UIDropDownMenu — present on 3.3.5a).
 function CB.OpenMenu(anchor)
   if not EasyMenu then return end
@@ -1597,6 +1622,7 @@ function CB.OpenMenu(anchor)
       func = function() CB._reverseSort = not CB._reverseSort; CB.SaveSortPrefs() end },
     { text = NE.L["Red-tint unusable items"], checked = CB._redUnusable and true or false,
       func = function() CB._redUnusable = not CB._redUnusable; CB.SaveSortPrefs(); CB.Refresh() end },
+    itemLevelMenuItem(),
     { text = NE.L["Show keyring row"], checked = CB._showKeys and true or false,
       func = function() CB._showKeys = not CB._showKeys; CB.SaveSortPrefs(); CB.Refresh() end },
     { text = NE.L["Separate specialty bags"], checked = CB._separateBags and true or false,
