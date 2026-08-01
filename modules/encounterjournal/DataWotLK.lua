@@ -896,7 +896,7 @@ add{ id=90016, name="The Eye of Eternity", isRaid=true, minLevel=80, buttonFDID=
 
 add{ id=90017, name="Ulduar", isRaid=true, minLevel=80, buttonFDID=304502, bgFDID=1396469, loreFDID=1396514,
   encounters = {
-    { id=9001701, name="Flame Leviathan", order=1,
+    { id=9001701, name="Flame Leviathan", order=1, desc="This massive armored tank guards the courtyard entrance in Ulduar. The watcher Mimiron constructed the Flame Leviathan as part of his V0-L7R-0N weapons platform.",
       creatures = { {display=0, file=1385731, name="Flame Leviathan"} },
       loot = {
         {id=45282, pct=19, size=10}, {id=45283, pct=19, size=10}, {id=45284, pct=19, size=10}, {id=45285, pct=18, size=10}, {id=45286, pct=17, size=10}, {id=45287, pct=17, size=10},
@@ -908,7 +908,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80, buttonFDID=304502, bgFDI
         {id=46017, pct=0, size=25},
       },
     },
-    { id=9001702, name="Razorscale", order=2,
+    { id=9001702, name="Razorscale", order=2, desc="Previously known as Veranus, this creature was captured by Loken and twisted into a vicious weapon. Under Loken's orders, Ignis the Furnace Master fused iron plates onto Razorscale's scales to enhance her deadly strikes.",
       creatures = { {display=0, file=1385763, name="Razorscale"} },
       loot = {
         {id=45298, pct=20, size=10}, {id=45299, pct=19, size=10}, {id=45301, pct=20, size=10}, {id=45302, pct=19, size=10}, {id=45303, pct=20, size=10}, {id=45304, pct=19, size=10},
@@ -918,7 +918,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80, buttonFDID=304502, bgFDI
         {id=45151, pct=19, size=25}, {id=45510, pct=19, size=25}, {id=46017, pct=0, size=25},
       },
     },
-    { id=9001703, name="Ignis the Furnace Master", order=3,
+    { id=9001703, name="Ignis the Furnace Master", order=3, desc="Like the other creations in Ulduar, Ignis now serves the Old God Yogg-Saron. This imposing fire giant toils over the Colossal Forge, creating the iron armies that will conquer Azeroth in Yogg-Saron's name.",
       creatures = { {display=0, file=1385742, name="Ignis the Furnace Master"} },
       loot = {
         {id=45309, pct=19, size=10}, {id=45310, pct=20, size=10}, {id=45311, pct=20, size=10}, {id=45312, pct=20, size=10}, {id=45313, pct=19, size=10}, {id=45314, pct=19, size=10},
@@ -928,7 +928,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80, buttonFDID=304502, bgFDI
         {id=45186, pct=18, size=25}, {id=45187, pct=19, size=25}, {id=46017, pct=0, size=25},
       },
     },
-    { id=9001704, name="XT-002 Deconstructor", order=4,
+    { id=9001704, name="XT-002 Deconstructor", order=4, desc="Mimiron engineered this clockwork giant, who dominates the scrapyard area in Ulduar. XT-002 considers himself to be his inventor's son, causing the machine to behave like a young boy.",
       creatures = { {display=0, file=1385773, name="XT-002 Deconstructor"} },
       loot = {
         {id=45675, pct=20, size=10}, {id=45676, pct=19, size=10}, {id=45677, pct=19, size=10}, {id=45679, pct=19, size=10}, {id=45680, pct=18, size=10}, {id=45682, pct=14, size=10},
@@ -940,7 +940,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80, buttonFDID=304502, bgFDI
         {id=46017, pct=0, size=25},
       },
     },
-    { id=9001705, name="Assembly of Iron", order=5,
+    { id=9001705, name="Assembly of Iron", order=5, desc="The iron armies are led by three fearsome generals, each representing a different race. These leaders are known as Stormcaller Brundir, Runemaster Molgeim, and Steelbreaker.",
       creatures = { {display=0, file=1390439, name="Assembly of Iron"} },
       loot = {
         {id=45322, pct=18, size=10}, {id=45324, pct=19, size=10}, {id=45329, pct=19, size=10}, {id=45330, pct=23, size=10}, {id=45331, pct=19, size=10}, {id=45332, pct=23, size=10},
@@ -952,7 +952,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80, buttonFDID=304502, bgFDI
         {id=45245, pct=14, size=25}, {id=45607, pct=18, size=25}, {id=45857, pct=94, size=25}, {id=46017, pct=0, size=25},
       },
     },
-    { id=9001706, name="Kologarn", order=6,
+    { id=9001706, name="Kologarn", order=6, desc="Loken requisitioned Ignis the Furnace Master to create this towering giant as a guard for the Shattered Walkway. His oversized proportions, including a pair of massive arms, allow Kologarn to easily crush any intruders who attempt to reach the inner sanctum.",
       creatures = { {display=0, file=1385747, name="Kologarn"} },
       loot = {
         {id=45695, pct=21, size=10}, {id=45696, pct=19, size=10}, {id=45697, pct=18, size=10}, {id=45698, pct=18, size=10}, {id=45699, pct=17, size=10}, {id=45700, pct=19, size=10},
@@ -962,7 +962,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80, buttonFDID=304502, bgFDI
         {id=45274, pct=14, size=25}, {id=45275, pct=18, size=25}, {id=46017, pct=0, size=25},
       },
     },
-    { id=9001707, name="Algalon the Observer", order=7,
+    { id=9001707, name="Algalon the Observer", order=7, desc="Loken's death triggered a failsafe mechanism warning the titans that Azeroth had lost its foremost guardian. Algalon the Observer has been sent to examine the situation and, if necessary, transmit a reply-code that will restructure the entire world, wiping out all of its current inhabitants.",
       creatures = { {display=0, file=1385713, name="Algalon the Observer"} },
       loot = {
         {id=46037, pct=0, size=10}, {id=46038, pct=0, size=10}, {id=46039, pct=0, size=10}, {id=46040, pct=40, size=10}, {id=46041, pct=0, size=10}, {id=46042, pct=0, size=10},
@@ -974,7 +974,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80, buttonFDID=304502, bgFDI
         {id=45618, pct=0, size=25}, {id=45619, pct=0, size=25}, {id=45620, pct=0, size=25}, {id=45665, pct=40, size=25}, {id=46053, pct=100, size=25},
       },
     },
-    { id=9001708, name="Auriaya", order=8,
+    { id=9001708, name="Auriaya", order=8, desc="Ulduar's archivist patrols the Observation Ring accompanied by ferocious cats. Years of solitude weighted heavily on Auriaya, and the Old God's growing power seems to have destroyed the last shreds of her sanity.",
       creatures = { {display=0, file=1385717, name="Auriaya"} },
       loot = {
         {id=45707, pct=19, size=10}, {id=45708, pct=20, size=10}, {id=45709, pct=19, size=10}, {id=45711, pct=19, size=10}, {id=45712, pct=20, size=10}, {id=45713, pct=21, size=10},
@@ -984,7 +984,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80, buttonFDID=304502, bgFDI
         {id=45440, pct=20, size=25}, {id=45441, pct=20, size=25}, {id=46017, pct=0, size=25},
       },
     },
-    { id=9001709, name="Hodir", order=9,
+    { id=9001709, name="Hodir", order=9, desc="The giant Hodir once presided over the Temple of Winter, lending his guidance to the frost giants in the Storm Peaks. Now the watcher dwells in an ice cave in the Halls of Winter, forced to serve the will of Yogg-Saron.",
       creatures = { {display=0, file=1385740, name="Hodir"} },
       loot = {
         {id=45458, pct=17, size=10}, {id=45464, pct=20, size=10}, {id=45650, pct=29, size=10}, {id=45651, pct=29, size=10}, {id=45652, pct=34, size=10}, {id=45786, pct=23, size=10},
@@ -995,7 +995,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80, buttonFDID=304502, bgFDI
         {id=46017, pct=0, size=25},
       },
     },
-    { id=9001710, name="Thorim", order=10,
+    { id=9001710, name="Thorim", order=10, desc="For many years Thorim believed that the ice giants had murdered his beloved wife, Sif, not realizing that his brother, Loken, was truly responsible. When Thorim learned the truth, Loken ensnared him and brought him to Ulduar.",
       creatures = { {display=0, file=1385770, name="Thorim"} },
       loot = {
         {id=45659, pct=25, size=10}, {id=45660, pct=28, size=10}, {id=45661, pct=34, size=10}, {id=45784, pct=5, size=10}, {id=45892, pct=18, size=10}, {id=45893, pct=19, size=10},
@@ -1006,7 +1006,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80, buttonFDID=304502, bgFDI
         {id=46017, pct=0, size=25},
       },
     },
-    { id=9001711, name="Freya", order=11,
+    { id=9001711, name="Freya", order=11, desc="The watcher Freya was formerly a protector of all living things, aided by three stoic elders. Though her conservatory remains lush and verdant, she has also succumbed to the Old God's maddening presence.",
       creatures = { {display=0, file=1385733, name="Freya"} },
       loot = {
         {id=45294, pct=1, size=10}, {id=45644, pct=25, size=10}, {id=45645, pct=23, size=10}, {id=45646, pct=30, size=10}, {id=45788, pct=4, size=10}, {id=45934, pct=18, size=10},
@@ -1017,7 +1017,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80, buttonFDID=304502, bgFDI
         {id=45814, pct=0.27, size=25}, {id=46017, pct=0, size=25}, {id=46110, pct=66, size=25},
       },
     },
-    { id=9001712, name="Mimiron", order=12,
+    { id=9001712, name="Mimiron", order=12, desc="A brilliant inventor, Mimiron has been responsible for several of the most advanced mechanisms on Azeroth. But ever since he was subjected to Loken's disturbed influence, this watcher of Ulduar has only constructed war machines.",
       creatures = { {display=0, file=1385754, name="Mimiron"} },
       loot = {
         {id=45647, pct=28, size=10}, {id=45648, pct=75, size=10}, {id=45649, pct=37, size=10}, {id=45787, pct=2, size=10}, {id=45972, pct=0.13, size=10}, {id=45973, pct=19, size=10},
@@ -1028,7 +1028,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80, buttonFDID=304502, bgFDI
         {id=46017, pct=0, size=25},
       },
     },
-    { id=9001713, name="General Vezax", order=13,
+    { id=9001713, name="General Vezax", order=13, desc="Strange creatures known as faceless ones lurk in the depths of Ulduar. One of their mightiest commanders, General Vezax, guards the twisted passages leading to the Prison of Yogg-Saron.",
       creatures = { {display=0, file=1385735, name="General Vezax"} },
       loot = {
         {id=45996, pct=22, size=10}, {id=45997, pct=17, size=10}, {id=46008, pct=18, size=10}, {id=46009, pct=17, size=10}, {id=46010, pct=21, size=10}, {id=46011, pct=19, size=10},
@@ -1040,7 +1040,7 @@ add{ id=90017, name="Ulduar", isRaid=true, minLevel=80, buttonFDID=304502, bgFDI
         {id=45520, pct=0.32, size=25}, {id=46017, pct=0, size=25},
       },
     },
-    { id=9001714, name="Yogg-Saron", order=14,
+    { id=9001714, name="Yogg-Saron", order=14, desc="Long ago the titans imprisoned Yogg-Saron deep within Ulduar to save Azeroth from the Old God's destructive power. But after years of plotting, Yogg-Saron has succeeded in corrupting its guards and now the monstrous creature is finally breaking free.",
       creatures = { {display=0, file=1385774, name="Yogg-Saron"} },
       loot = {
         {id=45635, pct=52, size=10}, {id=45636, pct=50, size=10}, {id=45637, pct=27, size=10}, {id=46016, pct=17, size=10}, {id=46018, pct=35, size=10}, {id=46019, pct=12, size=10},
