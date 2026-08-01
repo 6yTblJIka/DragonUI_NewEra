@@ -180,6 +180,24 @@ Retail's **Cooldown Manager** (a *War Within* feature) downported from NewEra �
 
 Note: Module is off by default
 
+### Level Up Display
+
+![Level Up Display](screenshots/levelupdisplay.png)
+
+Retail's **level-up banner**, which 3.3.5a never shipped — "You have reached level N", followed by what that level actually gave you. Preview it any time with **`/nelevelup <level>`**; place it from **`/dragonui edit`**.
+
+The difference from every other version of this addon is where the data comes from. Others ship a hand-typed `spellList[CLASS][level]` table of spell IDs, which is only correct on the server it was written against — private servers move trainer levels, add abilities and remove others, and a baked table is then wrong *silently*, announcing spells that don't exist and missing the ones that do. **This one asks your server instead.**
+
+- **Abilities are read from your own class trainer.** Opening a trainer harvests every service it offers — name, rank, icon, and the level *your server* requires — including the ones you can't train yet, so a single visit at level 20 fills in the requirements up to 80. Nothing is keyed on a spell ID, so a server's custom abilities are picked up correctly without this addon knowing they could exist.
+- **Battlegrounds, dungeons and raids come from the client's own brackets**, already localized. A realm that opens Alterac Valley at 20 needs no configuration.
+- **Talent points** are derived from your actual point totals, so a server granting a different rate is followed rather than assumed.
+- **Auto-granted spells** are caught by a spellbook diff — abilities a server hands you on level-up appear at no trainer, and would otherwise be invisible.
+- **Everything is stored per realm**, so one installed copy serves several servers without their data bleeding into each other.
+- **Long lists go to a grid.** A single level can grant a dozen unlocks; rather than parade them one at a time for a minute, anything over four is shown at once in a panel.
+- **A small Blizzlike fallback** covers only what no API can report — glyph slots, dual spec, riding — and withdraws the moment the harvest observes the server's own answer.
+
+`/nelevelup coverage` reports what has been learned for the current realm and class; `/nelevelup harvest` re-reads an open trainer on demand.
+
 ## Roadmap
 
 Faithfully downporting the remaining NewEra panels to 3.3.5a:
@@ -195,6 +213,7 @@ Faithfully downporting the remaining NewEra panels to 3.3.5a:
 - [x] ~~**Adventure Guide (Encounter Journal)**~~ — *done* (Classic/TBC/Wrath instances, per-boss abilities + loot pages, search + breadcrumb nav)
 - [x] ~~**Collections**~~ — *done* (standalone Mounts + Pet Journal window with list/model/info layout, search, filter, favourites, summon)
 - [x] ~~**Cooldown Manager**~~ — *done* (Essential/Utility/Buff-icon/Tracked-bar viewers, DBC-sourced talent-gated spell lists, tracked buffs + trinkets, right-click alerts and ready sounds, edit-mode movers and per-viewer settings, per-spec layouts with import/export)
+- [x] ~~**Level Up Display**~~ — *done* (retail's level-up banner, with unlocks harvested from the live server's own trainer/battleground/dungeon data rather than a baked spell table, per-realm storage, grid overflow panel, `/nelevelup`)
 - [ ] **Bags** — *work in progress* (retail combined bag + individual-bag restyle: grid, smart sort, separated specialty-bag sections, keyring row, rarity/usable cues, money + currency band)
 - [ ] **Quest Log**
 - [ ] **Merchant**

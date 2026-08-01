@@ -44,6 +44,19 @@ sounds, spell hiding, and the `RegisterUnitEvent` filter:
 luajit qa/offline/test_boot.lua
 ```
 
+Exercise the Level Up Display's data layer against a stubbed trainer, battleground and dungeon API
+(24 assertions) — trainer harvest across all three service filters, filter save/restore, collapsed
+header handling, the no-level-requirement drop that keeps profession recipes out, realm namespacing,
+server brackets beating Blizzlike constants, rank rendering, observed-over-fallback suppression, and
+a custom server-only ability travelling end to end:
+
+```bash
+lua5.1 qa/offline/test_levelup.lua
+```
+
+Unlike `test_boot.lua` this one runs on stock Lua 5.1 (it stubs no rendering, only data), and it
+deliberately covers `Assets`/`Data`/`Harvest`/`Unlocks` but not the two view files — see its header.
+
 ## What test_boot.lua stubs
 
 A minimal widget API (`CreateFrame`, textures, font strings, scripts, events) plus the 3.3.5a game

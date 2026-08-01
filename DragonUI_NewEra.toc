@@ -288,5 +288,23 @@ modules\cooldownviewer\SettingsOptions.lua
 modules\cooldownviewer\EditorPanel.lua
 modules\cooldownviewer\Register.lua
 
+# --- Level Up Display (retail's level-up banner, learned from the live server) ---
+# Rebuild rather than a port. Both prior versions ship a hand-typed spellList[CLASS][level] table
+# that is only correct for the server it was written against; this addon runs on many. Harvest.lua
+# reads the same facts off the trainer window (GetTrainerServiceInfo / ...LevelReq / ...Icon),
+# battleground brackets (GetBattlegroundInfo) and the client's dungeon lists (GetLFGDungeonInfo)
+# instead, so a custom server's own abilities and levels are picked up without any baked data.
+# Load order: Assets (art + entry-type presets) -> Data (the small Blizzlike fallback for what no
+# API reports) -> Harvest (writes the store) -> Unlocks (merges observed over fallback; reads both
+# of the above) -> Banner + SideDisplay (the two views, both call Unlocks) -> Register (events,
+# options, mover, /nelevelup).
+modules\levelup\Assets.lua
+modules\levelup\Data.lua
+modules\levelup\Harvest.lua
+modules\levelup\Unlocks.lua
+modules\levelup\Banner.lua
+modules\levelup\SideDisplay.lua
+modules\levelup\Register.lua
+
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---
 core\_HelloDemo.lua

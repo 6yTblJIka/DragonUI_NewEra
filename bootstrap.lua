@@ -49,7 +49,7 @@ NE.L = NE.L or setmetatable({}, { __index = function(_, k) return k end })
 -- SavedVariables. Our OWN db holds panel-internal per-char state (equipment sets, talent prefs)
 -- plus account-wide window positions (db.windowPos[key], see FrameUtil.PersistWindowPosition).
 -- Panel ENABLE flags live in DragonUI (DragonUIDB) via profile.newera for a unified UX.
-local CURRENT_SCHEMA = 2
+local CURRENT_SCHEMA = 3
 NE.migrations = NE.migrations or {}
 NE.migrations[1] = function(db)
     db.equipmentSets = db.equipmentSets or {}   -- [charKey] = sets
@@ -58,6 +58,13 @@ end
 NE.migrations[2] = function(db)
     db.companionFavorites = db.companionFavorites or {}  -- [charKey][filterType..":"..creatureID] = true
     db.guildChat = db.guildChat or {}   -- [realm-guildName] = rolling chat log (modules/guild/Chat.lua)
+end
+NE.migrations[3] = function(db)
+    -- Level-up unlocks learned from the live server (modules/levelup/Harvest.lua). Keyed by REALM
+    -- first: one installed copy of this addon is expected to be used across several servers, and
+    -- what a private server teaches at level 40 must not leak into another's banner.
+    db.levelup = db.levelup or {}
+    db.levelup.realms = db.levelup.realms or {}   -- [realm] = { classes, bgs, dungeons, talentTotals }
 end
 
 local function applyMigrations(db)
