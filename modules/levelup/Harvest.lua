@@ -57,6 +57,16 @@ local MAX_BG_INDEX          = 20    -- NUM_BATTLEGROUNDS is 6 on 3.3.5a; loop de
 -- same trainer overwrites in place instead of accumulating duplicates. Unlocks.lua inverts this
 -- into a per-level index at read time.
 
+-- Bumped when previously-harvested data is known to be wrong and must be re-learned. v2: builds
+-- before the IsTradeskillTrainer gate below harvested PROFESSION trainers into the class store, so
+-- any realm harvested by one of them has profession ranks (Journeyman Blacksmithing, Apprentice
+-- Riding, …) sitting in its class buckets, ready to be announced on level-up. There is no way to
+-- tell those entries apart after the fact — nothing recorded which trainer they came from — so the
+-- classes table is dropped and re-learned on the next class-trainer visit. Nothing is lost
+-- meanwhile: Unlocks.lua falls back to Data.lua's curated list whenever there's no observed data.
+-- bgs and talentTotals are untouched; no trainer ever wrote them.
+local STORE_VERSION = 2
+
 local function realmStore()
   if not NE.db then return nil end
   NE.db.levelup = NE.db.levelup or {}
@@ -64,8 +74,12 @@ local function realmStore()
   local realm = GetRealmName() or "?"
   local r = NE.db.levelup.realms[realm]
   if not r then
-    r = { classes = {}, bgs = {}, talentTotals = {} }
+    r = { classes = {}, bgs = {}, talentTotals = {}, v = STORE_VERSION }
     NE.db.levelup.realms[realm] = r
+  end
+  if (r.v or 1) < STORE_VERSION then
+    r.classes = {}
+    r.v = STORE_VERSION
   end
   r.classes      = r.classes      or {}
   r.bgs          = r.bgs          or {}
@@ -169,6 +183,18 @@ end
 function H.HarvestTrainer()
   if not (GetNumTrainerServices and GetTrainerServiceInfo and GetTrainerServiceLevelReq) then return 0 end
   if (GetNumTrainerServices() or 0) == 0 then return 0 end
+
+  -- PROFESSION TRAINERS ARE NOT A SOURCE OF CLASS UNLOCKS. 3.3.5a runs both through the same
+  -- ClassTrainerFrame and the same GetTrainerService* API, so without this check a visit to the
+  -- blacksmith harvests into the CLASS store and the banner starts announcing professions on
+  -- level-up. New class abilities are the whole point of that banner; recipes are not.
+  --
+  -- The readServices "no level requirement" filter below is not enough on its own: individual
+  -- recipes gate on skill and are dropped by it, but the profession RANKS a trainer also sells
+  -- (Journeyman/Expert/Artisan/Master, and riding) gate on CHARACTER LEVEL and sail straight
+  -- through. IsTradeskillTrainer is the client's own class-vs-tradeskill answer — it exists on
+  -- 3.3.5a and returns 1 at a profession trainer.
+  if IsTradeskillTrainer and IsTradeskillTrainer() then return 0 end
   local store = classStore()
   if not store then return 0 end
 
