@@ -16,7 +16,9 @@
 -- GetSpellBookItemName, GetSpellBookItemInfo, GetSpellBookItemTexture, IsPassiveSpell,
 -- HasPetSpells, GetSpellAutocast, BOOKTYPE_SPELL/PET.
 --
--- MASKS: 3.3.5a CreateMaskTexture may return nil. Every mask use is guarded and degrades.
+-- MASKS: 3.3.5a CreateMaskTexture may return nil. Every mask use is guarded and degrades. PASSIVE spells
+-- still get NewEra's circular icon + ring: the round clip comes from the native SetPortraitToTexture
+-- (the addon's working 3.3.5a circular-icon recipe), not from a mask — see paintIcon().
 
 local NE = DragonUI_NewEra
 NE.spellbook = NE.spellbook or {}
@@ -29,6 +31,9 @@ local CARD_YPAD        = 10
 local GRID_COLS        = 3
 local ICON             = 33.6   -- 40 * 0.84 inset (matches the talents look): icon tucks fully under the frame border
 local ICON_BTN         = 40
+local PASSIVE_ICON     = 34     -- round (passive) icon size. The circle ring (talents-node-circle-gray) is a
+                                -- band ~4px thick at the 40px slot, so its clear opening is ~32px — 34 tucks the
+                                -- disc's edge just under the band. Useful range ~30 (gap) .. ~35 (spills over).
 local VIEW_W, VIEW_H   = 680, 620
 local VIEW_TOP         = -122   -- shifted up 26 (with PAGES_TOP/BG_TOP) to close the old black band
 local VIEW1_X          = 85
@@ -157,12 +162,21 @@ local ART_SET = {
     borderTL = { -11, 1 }, borderBR = { 1, -7 },
     sheenMask     = "spellbook-item-iconframe-sheen-mask", sheenCentered = false,
   },
-  -- PASSIVE set. 3.3.5a can't alpha-mask a square icon into a circle (CreateMaskTexture is dead), so
-  -- the old circular ring left the square icon's corners poking out. Instead use the retail spellbook's
-  -- dedicated SQUARE SILVER passive frame (distinct from the gold active frame) — the square icon fits
-  -- it cleanly, and silver-vs-gold keeps the passive/active distinction. (User: "use the icon border
-  -- in the action bar - since its silver that will suffice".)
-  passive = {
+  -- PASSIVE set — CIRCLE, matching NewEra (Spellbook/Spellbook.lua ART_SET.circle): the round talent-node
+  -- ring at button size. CreateMaskTexture is dead on 3.3.5a, but the icon itself is clipped round the way
+  -- the rest of this addon does it — the native SetPortraitToTexture (see paintIcon() below).
+  circle = {
+    iconMask      = "talents-node-circle-mask",
+    iconHighlight = "spellbook-item-iconframe-passive-hover",
+    border        = "talents-node-circle-gray",
+    borderTL = { 0, 0 }, borderBR = { 0, 0 },      -- the ring sits exactly on the 40x40 icon slot
+    sheenMask     = "talents-node-circle-sheenmask", sheenCentered = true,
+    round = true,
+  },
+  -- DEGRADE set for passives, used only if SetPortraitToTexture is missing (no way to round the icon —
+  -- a circular ring around a square icon leaves the corners poking out). The retail spellbook's SQUARE
+  -- SILVER passive frame: the square icon fits it cleanly and silver-vs-gold still reads as passive.
+  passiveSquare = {
     iconMask      = "spellbook-item-spellicon-mask",
     iconHighlight = "spellbook-item-iconframe-hover",
     border        = "talents-node-square-gray",   -- the dark SQUARE talent-node socket (NewEra talents)
@@ -170,6 +184,46 @@ local ART_SET = {
     sheenMask     = "spellbook-item-iconframe-sheen-mask", sheenCentered = false,
   },
 }
+
+-- ============================================================================
+-- ROUND ICONS — the addon-wide 3.3.5a recipe. Masks (CreateMaskTexture/AddMaskTexture/SetMask) are all
+-- dead on this client, so every circular icon we ship comes from the NATIVE SetPortraitToTexture, which
+-- clips a texture to a disc C-side (modules/lfg/Window.lua rail icons, modules/bags/CombinedBag.lua bag
+-- portrait, core/Portrait.lua). It needs a real texture PATH — a raw FileDataID silently blanks the
+-- texture on 3.3.5a (see core/Texture.lua), so resolve numbers through NE.tex.Local first.
+-- ============================================================================
+local ROUND_ICON_OK = type(_G.SetPortraitToTexture) == "function"
+
+local function iconPathOf(icon)
+  if type(icon) == "number" then
+    icon = (NE.tex and NE.tex.Local and NE.tex.Local(icon)) or nil
+  end
+  if type(icon) ~= "string" or icon == "" then return "Interface\\Icons\\INV_Misc_QuestionMark" end
+  return icon
+end
+
+-- Paint a card's icon: round (passive) via b.IconRound, square (active) via b.Icon. They are SEPARATE
+-- textures on purpose — SetPortraitToTexture's clip is a property of the texture it's applied to, and a
+-- card is recycled across pages, so a shared texture could carry the disc onto an active spell.
+-- Returns true when the round icon was used.
+local function paintIcon(b, icon, round)
+  local path = iconPathOf(icon)
+  if round and ROUND_ICON_OK and b.IconRound then
+    if pcall(SetPortraitToTexture, b.IconRound, path) then
+      b.IconRound:SetDesaturated(false)
+      b.IconRound:SetAlpha(1)
+      b.IconRound:Show()
+      b.Icon:Hide()
+      return true
+    end
+  end
+  if b.IconRound then b.IconRound:Hide() end
+  b.Icon:SetTexture(path)
+  b.Icon:SetDesaturated(false)
+  b.Icon:SetAlpha(1)
+  b.Icon:Show()
+  return false
+end
 
 
 -- ============================================================================
@@ -231,6 +285,13 @@ local function createCard(i)
   b.Icon:SetPoint("CENTER", b.IconSlot, "CENTER")
   -- full art (no crop); the 0.84 size inset lets the frame border cover the icon edge (talents look).
   b.Icon:SetTexCoord(0, 1, 0, 1)
+
+  -- Round icon for PASSIVE spells (see paintIcon). Only ever fed by SetPortraitToTexture; never
+  -- SetTexCoord'd (the native clip owns the coords — CLAUDE.md: don't texcoord-zoom a portrait).
+  b.IconRound = b:CreateTexture(nil, "ARTWORK", nil, -1)
+  b.IconRound:SetSize(PASSIVE_ICON, PASSIVE_ICON)
+  b.IconRound:SetPoint("CENTER", b.IconSlot, "CENTER")
+  b.IconRound:Hide()
 
   -- Cooldown swipe over the icon so spells on cooldown show the sweep instead of looking ready.
   b.Cooldown = CreateFrame("Cooldown", "NE_SpellBookCard" .. i .. "Cooldown", b, "CooldownFrameTemplate")
@@ -979,7 +1040,6 @@ local function applyCardVisual(card, e)
   card.passive = e.passive and true or false   -- passive cells are click/drag-inert
   card.unlearned = false
   local b = card.Button
-  b.Icon:SetTexture(e.icon or 134400)
   card.Name:SetText(e.name or "")
   card.SubName:SetText(e.subName or "")
 
@@ -990,11 +1050,15 @@ local function applyCardVisual(card, e)
   card.Name:SetTextColor(ir, ig, ib)
   card.SubName:SetTextColor(ir, ig, ib)
   card.Name:SetAlpha(1); card.SubName:SetAlpha(1)
-  b.Icon:SetDesaturated(false)
-  b.Icon:SetAlpha(1)
 
-  -- art set: square (active) vs circle (passive).
-  local art = e.passive and ART_SET.passive or ART_SET.square
+  -- art set: square (active) vs circle (passive). Passives fall back to the square silver frame only if
+  -- this client can't clip the icon round at all (see paintIcon / ROUND_ICON_OK).
+  local art
+  if e.passive then art = ROUND_ICON_OK and ART_SET.circle or ART_SET.passiveSquare
+  else art = ART_SET.square end
+
+  -- icon (also resets desaturation/alpha on whichever of the two icon textures is shown).
+  paintIcon(b, e.icon, art.round)
 
   -- border. SetAtlas fails gracefully (returns false, leaves prior); for the circle ring this
   -- is the degrade path — the grey ring may or may not exist, but the icon still shows.
@@ -1007,8 +1071,9 @@ local function applyCardVisual(card, e)
   b.Border:SetPoint("TOPLEFT",     b.IconSlot, "TOPLEFT",     tl[1], tl[2])
   b.Border:SetPoint("BOTTOMRIGHT", b.IconSlot, "BOTTOMRIGHT", br[1], br[2])
 
-  -- icon mask: rebuild per shape. If the mask can't be made, inset the square icon via texcoord
-  -- (square-in-ring for passive — accepted), else show the masked icon.
+  -- icon mask: rebuild per shape. Retail-only path (dead on 3.3.5a, kept so a client that DOES support
+  -- masks gets the exact retail clip). Only ever touches the SQUARE b.Icon — the round passive icon is
+  -- clipped by SetPortraitToTexture instead and must keep the native coords.
   if b._iconMask then
     if b.Icon.RemoveMaskTexture then pcall(b.Icon.RemoveMaskTexture, b.Icon, b._iconMask) end
     b._iconMask:Hide()
