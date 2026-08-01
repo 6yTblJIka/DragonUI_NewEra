@@ -561,6 +561,8 @@ C.BuildWindow = buildWindow
 function C.Show()
   local f = C.frame or buildWindow()
   if not f then return end
+  -- Snap the skill bar to its current value on open; only changes seen live get the sweep.
+  if C.ResetRankAnim then C.ResetRankAnim() end
   f:Show()
   applyWindowScale(f)
 end
@@ -576,6 +578,7 @@ function C.Hide()
     f.RecipeList.SearchBox:ClearFocus()
   end
   if f then f:Hide() end
+  if C.ResetRankAnim then C.ResetRankAnim() end
 end
 
 function C.Toggle()

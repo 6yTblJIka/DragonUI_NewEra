@@ -270,6 +270,231 @@ local function fillLayoutForAtlas(atlasName, entry)
 end
 
 -- ============================================================================
+-- Skill-up fill animation
+-- ============================================================================
+-- The bar lerps to its new value when the rank changes while the window is open (a craft that
+-- skills up, a gather tick) instead of snapping. Snapping still wins where a jump is correct:
+-- first paint, profession switch, max-rank change (trainer tier-up), bar-style toggle.
+local RANK_ANIM_RATE = 1.6   -- seconds to sweep the WHOLE bar; a small tick is proportionally shorter
+local RANK_ANIM_MIN  = 0.30  -- floor, so a 1-point skill-up is still readable
+local RANK_ANIM_MAX  = 1.10  -- ceiling, so a big jump doesn't crawl
+local RANK_ANIM_EASE = 3     -- ease-out exponent (1 = linear)
+
+-- Flare geometry (the moving crest of the fill).
+local FLARE_MAX_W = 53    -- native flare width; also the crop's full-width reference
+local FLARE_PX_H  = 16
+
+-- Topping out RETIRES the flare: at 100% it has nowhere left to travel, so it fades out instead
+-- of blinking off the frame the fill tops out. That retirement is reversible — a trainer raising
+-- the cap turns the old 100% into a partial bar, and the flare fades back in rather than popping.
+-- Both directions run through the same driver, so reversing mid-fade resumes from the alpha
+-- that's actually on screen.
+local FLARE_FADE_TIME = 0.45   -- seconds for a full 0↔1 fade; a partial one is proportionally shorter
+
+local flareFade = CreateFrame("Frame")
+flareFade:Hide()
+
+-- Cancel any in-flight fade by JUMPING TO ITS END STATE. Never leave the texture stranded at a
+-- partial alpha: a later Show() would then draw a half-there (or invisible) flare.
+local function cancelFlareFade(rb)
+  local cur = flareFade.rb
+  if not (cur and (rb == nil or cur == rb)) then return end
+
+  local to = flareFade.to
+  flareFade.rb = nil
+  flareFade:Hide()
+
+  local tex = cur.Flare
+  if tex then
+    tex:SetAlpha(to)
+    -- Retired: hidden AND left at alpha 0, which is what a later fade-in starts from.
+    if to == 0 then tex:Hide(); cur._flareRetired = true end
+  end
+end
+
+local function fadeFlareTo(rb, to)
+  local tex = rb.Flare
+  if not tex then return end
+
+  local from = tex:GetAlpha() or 1
+  if from == to then
+    cancelFlareFade(rb)
+    return
+  end
+
+  flareFade.rb       = rb
+  flareFade.from     = from
+  flareFade.to       = to
+  flareFade.elapsed  = 0
+  -- Scale by the distance actually travelled so a reversal doesn't take a full FLARE_FADE_TIME
+  -- to cover the sliver of alpha that's left.
+  flareFade.duration = math.max(0.01, FLARE_FADE_TIME * math.abs(to - from))
+
+  tex:SetAlpha(from)
+  tex:Show()
+  flareFade:Show()
+end
+
+flareFade:SetScript("OnUpdate", function(self, dt)
+  local rb  = self.rb
+  local tex = rb and rb.Flare
+  -- IsVisible, not IsShown: closing the window leaves the flare's own flag set, and the driver
+  -- would keep ticking against a frame nobody can see.
+  if not (tex and tex:IsVisible()) then cancelFlareFade(rb); return end
+
+  self.elapsed = self.elapsed + dt
+  local p = self.elapsed / self.duration
+  if p >= 1 then cancelFlareFade(rb); return end   -- cancel == land on the end state
+  tex:SetAlpha(self.from + (self.to - self.from) * p)
+end)
+
+-- Bring the flare on screen. `fade` is for the return from a retirement; an ordinary appearance
+-- (window open, profession switch, a normal skill-up) just shows at full alpha.
+local function showFlare(rb, fade)
+  rb._flareRetired = false
+  if fade then
+    fadeFlareTo(rb, 1)
+  else
+    cancelFlareFade(rb)
+    rb.Flare:SetAlpha(1)
+    rb.Flare:Show()
+  end
+end
+
+-- Place the flare at the crest of a fill `w` pixels wide. Shared by the travelling flare and the
+-- parked one the fade-out runs on, so the two can't disagree about where the crest is.
+local function positionFlare(rb, fl, w)
+  local fw     = math.min(FLARE_MAX_W, w)
+  local uSpan  = FLARE_U1 - FLARE_U0
+  local cropU0 = FLARE_U1 - (uSpan * (fw / FLARE_MAX_W))
+
+  -- ARTWORK (above Fill at sublevel 2), NOT OVERLAY: the flare is additive, so on OVERLAY it
+  -- drew on top of the frame art and bloomed straight over the rounded left cap whenever the
+  -- fill was short enough to sit inside it. Below the border, the frame clips it.
+  rb.Flare:SetTexture(fl.file)
+  rb.Flare:SetDrawLayer("ARTWORK", 3)
+  rb.Flare:ClearAllPoints()
+  rb.Flare:SetPoint("RIGHT", rb.Fill, "RIGHT", 0, 0)
+  rb.Flare:SetTexCoord(cropU0, FLARE_U1, fl.top, math.min(1, fl.top + FLARE_H))
+  rb.Flare:SetSize(fw, FLARE_PX_H)
+end
+
+-- Push a fill fraction onto whichever bar style is live. Width, flipbook crop and flare all
+-- derive from `frac` HERE and nowhere else, so the animation driver and UpdateRank can never
+-- disagree about what a given fraction looks like.
+local function applyFillFrac(rb, frac)
+  local maxW = rb.FillMaxW or FILL_MAXW
+  local w    = math.max(1, maxW * frac)
+  local prev = rb._ratio
+  rb._ratio  = frac
+
+  if rb._genericFill then
+    if rb.BaseFill then
+      rb.BaseFill:SetSize(w, FILL_H)
+      rb.BaseFill:SetShown(frac > 0)
+    end
+    return
+  end
+
+  rb.Fill:SetWidth(w)
+  rb.Fill._frac = frac
+  rb.Fill:SetShown(frac > 0)
+
+  -- While the flipbook runs, its driver re-crops from _frac every frame — but not until the NEXT
+  -- frame, which lags the width by one tick during an animation, so re-crop now. A static
+  -- (single-cell) sheet has no driver at all and the crop is entirely ours.
+  if rb._flipping then
+    refreshFlipFrame(rb.Fill)
+  elseif rb._staticCrop then
+    local s = rb._staticCrop
+    rb.Fill:SetTexCoord(s.u0, s.u0 + s.cellW * frac, s.v0, s.v1)
+  end
+
+  if rb.Flare then
+    local fl = rb._flareInfo
+    -- Keep the crest parked correctly even while a fade runs — a retiring flare still has to sit
+    -- at the end of the bar, and one fading back in has to land where the new fill ends.
+    if fl and frac > 0 then positionFlare(rb, fl, w) end
+
+    if fl and frac > 0 and frac < 1 then
+      -- Fade in only when returning from a retirement: either the fade-out is still in flight
+      -- (a reversal) or it finished and left the flare parked off screen. This is the trainer
+      -- case — the old 100% became partial, so the crest has somewhere to travel again.
+      showFlare(rb, rb._flareRetired or (flareFade.rb == rb))
+    elseif fl and frac >= 1 and rb._sweeping and prev and prev < 1 then
+      -- Just topped out under animation — fade the crest off where it stopped.
+      fadeFlareTo(rb, 0)
+    elseif flareFade.rb ~= rb then
+      -- No fade in flight to protect (refresh passes keep coming through here at 100%).
+      rb.Flare:Hide()
+    end
+  end
+end
+
+local rankAnim = CreateFrame("Frame")
+rankAnim:Hide()
+
+local function stopRankAnim(rb)
+  if rankAnim.a and (rb == nil or rankAnim.a.rb == rb) then
+    rankAnim.a.rb._sweeping = false
+    rankAnim.a = nil
+    rankAnim:Hide()
+  end
+end
+
+rankAnim:SetScript("OnUpdate", function(self, dt)
+  local a = self.a
+  if not a then self:Hide(); return end
+
+  a.elapsed = a.elapsed + dt
+  local p = a.elapsed / a.duration
+  if p > 1 then p = 1 end
+  local e = 1 - (1 - p) ^ RANK_ANIM_EASE
+
+  applyFillFrac(a.rb, a.fromFrac + (a.toFrac - a.fromFrac) * e)
+
+  -- The number counts with the bar. _rankShown carries the DRAWN value so a second skill-up
+  -- landing mid-sweep continues from where the text actually is.
+  local shown = a.fromRank + (a.toRank - a.fromRank) * e
+  a.rb._rankShown = shown
+  if a.rb.RankText then
+    a.rb.RankText:SetText(("%d / %d"):format(math.floor(shown + 0.5), a.maxRank))
+  end
+
+  -- _sweeping stays true THROUGH the final tick: applyFillFrac reads it to tell an animated
+  -- arrival at 100% (fade the flare off) from a snap to 100% (nothing to fade).
+  if p >= 1 then a.rb._sweeping = false; self.a = nil; self:Hide() end
+end)
+
+-- Move the bar to `frac`: lerp from what is currently drawn when `animate`, snap otherwise.
+local function setFillFrac(rb, frac, rank, maxRank, animate)
+  local fromFrac, fromRank = rb._ratio, rb._rankShown
+
+  if not (animate and fromFrac and fromRank) then
+    stopRankAnim(rb)
+    rb._sweeping = false
+    applyFillFrac(rb, frac)
+    rb._rankShown = rank
+    if rb.RankText then rb.RankText:SetText(("%d / %d"):format(rank, maxRank)) end
+    return
+  end
+
+  local dur = math.abs(frac - fromFrac) * RANK_ANIM_RATE
+  dur = math.max(RANK_ANIM_MIN, math.min(RANK_ANIM_MAX, dur))
+
+  rankAnim.a = {
+    rb = rb, fromFrac = fromFrac, toFrac = frac,
+    fromRank = fromRank, toRank = rank, maxRank = maxRank,
+    elapsed = 0, duration = dur,
+  }
+  rb._sweeping = true
+  -- Paint the starting value in THIS pass: UpdateRank may have just re-applied the atlas (which
+  -- resets the texcoord to the full sheet), and the driver's first tick is a frame away.
+  applyFillFrac(rb, fromFrac)
+  rankAnim:Show()
+end
+
+-- ============================================================================
 -- Helpers
 -- ============================================================================
 local function learnedRGB()
@@ -1020,6 +1245,19 @@ function C.SetProfession(name)
 end
 
 -- ============================================================================
+-- C.ResetRankAnim() — kill any in-flight sweep and make the next UpdateRank snap.
+-- Called on open/close: a skill-up that happened while the window was shut should be sitting at
+-- its true value when the window appears, not sweep up from a value the player never saw.
+-- ============================================================================
+function C.ResetRankAnim()
+  local rb = C.frame and C.frame.RankBar
+  if not rb then return end
+  stopRankAnim(rb)
+  cancelFlareFade(rb)
+  rb._snapNext = true
+end
+
+-- ============================================================================
 -- C.UpdateRank()
 -- ============================================================================
 function C.UpdateRank()
@@ -1043,19 +1281,29 @@ function C.UpdateRank()
 
   if rank and maxRank and maxRank > 0 then
     local frac = math.max(0, math.min(1, rank / maxRank))
-    local maxW  = rb.FillMaxW or FILL_MAXW
-    -- `w` and the texcoord crop below must both come from `frac`. Deriving one from an adjusted
-    -- fraction and the other from the raw one is what squashes the art.
-    local w     = math.max(1, maxW * frac)
+    local generic = (C.opts and C.opts.genericBar) and true or false
 
-    rb._profKey = profName
+    -- Animate only when the SAME bar in the SAME style moves — a profession switch, a trainer
+    -- tier-up (maxRank change), the style toggle or the first paint must land on the new value at
+    -- once. UpdateRank also runs on every idle refresh pass; an unchanged frac is a no-op sweep.
+    local animate = rb._ratio ~= nil and rb._rankShown ~= nil
+                    and rb._profKey == profName and rb._maxRank == maxRank
+                    and rb._genericFill == generic
+                    and rb._ratio ~= frac
+                    and not rb._snapNext
+                    and C.frame:IsShown()
+
+    rb._snapNext = nil
+    rb._profKey, rb._maxRank, rb._genericFill = profName, maxRank, generic
 
 
-    if C.opts and C.opts.genericBar then
+    if generic then
       stopFlip(rb.Fill)
       rb._flipping = false
       rb._flipAtlas = nil
+      rb._staticCrop, rb._flareInfo = nil, nil
       rb.Fill:Hide()
+      cancelFlareFade(rb)
       if rb.Flare then rb.Flare:Hide() end
 
       if rb.BarBg then
@@ -1080,12 +1328,9 @@ function C.UpdateRank()
         
         rb.BaseFill:ClearAllPoints()
         rb.BaseFill:SetPoint("TOPLEFT", rb, "TOPLEFT", FILL_X, FILL_Y)
-        rb.BaseFill:SetSize(w, FILL_H)
-        rb.BaseFill:SetShown(frac > 0)
       end
 
-      if rb.RankText then rb.RankText:SetText(("%d / %d"):format(rank, maxRank)) end
-      rb._ratio = frac
+      setFillFrac(rb, frac, rank, maxRank, animate)
       return
     end
 
@@ -1108,10 +1353,6 @@ function C.UpdateRank()
     rb.Fill:ClearAllPoints()
     rb.Fill:SetPoint("TOPLEFT", rb, "TOPLEFT", FILL_X, FILL_Y)
     rb.Fill:SetHeight(FILL_H)
-    rb.Fill:SetWidth(w)
-    rb.Fill._frac = frac
-    rb.Fill:SetShown(frac > 0)
-    rb._ratio = frac
 
     local atlasChanged = (rb._flipAtlas ~= atlasName)
     -- SetAtlas resets the texcoord to the WHOLE sprite sheet, and from then on the flip driver
@@ -1131,6 +1372,7 @@ function C.UpdateRank()
       local tc = { l = entry.left, r = entry.right, t = entry.top, b = entry.bottom }
 
       if frames > 2 then
+        rb._staticCrop = nil
         if atlasChanged or not rb._flipping then
           startFlip(rb.Fill, tc, rows, cols, frames, 7.8, staticFrame)
           rb._flipping = true
@@ -1150,50 +1392,39 @@ function C.UpdateRank()
         local col = idx % cols
         local row = math.floor(idx / cols)
 
-        local u0 = tc.l + col * cellW
-        local u1 = u0 + cellW * frac
-        local v0 = tc.t + row * cellH
-        local v1 = tc.t + (row + 1) * cellH
-
-        rb.Fill:SetTexCoord(u0, u1, v0, v1)
+        -- Static sheet: no flip driver owns this texcoord, so hand the crop to applyFillFrac,
+        -- which re-derives u1 from the animated fraction on every tick.
+        rb._staticCrop = {
+          u0    = tc.l + col * cellW,
+          cellW = cellW,
+          v0    = tc.t + row * cellH,
+          v1    = tc.t + (row + 1) * cellH,
+        }
       end
       rb._flipAtlas = atlasName
     else
       stopFlip(rb.Fill)
       rb._flipping = false
       rb._flipAtlas = nil
+      rb._staticCrop = nil
     end
 
-    if rb.Flare then
-      local themed = (atlasName ~= defaultAtlas)
-      if themed and entry and frac > 0 and frac < 1 then
-        local srcFile = entry.file and (NE.tex and NE.tex.localFiles and NE.tex.localFiles[entry.file]) or entry.file
-        rb.Flare:SetTexture(srcFile)
-
-        local maxFlareW = 53
-        local fw = math.min(maxFlareW, w)
-        local fracW = fw / maxFlareW
-        local uSpan = FLARE_U1 - FLARE_U0
-        local cropU0 = FLARE_U1 - (uSpan * fracW)
-
-        -- ARTWORK (above Fill at sublevel 2), NOT OVERLAY: the flare is additive, so on OVERLAY it
-        -- drew on top of the frame art and bloomed straight over the rounded left cap whenever the
-        -- fill was short enough to sit inside it. Below the border, the frame clips it.
-        rb.Flare:SetDrawLayer("ARTWORK", 3)
-        rb.Flare:ClearAllPoints()
-        rb.Flare:SetPoint("RIGHT", rb.Fill, "RIGHT", 0, 0)
-        rb.Flare:SetSize(fw, 16)
-        rb.Flare:SetTexCoord(cropU0, FLARE_U1, entry.top, math.min(1, entry.top + FLARE_H))
-        rb.Flare:Show()
-      else
-        rb.Flare:Hide()
-      end
+    if entry and atlasName ~= defaultAtlas then
+      rb._flareInfo = {
+        file = entry.file and (NE.tex and NE.tex.localFiles and NE.tex.localFiles[entry.file]) or entry.file,
+        top  = entry.top,
+      }
+    else
+      rb._flareInfo = nil
     end
 
-    if rb.RankText then rb.RankText:SetText(("%d / %d"):format(rank, maxRank)) end
+    setFillFrac(rb, frac, rank, maxRank, animate)
   else
     stopFlip(rb.Fill)
+    stopRankAnim(rb)
+    cancelFlareFade(rb)
     rb._ratio, rb._profKey, rb._flipAtlas, rb._flipping = nil, nil, nil, false
+    rb._rankShown, rb._maxRank, rb._staticCrop, rb._flareInfo = nil, nil, nil, nil
     rb.Fill:Hide()
     if rb.BaseFill then rb.BaseFill:Hide() end
     if rb.BarBg then rb.BarBg:Hide() end
