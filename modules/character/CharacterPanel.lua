@@ -199,15 +199,11 @@ local function buildFrame()
     end
   end)
 
-  -- chrome.Apply's f.Bg is already the shared grey-stone rock (FDID 374155) sized to nearly the whole
-  -- frame — but PC.ApplyModernChrome tints it to (0.32,0.32,0.32) for use as a subtle gutter fill on
-  -- reskinned Blizzard frames. On the character panel that gutter (the gap between the title band and
-  -- where the Insets begin, plus the margins around them) is the ONLY place it's visible, and at that
-  -- tint it reads as flat black instead of stone. Untint it to match the full-brightness rock body
-  -- every other from-scratch window (AH/Guild/Professions/etc.) shows.
-  guard("bodyBgUntint", function()
-    if f.Bg then f.Bg:SetVertexColor(1, 1, 1) end
-  end)
+  -- chrome.Apply's f.Bg is the shared grey-stone rock (FDID 374155) sized to nearly the whole frame,
+  -- tinted to (0.32,0.32,0.32) by PC.ApplyModernChrome. DO NOT untint it here: on the character panel
+  -- the only place the rock shows is the gutter (title band -> Insets, plus the margins around them),
+  -- and at full brightness that gutter reads as a washed-out grey slab framing the dark insets. The
+  -- chrome tint is what makes it read as near-black and sit behind the content instead of fighting it.
 
   -- Own the portrait region: build the cutout texture + seat it in the metal corner, then fill it
   -- with the CLASS icon (and keep it correct across model/portrait events).

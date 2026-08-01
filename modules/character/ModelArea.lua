@@ -42,14 +42,69 @@ local RACE_OVERLAY_ALPHA = {
   TROLL = 0.6, ORC = 0.6, WORGEN = 0.5, GOBLIN = 0.6,
 }
 
+-- CUSTOM RACES: private servers ship races this addon has no art for, and UnitRace's file name for
+-- them is whatever the server's ChrRaces DBC says ("HighElf", "Vulpera", "Naga", ...). Rather than
+-- letting those fall through to a hardcoded Orc backdrop regardless of faction, resolve in 3 steps:
+--   1. exact/normalized match against RACE_BG_FDIDS (so "Blood Elf"/"bloodelf" still hit BloodElf),
+--   2. an alias for the post-WotLK + common custom races whose look maps cleanly onto shipped art,
+--   3. a faction default — Alliance -> Human, Horde -> Orc, neutral/unknown -> Human.
+-- Extend RACE_ALIASES for a server-specific race; the faction default keeps it sane until you do.
+local RACE_ALIASES = {
+  worgen = "Human", goblin = "Orc", pandaren = "Human",
+  highelf = "BloodElf", voidelf = "BloodElf", nightborne = "BloodElf",
+  darkirondwarf = "Dwarf", lightforgeddraenei = "Draenei", magharorc = "Orc",
+  zandalaritroll = "Troll", highmountaintauren = "Tauren", forsaken = "Scourge",
+  undead = "Scourge", mechagnome = "Gnome", kultiran = "Human", vulpera = "Orc",
+}
+local FACTION_DEFAULT_RACE = { Alliance = "Human", Horde = "Orc" }
+
+-- Lowercased, punctuation-stripped index of the shipped race keys, built once.
+local LOGGED_UNKNOWN = {}
+local NORMALIZED_RACES = {}
+for key in pairs(RACE_BG_FDIDS) do NORMALIZED_RACES[key:lower()] = key end
+
+local function normalizeRace(raceFileName)
+  if type(raceFileName) ~= "string" then return nil end
+  return (raceFileName:lower():gsub("[^a-z0-9]", ""))
+end
+
+-- The shipped race key to draw for a (possibly unknown/custom) race file name. Never returns nil.
+local function resolveRaceKey(raceFileName)
+  if RACE_BG_FDIDS[raceFileName] then return raceFileName end
+
+  local norm = normalizeRace(raceFileName)
+  if norm then
+    if NORMALIZED_RACES[norm] then return NORMALIZED_RACES[norm] end
+    if RACE_ALIASES[norm] then return RACE_ALIASES[norm] end
+  end
+
+  -- DOWNPORT/§B: UnitFactionGroup can be nil (or "Neutral" on a Pandaren-like custom race) before
+  -- the player data is loaded — pcall it and fall back to Human so we always draw *something*.
+  local ok, faction = pcall(UnitFactionGroup, "player")
+  local fallback = (ok and faction and FACTION_DEFAULT_RACE[faction]) or "Human"
+  -- Log each unknown race once (resolveRaceKey runs per apply, and per quarters+alpha lookup).
+  local seenKey = tostring(raceFileName)
+  if not LOGGED_UNKNOWN[seenKey] then
+    LOGGED_UNKNOWN[seenKey] = true
+    log("no race background for '" .. seenKey .. "', using " .. fallback)
+  end
+  return fallback
+end
+
 local function resolveFdid(fdid)
   return (NE.tex and NE.tex.localFiles and NE.tex.localFiles[fdid]) or fdid
 end
 
--- 4 quarter texture sources for a race file name (falls back to Orc — Era's nil-race default).
+-- 4 quarter texture sources for a race file name (unknown/custom races -> faction default).
 local function quarterSourcesFor(raceFileName)
-  local fdids = RACE_BG_FDIDS[raceFileName] or RACE_BG_FDIDS.Orc
+  local fdids = RACE_BG_FDIDS[resolveRaceKey(raceFileName)]
   return resolveFdid(fdids[1]), resolveFdid(fdids[2]), resolveFdid(fdids[3]), resolveFdid(fdids[4])
+end
+
+-- Overlay alpha for a race file name, keyed off the RESOLVED art (so a custom race drawn on Orc art
+-- gets Orc's 0.6, not the 0.7 default that would over-darken it).
+local function overlayAlphaFor(raceFileName)
+  return RACE_OVERLAY_ALPHA[resolveRaceKey(raceFileName):upper()] or 0.7
 end
 
 -- Build the 4 stitched BG textures + the black overlay (once), as children of the (already-sized)
@@ -103,8 +158,10 @@ local function applyRaceBackground()
   local model = _G.CharacterModelFrame
   if not model or not model._neRaceBgBuilt then return end
 
+  -- DOWNPORT: do NOT bail when raceFile is nil (custom-race servers can return nil here, and a
+  -- nil-race player used to get bare untextured quarters). resolveRaceKey handles nil -> faction
+  -- default, so we always paint a real backdrop.
   local _, raceFile = UnitRace("player")
-  if not raceFile then return end
 
   local q1, q2, q3, q4 = quarterSourcesFor(raceFile)
   model._neBgTL:SetTexture(q1)
@@ -118,8 +175,7 @@ local function applyRaceBackground()
     if t.SetDesaturated then pcall(t.SetDesaturated, t, true) end
   end
 
-  local alpha = RACE_OVERLAY_ALPHA[raceFile:upper()] or 0.7
-  model._neBgOverlay:SetAlpha(alpha)
+  model._neBgOverlay:SetAlpha(overlayAlphaFor(raceFile))
 end
 
 CP.ApplyRaceBackground = applyRaceBackground
@@ -127,8 +183,7 @@ CP.ApplyRaceBackground = applyRaceBackground
 -- Reusable lookup (for a future InspectFrame port): 4 quarter sources + overlay alpha for a race file.
 CP.RaceBgQuarters = function(raceFile)
   local q1, q2, q3, q4 = quarterSourcesFor(raceFile)
-  local alpha = RACE_OVERLAY_ALPHA[(raceFile or ""):upper()] or 0.7
-  return q1, q2, q3, q4, alpha
+  return q1, q2, q3, q4, overlayAlphaFor(raceFile)
 end
 
 local boot = CreateFrame("Frame")
