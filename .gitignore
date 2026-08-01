@@ -5,6 +5,7 @@ Thumbs.db
 *~
 /ReferenceAddons
 .claude
+CLAUDE.md
 
 # luaparse, installed per qa/offline/README.md
 /qa/offline/node_modules
