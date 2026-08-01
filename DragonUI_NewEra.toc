@@ -81,7 +81,6 @@ modules\character\ModelArea.lua
 modules\character\ModelControls.lua
 modules\character\SlotFrames.lua
 modules\character\SlotQuality.lua
-modules\character\SlotItemLevel.lua
 modules\character\InnerBorder.lua
 modules\character\LevelText.lua
 modules\character\PaperDoll.lua
