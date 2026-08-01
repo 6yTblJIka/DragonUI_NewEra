@@ -267,6 +267,13 @@ end
 -- (which our CombinedBag hook rides to repaint the open bag).
 local ITEMLEVEL_MODULE = "itemlevel"
 
+-- The contexts this one switch drives. DragonUI keeps a separate checkbox per frame ("bags",
+-- "character", "bank", "merchant", …); these are the two NewEra owns a window for, and the player
+-- wants one control over both rather than hunting two checkboxes in another addon's options.
+-- Everything else (bank, merchant, loot, mail, auction, inspect, guild bank) is left alone — this
+-- is a convenience switch for OUR windows, not a master override of DragonUI's module.
+local ITEMLEVEL_CONTEXTS = { "bags", "character" }
+
 -- False when DragonUI has no item level module, or its master switch is off — in which case the
 -- per-context flag is inert and the menu entry says so rather than silently doing nothing.
 function BS.CanToggleItemLevel()
@@ -276,12 +283,19 @@ function BS.CanToggleItemLevel()
   return (ok and enabled) and true or false
 end
 
+-- ON only when EVERY context it drives is on. If the two have been set differently from DragonUI's
+-- own options the switch reads off, and one click brings them back in step — predictable, and it
+-- never claims "on" while one of the two windows is actually bare.
 function BS.IsItemLevelShown()
   if not BS.CanToggleItemLevel() then return false end
   local d = NE.dragon
   local ok, cfg = pcall(d.GetModuleConfig, d, ITEMLEVEL_MODULE)
   if not ok then return false end
-  return (not cfg) or cfg.bags ~= false   -- missing key defaults to ON, matching DragonUI
+  if not cfg then return true end   -- no config table yet: DragonUI's defaults are all ON
+  for _, context in ipairs(ITEMLEVEL_CONTEXTS) do
+    if cfg[context] == false then return false end   -- missing key defaults to ON, matching DragonUI
+  end
+  return true
 end
 
 -- Drive the SAME call chain the Enhancements checkbox uses. Its setFunc is
@@ -310,8 +324,14 @@ end
 function BS.SetItemLevelShown(on)
   local cfg = itemLevelConfigTable()
   if not cfg then return end
-  cfg.bags = on and true or false
+  for _, context in ipairs(ITEMLEVEL_CONTEXTS) do
+    cfg[context] = on and true or false
+  end
 
+  -- RefreshItemLevel repaints the character slots for us: its UpdateAll -> UpdateAllCharacterSlots
+  -- walks the stock Character*Slot globals, which our panel REPARENTS rather than replaces, so they
+  -- are the very buttons on screen. Only the bag grid needs the extra nudge below, because those
+  -- buttons are ours and DragonUI has never heard of them.
   local d = NE.dragon
   if d and d.RefreshItemLevel then pcall(d.RefreshItemLevel, d) end
 
