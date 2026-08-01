@@ -373,6 +373,12 @@ M.RACIAL_BY_RACE = {
     buffIcon  = {},
     buffBar   = {},
   },
+  Draenei    = {
+    essential = {},
+    utility   = { 28880 },   -- Gift of the Naaru (1.5min CD, heal)
+    buffIcon  = {},
+    buffBar   = {},
+  },
   Orc      = {
     essential = { 20572 },   -- Blood Fury (2min CD, +AP/SP burst)
     utility   = {},
@@ -395,6 +401,13 @@ M.RACIAL_BY_RACE = {
     -- UnitRace returns "Scourge" for Undead — the in-game faction name.
     essential = {},
     utility   = { 7744, 20577 },  -- Will of the Forsaken (5min CD), Cannibalize (2min CD)
+    buffIcon  = {},
+    buffBar   = {},
+  },
+  BloodElf  = {
+    -- UnitRace returns "BloodElf" for Blood Elves — the canonical race file name.
+    essential = {},
+    utility   = { 28730 },  -- Arcane Torrent (2min CD, silence + mana restore)
     buffIcon  = {},
     buffBar   = {},
   },

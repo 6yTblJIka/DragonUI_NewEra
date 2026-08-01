@@ -168,7 +168,6 @@ M.AURA_CATALOG_BY_CLASS = {
     { id = 30823, name = "Shamanistic Rage", dur = 15, tree = 2, talent = "Shamanistic Rage" },   -- class
     { id = 53390, name = "Tidal Waves", dur = 15, tree = 3, talent = "Tidal Waves" },   -- trigger
     { id = 30165, name = "Elemental Devastation", dur = 10, tree = 1, talent = "Elemental Devastation" },   -- trigger
-    { id = 30874, name = "Gift of the Water Spirit", dur = 10 },   -- class
     { id = 55198, name = "Tidal Force", dur = 2, tree = 3, talent = "Tidal Force" },   -- class
   },
   WARLOCK = {
