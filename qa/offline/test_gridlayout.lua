@@ -171,6 +171,89 @@ p.childXPadding, p.childYPadding = -2, -2
 p:Layout()
 check("single item unaffected by pad", p._w, 50)
 
+-- ── 9. centred short lines ──────────────────────────────────────────────────
+-- The owner's case: 12 icons at an icon limit of 9 wrap to 9 + 3, and the 3 must sit centred under
+-- the 9 instead of hugging the left edge. Every viewer sets centerPartialLines in RefreshLayout.
+print("\n[9a] horizontal, 12x50px, stride 9, pad 0 - short row centred")
+p = build(12, 50)
+p.isHorizontal = true; p.stride = 9
+p.childXPadding, p.childYPadding = 0, 0
+p.layoutFramesGoingRight = true
+p.centerPartialLines = true
+p:Layout()
+check("frame width (9 cols)", p._w, 450)
+check("full row 1 not shifted", p._children[1]._points[1].x, 0)
+check("full row 1 last col", p._children[9]._points[1].x, 400)
+-- row 2 holds 3 icons = 150px inside 450px, so it starts at (450-150)/2 = 150
+check("row 2 first is centred", p._children[10]._points[1].x, 150)
+check("row 2 last is centred", p._children[12]._points[1].x, 250)
+check("row 2 y unchanged", p._children[10]._points[1].y, -50)
+
+print("\n[9b] off by default - the same grid stays flush left")
+p = build(12, 50)
+p.isHorizontal = true; p.stride = 9
+p.childXPadding, p.childYPadding = 0, 0
+p.layoutFramesGoingRight = true
+p:Layout()
+check("row 2 flush left", p._children[10]._points[1].x, 0)
+
+print("\n[9c] mirrored: centring is symmetric about the frame centre")
+p = build(12, 50)
+p.isHorizontal = true; p.stride = 9
+p.childXPadding, p.childYPadding = 0, 0
+p.layoutFramesGoingRight = false
+p.centerPartialLines = true
+p:Layout()
+-- Mirrored, child10 is the RIGHTMOST of row 2: 450 - 150 - 50 = 250
+check("row 2 first (mirrored)", p._children[10]._points[1].x, 250)
+check("row 2 last (mirrored)", p._children[12]._points[1].x, 150)
+
+print("\n[9d] a grid that divides evenly gets no offset at all")
+p = build(9, 50)
+p.isHorizontal = true; p.stride = 3
+p.childXPadding, p.childYPadding = 0, 0
+p.layoutFramesGoingRight = true
+p.centerPartialLines = true
+p:Layout()
+check("row 2 aligned with row 1", p._children[4]._points[1].x, 0)
+check("row 3 aligned with row 1", p._children[7]._points[1].x, 0)
+
+print("\n[9e] vertical: the short COLUMN centres along Y")
+p = build(5, 50)
+p.isHorizontal = false; p.stride = 3
+p.childXPadding, p.childYPadding = 0, 0
+p.layoutFramesGoingRight = true
+p.layoutFramesGoingUp = false
+p.centerPartialLines = true
+p:Layout()
+check("frame height (3 rows)", p._h, 150)
+check("full column 1 not shifted", p._children[1]._points[1].y, 0)
+-- column 2 holds 2 icons = 100px inside 150px, so it starts 25px down
+check("column 2 first centred", p._children[4]._points[1].y, -25)
+check("column 2 second centred", p._children[5]._points[1].y, -75)
+
+print("\n[9f] vertical stacking UP centres the same way from the bottom")
+p = build(5, 50)
+p.isHorizontal = false; p.stride = 3
+p.childXPadding, p.childYPadding = 0, 0
+p.layoutFramesGoingRight = true
+p.layoutFramesGoingUp = true
+p.centerPartialLines = true
+p:Layout()
+check("column 2 first centred (up)", p._children[4]._points[1].y, 25)
+check("column 2 second centred (up)", p._children[5]._points[1].y, 75)
+
+print("\n[9g] scale: the centring offset is in CHILD units too")
+p = build(4, 50, 2)
+p.isHorizontal = true; p.stride = 3
+p.childXPadding, p.childYPadding = 0, 0
+p.layoutFramesGoingRight = true
+p.centerPartialLines = true
+p:Layout()
+-- 3 cols of 100 parent px = 300; row 2 holds one 100px child, centred at 100 parent px = 50 child
+check("frame width (scaled)", p._w, 300)
+check("row 2 lone icon centred", p._children[4]._points[1].x, 50)
+
 print("")
 if fails == 0 then print("ALL GRIDLAYOUT CHECKS PASSED") else print(fails .. " FAILURE(S)") end
 os.exit(fails == 0 and 0 or 1)

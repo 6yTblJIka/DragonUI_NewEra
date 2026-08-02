@@ -3384,6 +3384,30 @@ Verified in bulk out-of-band as well: a probe that feeds the harness all 49,839 
 and walks 10 races × 10 classes reports one tile per ability everywhere, and reports exactly the five
 collisions above when the dedupe is disabled.
 
+#### H.3.24. A short trailing row centres under the full ones
+
+12 essential icons at an icon limit of 9 wrap to 9 + 3, and the 3 were flush against the start edge —
+visibly off-centre under the row above. `core/GridLayout.lua` now takes `centerPartialLines`, and every
+viewer sets it in `BaseViewerMixin:RefreshLayout`.
+
+A *line* is the axis `stride` counts along: a row when horizontal, a column when vertical. The offset is
+half the line's shortfall against the laid-out bounds, measured as the furthest child edge rather than a
+sum of cell sizes — so a line of mixed-width children (the BuffBar's bars) measures what it actually
+occupies. A line that fills `stride` measures the full extent and gets 0, which is what keeps the columns
+of a multi-row grid aligned with one another.
+
+The offset is folded into `x`/`y` **before** the `layoutFramesGoingRight` mirror, not after. Mirroring
+reflects a line about the frame's centre and the centring offset is symmetric about that same centre, so
+ordering it first is exactly what flips its sign for a leftward grid — there is no separate mirrored case
+to get wrong. Vertically there is nothing to mirror at all: `rowY` is always measured from whichever edge
+`layoutFramesGoingUp` picked, so the same `+off` serves both stack directions.
+
+The flag defaults off in the mixin, so the alert and preview grids that also use it are untouched.
+
+`test_gridlayout.lua` covers the owner's 9+3 case, the flag being off, the mirrored grid, an evenly
+dividing grid getting no offset at all, vertical short columns in both stack directions, and the offset
+being converted back into child units under `iconSize` scaling.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

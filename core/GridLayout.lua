@@ -16,6 +16,7 @@
 --   frame.childYPadding           -- px between rows
 --   frame.layoutFramesGoingRight  -- false mirrors the grid horizontally
 --   frame.layoutFramesGoingUp     -- true anchors from the BOTTOM edge and stacks upward
+--   frame.centerPartialLines      -- centre a line that doesn't fill `stride` (see Layout)
 --   child.layoutIndex             -- sort key; children without one are skipped
 --   child.ignoreInLayout          -- skip this child (retired pool slots set this)
 --   child.includeAsLayoutChildWhenHidden -- a hidden child still occupies its grid cell
@@ -132,6 +133,30 @@ function GridLayoutMixin:Layout()
   if totalW < 1 then totalW = 1 end
   if totalH < 1 then totalH = 1 end
 
+  -- Centre a SHORT line. 12 icons at a stride of 9 wrap to 9 + 3, and the trailing 3 would otherwise
+  -- sit flush against the start edge, visibly off-centre under the full row above. `centerPartialLines`
+  -- shifts each line by half its shortfall against the laid-out bounds.
+  --
+  -- A line here is a row when horizontal and a column when vertical — the same axis `stride` counts
+  -- along. A line that IS full measures the full extent and so gets an offset of 0, which is what
+  -- keeps the columns of a multi-row grid aligned with each other.
+  local lineOffset = {}
+  if self.centerPartialLines then
+    -- The line's own extent, taken as the furthest child edge rather than a sum of cell sizes, so a
+    -- line of mixed-width children (the BuffBar's bars) measures what it actually occupies.
+    local extent = {}
+    for i = 1, count do
+      local w, h = childExtent(children[i])
+      local line = horizontal and rowOf[i] or colOf[i]
+      local e = horizontal and ((colX[colOf[i]] or 0) + w) or ((rowY[rowOf[i]] or 0) + h)
+      if not extent[line] or e > extent[line] then extent[line] = e end
+    end
+    local total = horizontal and totalW or totalH
+    for line, e in pairs(extent) do
+      lineOffset[line] = (total - e) / 2
+    end
+  end
+
   local goingRight = self.layoutFramesGoingRight ~= false
   local goingUp    = self.layoutFramesGoingUp and true or false
   local anchor     = goingUp and "BOTTOMLEFT" or "TOPLEFT"
@@ -142,11 +167,19 @@ function GridLayoutMixin:Layout()
     local s     = childScale(child)
 
     local x = colX[colOf[i]] or 0
+    local y = rowY[rowOf[i]] or 0
+
+    -- Centring offset, applied BEFORE the mirror below. Mirroring reflects the line about the
+    -- frame's centre and the centring offset is symmetric about that same centre, so folding it in
+    -- first is exactly what flips its sign for a leftward grid — no separate case needed.
+    local off = lineOffset[horizontal and rowOf[i] or colOf[i]]
+    if off then
+      if horizontal then x = x + off else y = y + off end
+    end
+
     -- Mirror horizontally: the row grows leftward from the right edge. Uses this child's own width
     -- so a mixed-width row stays flush against the correct edge.
     if not goingRight then x = totalW - x - w end
-
-    local y = rowY[rowOf[i]] or 0
 
     child:ClearAllPoints()
     -- Offsets back into child units (see childScale above). Y is negative when anchoring from the

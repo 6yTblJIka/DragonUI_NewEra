@@ -331,6 +331,9 @@ function BaseViewerMixin:RefreshLayout()
   self.layoutFramesGoingRight = (not self.isHorizontal) or (self.iconDirection == "right")
   self.layoutFramesGoingUp = self.growUpward or ((not self.isHorizontal) and (self.iconDirection == "right"))
   self.alwaysUpdateLayout = true
+  -- A trailing short row centres under the full rows above it rather than hugging the start edge:
+  -- 12 essential icons at an icon limit of 9 lay out as 9 + a centred 3.
+  self.centerPartialLines = true
   -- Set stride AFTER SetIconLimit (which defaults it to iconLimit) so a per-viewer GetStride
   -- override takes effect.
   self.stride = self:GetStride()
