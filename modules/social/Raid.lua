@@ -21,45 +21,82 @@ end
 -- ---------------------------------------------------------------------------
 -- Right-click context menu on a group slot (owner steer 2026-07-17: no menu existed on the group
 -- grid at all). Same EasyMenu/UIDropDownMenu pattern as Friends.lua/Roster.lua/Who.lua.
--- Promote/demote/assignment calls all use the (unit, name, exactMatch) signature confirmed via the
--- on-client APIDocumentation addon (RaidDocumentation.lua/PartyDocumentation.lua) and cross-checked
--- against a live, working raid addon on this server (AddOns/Cell_Wrath/Utilities/RaidRosterFrame.lua
--- calls PromoteToAssistant/DemoteAssistant/UninviteUnit the same way). Passing name (not a unit
--- token) keeps this independent of the slot's raid-roster index. "MAINTANK"/"MAINASSIST" are the
--- confirmed SetPartyAssignment() assignment strings (same Cell_Wrath file + Indicators/Built-in.lua).
+--
+-- Owner report 2026-08-02: Main Tank / Main Assist threw Blizzard errors. These calls take ONE
+-- positional target on 3.3.5a -- a unit token OR a name -- with exactMatch after it:
+--   PromoteToLeader("unit"|"name" [, exactMatch])
+--   PromoteToAssistant("unit"|"name" [, exactMatch])
+--   SetPartyAssignment("assignment", "unit"|"name" [, exactMatch])
+-- They were being called in the (unit, name, exactMatch) form, i.e. with nil where the target
+-- belongs and the name landing in exactMatch. That form is Cataclysm-and-later, which is what the
+-- on-client APIDocumentation addon documents -- it ships retail signatures and does NOT describe
+-- this client, so it can't be used to confirm an argument list on its own. The earlier comment here
+-- also credited AddOns/Cell_Wrath/Utilities/RaidRosterFrame.lua with the same form; it does not use
+-- it -- that file calls PromoteToAssistant(unit) / DemoteAssistant(unit) / UninviteUnit(name), one
+-- argument each, and DBM-Core/DBM-InfoFrame.lua reads the assignments back as
+-- GetPartyAssignment("MAINTANK", unit, 1) with exactMatch in the THIRD slot. Both are live and
+-- working on this server, so that's the shape trusted here.
+--
+-- Owner report 2026-08-02, with a screenshot of ADDON_ACTION_BLOCKED ("blocked from an action only
+-- available to the Blizzard UI"): with the signature corrected, Main Tank / Main Assist STILL fail,
+-- because SetPartyAssignment is a PROTECTED function on this client. That's not something a call
+-- site can fix -- addon code is tainted the moment it runs, hardware event or not, and a protected
+-- function refuses a tainted execution path. There's no way around it either: 3.3.5a's secure
+-- attribute list covers target/focus/assist/spell/item/macro/action/pet and has nothing for party
+-- assignments, and routing through a Blizzard dropdown still carries our taint into the call.
+-- So the two items are gone rather than left in to throw a popup every time.
+--
+-- Set Focus went with them, same cause -- FocusUnit is protected too. Nothing on this client calls
+-- it directly; Cell_Wrath reaches focus through SetAttribute("unit", "focus") on a secure button
+-- (RaidFrames/Groups/SpotlightFrame.lua), which is the only supported route and needs the slot
+-- itself to be a SecureActionButton, not a menu entry.
+--
+-- What's left is what's actually callable. The APIDocumentation addon flags the protected ones with
+-- a (commented-out) IsProtectedFunction line -- present on SetPartyAssignment/ClearPartyAssignment/
+-- FocusUnit, absent on PromoteToLeader/PromoteToAssistant/UninviteUnit -- and that split matches
+-- which calls live addons on this client are willing to make. Check that marker before adding
+-- anything to this menu.
+--
 -- Promote/Remove items are only offered to a leader/assist, matching stock permission gating.
 -- ---------------------------------------------------------------------------
 local raidSlotMenuFrame
-local function openRaidSlotMenu(name)
-  if not (EasyMenu and name) then return end
+
+-- The unit token is the more precise target (no name collisions, no realm/locale quirks), but
+-- "raidN" indices shift the moment anyone leaves, and the menu's closures run some time after the
+-- right-click that built them. Take the token only while it still resolves to the name the menu was
+-- opened on; otherwise fall back to the name, which stays valid regardless of roster order.
+-- `name` is the one captured when the menu opened, not slot._name -- RefreshRaid blanks the slot's
+-- copy on every roster change, and a nil target is what raised the Blizzard error in the first place.
+local function raidTarget(slot, name)
+  if slot._unit and UnitName and UnitName(slot._unit) == name then return slot._unit end
+  return name
+end
+
+local function openRaidSlotMenu(slot)
+  if not (EasyMenu and slot and slot._name) then return end
   if not raidSlotMenuFrame then
     raidSlotMenuFrame = CreateFrame("Frame", "NE_SocialRaidSlotMenu", UIParent, "UIDropDownMenuTemplate")
   end
-  local canManage = (IsRaidLeader and IsRaidLeader()) or (IsRaidOfficer and IsRaidOfficer())
+  -- Everything the menu still offers is leader/assist-only, so for a rank-and-file member it would
+  -- be a name and a Cancel button. Don't open it at all rather than pop an empty one.
+  if not ((IsRaidLeader and IsRaidLeader()) or (IsRaidOfficer and IsRaidOfficer())) then return end
+
+  local name = slot._name
   local menu = { { text = name, isTitle = true, notCheckable = true } }
-  menu[#menu + 1] = { text = "Set Focus", notCheckable = true, func = function()
-      if FocusUnit then FocusUnit(nil, name) end
+  menu[#menu + 1] = { text = "Promote to Raid Leader", notCheckable = true, func = function()
+      if PromoteToLeader then PromoteToLeader(raidTarget(slot, name), true) end
+      SO.RefreshRaid()
     end }
-  if canManage then
-    menu[#menu + 1] = { text = "Promote to Raid Leader", notCheckable = true, func = function()
-        if PromoteToLeader then PromoteToLeader(nil, name) end
-        SO.RefreshRaid()
-      end }
-    menu[#menu + 1] = { text = "Promote to Assistant", notCheckable = true, func = function()
-        if PromoteToAssistant then PromoteToAssistant(nil, name) end
-        SO.RefreshRaid()
-      end }
-    menu[#menu + 1] = { text = "Promote to Main Tank", notCheckable = true, func = function()
-        if SetPartyAssignment then SetPartyAssignment("MAINTANK", nil, name) end
-      end }
-    menu[#menu + 1] = { text = "Promote to Main Assist", notCheckable = true, func = function()
-        if SetPartyAssignment then SetPartyAssignment("MAINASSIST", nil, name) end
-      end }
-    menu[#menu + 1] = { text = REMOVE or "Remove", notCheckable = true, func = function()
-        if UninviteUnit then UninviteUnit(nil, name) end
-        SO.RefreshRaid()
-      end }
-  end
+  menu[#menu + 1] = { text = "Promote to Assistant", notCheckable = true, func = function()
+      if PromoteToAssistant then PromoteToAssistant(raidTarget(slot, name), true) end
+      SO.RefreshRaid()
+    end }
+  menu[#menu + 1] = { text = REMOVE or "Remove", notCheckable = true, func = function()
+      -- Name, not the token, matching Cell_Wrath: an uninvite that lands on the wrong raid index
+      -- is the one misfire here you can't take back.
+      if UninviteUnit then UninviteUnit(name) end
+      SO.RefreshRaid()
+    end }
   menu[#menu + 1] = { text = CANCEL or "Cancel", notCheckable = true }
   EasyMenu(menu, raidSlotMenuFrame, "cursor", 0, 0, "MENU")
 end
@@ -407,6 +444,117 @@ local LEADER_ICON  = "Interface\\GroupFrame\\UI-Group-LeaderIcon"
 local ASSIST_ICON  = "Interface\\GroupFrame\\UI-Group-AssistantIcon"
 local EMPTY_LABEL  = EMPTY or "Empty"
 
+-- ---------------------------------------------------------------------------
+-- Drag-and-drop group assignment, matching the stock RaidFrame: pick a name up off a slot and drop
+-- it on another group. Leader/assist only -- the server rejects the move either way, but gating the
+-- drag itself stops everyone else dragging names around to no visible effect.
+--
+-- Resolves the drop target with GetMouseFocus() in OnDragStop, the way Blizzard's own
+-- RaidGroupButton does, rather than OnReceiveDrag -- that event is for things the cursor is
+-- literally holding (items, spells, macros), not frame-to-frame drags, and never fires here.
+-- Since we don't detach and float the slot itself the way the stock frame does, a small ghost
+-- label follows the cursor instead so there's something to see mid-drag.
+--
+-- The two moves are different API calls: an empty target slot means the group has room, so the
+-- player just changes subgroup (SetRaidSubgroup); an occupied one means the two trade places
+-- (SwapRaidSubgroup). Both take raid roster indices (slot._index, set in RefreshRaid), not names.
+-- ---------------------------------------------------------------------------
+local dragSource     -- slot the drag started from, nil when no drag is in progress
+local dropGlowSlot   -- slot currently showing the drop-target tint
+local dragGhost
+
+local function canManageRaid()
+  return ((IsRaidLeader and IsRaidLeader()) or (IsRaidOfficer and IsRaidOfficer())) and true or false
+end
+
+local function getDragGhost()
+  if dragGhost then return dragGhost end
+  local g = CreateFrame("Frame", nil, UIParent)
+  g:SetFrameStrata("TOOLTIP")
+  g:SetHeight(16)
+  g:EnableMouse(false)   -- must never come back from the GetMouseFocus() in onSlotDragStop
+  g:Hide()
+  local bg = g:CreateTexture(nil, "BACKGROUND")
+  bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+  bg:SetVertexColor(0, 0, 0, 0.7)
+  bg:SetAllPoints(g)
+  g.text = g:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  g.text:SetPoint("CENTER", g, "CENTER", 0, 0)
+  -- Cursor coords come back in screen pixels; divide by the frame's effective scale to place it.
+  g:SetScript("OnUpdate", function(self)
+    local x, y = GetCursorPosition()
+    local scale = self:GetEffectiveScale()
+    self:ClearAllPoints()
+    self:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x / scale + 14, y / scale - 8)
+  end)
+  dragGhost = g
+  return g
+end
+
+local function setDropGlow(slot)
+  if dropGlowSlot == slot then return end
+  if dropGlowSlot and dropGlowSlot.dropGlow then dropGlowSlot.dropGlow:Hide() end
+  dropGlowSlot = slot
+  if slot and slot.dropGlow then slot.dropGlow:Show() end
+end
+
+-- Dropping inside the source's own group is a no-op (slot order within a box is just our fill
+-- order, not anything the server tracks), so those slots don't light up as targets.
+local function isDropTarget(slot)
+  return dragSource ~= nil
+     and slot ~= dragSource
+     and slot._group ~= dragSource._group
+end
+
+local function endDrag()
+  setDropGlow(nil)
+  if dragSource then
+    dragSource:SetAlpha(1)
+    dragSource = nil
+  end
+  if dragGhost then dragGhost:Hide() end
+end
+
+-- Roster indices are only good for as long as the roster holds still; someone leaving mid-drag
+-- shifts everyone below them up. Re-check the name at each index before acting on it so a
+-- stale index can't move the wrong player.
+local function indexStillHolds(slot)
+  if not (slot and slot._index and slot._name) then return false end
+  local name = GetRaidRosterInfo and GetRaidRosterInfo(slot._index)
+  return name == slot._name
+end
+
+local function onSlotDragStart(self)
+  if not (self._name and self._index) then return end
+  if not canManageRaid() then return end
+  dragSource = self
+  self:SetAlpha(0.4)
+  local ghost = getDragGhost()
+  ghost.text:SetText(self._name)
+  ghost:SetWidth(ghost.text:GetStringWidth() + 12)
+  ghost:Show()
+end
+
+local function onSlotDragStop(self)
+  local source = dragSource
+  local target = GetMouseFocus and GetMouseFocus()
+  endDrag()
+
+  if not (source and target and target._isRaidSlot) then return end
+  if target == source or target._group == source._group then return end
+  if not canManageRaid() then return end
+  if not indexStillHolds(source) then return end
+
+  if target._name then
+    if indexStillHolds(target) and SwapRaidSubgroup then
+      SwapRaidSubgroup(source._index, target._index)
+    end
+  elseif SetRaidSubgroup then
+    SetRaidSubgroup(source._index, target._group)
+  end
+  -- No manual refresh: the move fires RAID_ROSTER_UPDATE, which repaints the grid (see `ev` below).
+end
+
 local function buildGroupBox(col, groupIndex, stackPos)
   local box = CreateFrame("Frame", nil, col)
   local y = -(stackPos - 1) * (GROUP_BOX_H + GROUP_GAP_Y)
@@ -439,22 +587,31 @@ local function buildGroupBox(col, groupIndex, stackPos)
     slot:SetHeight(SLOT_H)
     slot:SetPoint("TOPLEFT", box, "TOPLEFT", 0, -GROUP_HEADER_H - (s - 1) * SLOT_H)
     slot:SetPoint("TOPRIGHT", box, "TOPRIGHT", 0, -GROUP_HEADER_H - (s - 1) * SLOT_H)
+    slot._isRaidSlot = true     -- GetMouseFocus() sentinel for the drop handler
+    slot._group = groupIndex
     slot:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    slot:RegisterForDrag("LeftButton")
     slot:SetScript("OnClick", function(self, button)
-      if button == "RightButton" and self._name then openRaidSlotMenu(self._name) end
+      if button == "RightButton" and self._name then openRaidSlotMenu(self) end
     end)
+    slot:SetScript("OnDragStart", onSlotDragStart)
+    slot:SetScript("OnDragStop", onSlotDragStop)
     -- Hover highlight on the slot itself (owner report 2026-07-17: slots had none — every other
     -- list in this addon highlights on hover, e.g. Friends/Who/Guild Roster rows via this same
     -- texture+ADD). Also shows the unit's tooltip, using the real raid-roster unit token (set in
     -- RefreshRaid as slot._unit — "raidN") so GameTooltip:SetUnit resolves health/buffs/etc.
     slot:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
     slot:SetScript("OnEnter", function(self)
+      if isDropTarget(self) then setDropGlow(self) end
       if self._unit and UnitExists and UnitExists(self._unit) and GameTooltip then
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetUnit(self._unit)
       end
     end)
-    slot:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    slot:SetScript("OnLeave", function(self)
+      if dropGlowSlot == self then setDropGlow(nil) end
+      if GameTooltip then GameTooltip:Hide() end
+    end)
 
     if s % 2 == 0 then
       local stripe = slot:CreateTexture(nil, "ARTWORK")
@@ -462,6 +619,16 @@ local function buildGroupBox(col, groupIndex, stackPos)
       stripe:SetVertexColor(1, 1, 1, 0.03)
       stripe:SetAllPoints(slot)
     end
+
+    -- Drop-target tint. Its own texture rather than poking the highlight one, which the button
+    -- re-drives off its mouseover state and would clear out from under us. ARTWORK (created before
+    -- the name fontstring, which is OVERLAY) so it tints behind the text.
+    local dropGlow = slot:CreateTexture(nil, "ARTWORK")
+    dropGlow:SetTexture("Interface\\Buttons\\WHITE8X8")
+    dropGlow:SetVertexColor(1, 0.82, 0, 0.28)
+    dropGlow:SetAllPoints(slot)
+    dropGlow:Hide()
+    slot.dropGlow = dropGlow
 
     local icon = slot:CreateTexture(nil, "OVERLAY")
     icon:SetSize(10, 10)
@@ -649,6 +816,9 @@ function SO.SetupRaid(f)
   -- `panel`, so it would otherwise pop back into view when the tab is re-selected.
   panel:HookScript("OnHide", function()
     if panel.RaidInfo then panel.RaidInfo:Hide() end
+    -- Tab switched / window closed mid-drag: OnDragStop won't reach a hidden frame, so the ghost
+    -- would be left following the cursor with nothing to drop it on.
+    endDrag()
   end)
 
   if RequestRaidInfo then RequestRaidInfo() end
@@ -661,6 +831,11 @@ function SO.RefreshRaid()
   local panel = f and f.RaidPanel
   if not (panel and panel._groupBoxes) then return end
 
+  -- A repaint means the roster moved, so every slot's _index/_name pairing is about to be rewritten
+  -- underneath any drag in flight. Drop it rather than let it finish against stale bookkeeping;
+  -- OnDragStop still fires on the source afterwards and bails out on the now-nil dragSource.
+  endDrag()
+
   for g = 1, NUM_GROUPS do
     local box = panel._groupBoxes[g]
     for s = 1, SLOTS_PER_GROUP do
@@ -671,8 +846,15 @@ function SO.RefreshRaid()
       slot.text:SetAlpha(1)
       slot._name = nil
       slot._unit = nil
-      -- Owner steer 2026-07-17: match Channels roster — no hover glow on empty slots.
-      slot:EnableMouse(false)
+      slot._index = nil
+      slot:SetAlpha(1)
+      -- Owner steer 2026-07-17: match Channels roster — no hover glow on empty slots. Done by
+      -- zeroing the highlight's alpha rather than EnableMouse(false), which is what it used to be:
+      -- an empty slot is the drop target for moving someone into that group, and a mouse-disabled
+      -- frame never comes back from GetMouseFocus(). Nothing else keys off hover here — the
+      -- tooltip needs _unit and the right-click menu needs _name, both nil on an empty slot.
+      local hl = slot:GetHighlightTexture()
+      if hl then hl:SetAlpha(0) end
     end
   end
 
@@ -691,7 +873,9 @@ function SO.RefreshRaid()
         local slot = panel._groupBoxes[subgroup].slots[pos]
         slot._name = name
         slot._unit = "raid" .. i
-        slot:EnableMouse(true)
+        slot._index = i     -- SetRaidSubgroup/SwapRaidSubgroup take roster indices, not names
+        local hl = slot:GetHighlightTexture()
+        if hl then hl:SetAlpha(1) end
         if rank == 2 then
           slot.icon:SetTexture(LEADER_ICON); slot.icon:Show()
         elseif rank == 1 then
