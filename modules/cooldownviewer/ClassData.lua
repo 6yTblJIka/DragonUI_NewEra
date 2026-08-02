@@ -60,7 +60,10 @@ M.ESSENTIAL_BY_CLASS = {
   },
   MAGE = {
     11129,   -- Combustion (Fire 31pt)
-    12472,   -- Cold Snap (Frost 31pt, reset CDs)
+    -- 12472 was here labelled "Cold Snap" and is Icy Veins; 11958 sits in Utility below labelled
+    -- "Ice Block" and is Cold Snap. Two wrong labels that between them left mages with no Ice Block
+    -- at all. Both abilities are curated by name in tools/cdm-spellgen/gen_wotlk.py, which resolves
+    -- them from Spell.dbc, so they are dropped here rather than relabelled — one home per ability.
     12043,   -- Presence of Mind (Arcane 30pt)
     12042,   -- Arcane Power (Arcane 31pt)
     2136,   -- Fire Blast (instant, 8s)
@@ -144,7 +147,8 @@ M.UTILITY_BY_CLASS = {
     724,   -- Lightwell (Holy 31pt)
   },
   MAGE = {
-    11958,   -- Ice Block (immunity)
+    -- 11958 was here labelled "Ice Block" and is Cold Snap — see the note in Essential above. Both,
+    -- plus the Ice Block that was missing entirely, are curated in gen_wotlk.py.
     11426,   -- Ice Barrier (shield)
     1953,   -- Blink (escape)
     122,   -- Frost Nova (root)

@@ -13,4 +13,6 @@ CLAUDE.md
 # cdm-spellgen intermediates — regenerate with dbc.py / resolve.py, never review by hand
 /tools/cdm-spellgen/spells.json
 /tools/cdm-spellgen/resolved.json
+/tools/cdm-spellgen/resolved_any.json
 /tools/cdm-spellgen/listing.txt
+/tools/cdm-spellgen/listing_nocd.txt

@@ -32,10 +32,15 @@ local QUESTION_MARK = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 -- ── Item tiles ──────────────────────────────────────────────────────────────────────────────────
 
--- Unlearned entries stay listed but read as unavailable: the Not Displayed catalog deliberately
--- shows the whole arsenal, so a low-level character can see what they will be able to track.
+-- Unlearned entries read as unavailable. Since §H.3.21 they are only ever LISTED with Show Unlearned
+-- on, so this tint is that setting's whole visual payload rather than a permanent fixture of the
+-- catalog — which is what it had degenerated into.
+--
+-- Asked through IsSpellLearned rather than IsTrackable for the reason SettingsAdapter's catalog gate
+-- gives: IsTrackable waves through every id outside the curated tables, so on a picker row it says
+-- "learned" for most of the arsenal and the tint lands on an arbitrary subset.
 local function applyLearnedTint(item)
-  local known = (not M.IsTrackable) or M.IsTrackable(item.spellID)
+  local known = (not M.IsSpellLearned) or M.IsSpellLearned(item.spellID)
   item._unlearned = not known
   if item._unlearned then
     item.Icon:SetDesaturated(true)

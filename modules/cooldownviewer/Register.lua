@@ -128,6 +128,15 @@ local function boot()
       -- The talent gate too: a spec swap changes which catalog rows are offered, and this is the
       -- point at which the client has finished telling us what changed.
       if M.InvalidateTalentCache then M.InvalidateTalentCache() end
+
+      -- Seed a per-spec starter into a layout bucket that has never had one. Hung HERE rather than on
+      -- PLAYER_LOGIN because this fires once the client has finished answering about talents — at
+      -- login AND after a spec swap — and GetTalentTabInfo is what the detection reads. It is
+      -- idempotent: the bucket is marked the moment it is seeded, so every later call is a no-op, and
+      -- a character with no talent points is simply skipped until they spend one.
+      local P = NE.cooldownviewersettings and NE.cooldownviewersettings.presets
+      if P and P.SeedStarterIfFresh then pcall(P.SeedStarterIfFresh) end
+
       M.RefreshActiveViewer()
     end)
   end

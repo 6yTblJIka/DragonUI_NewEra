@@ -83,10 +83,15 @@ function Adapter.Kind(catID)  return CATS[catID] and CATS[catID].kind or "icon" 
 -- themselves; it reads as a fault in a section that has never been fillable, which is exactly how
 -- the aura tab looked before this phase. Deliberately static: the text has to be true whatever the
 -- auto-track destination happens to be, so it names the action rather than describing the state.
+--
+-- hiddenSpell names the setting rather than describing the state, because the state it is most
+-- likely reporting is a LOW-LEVEL character with nothing left to list — and "(empty)" there reads as
+-- a fault. Naming Show Unlearned turns the dead end into a signposted one.
 local EMPTY_TEXT = {
   trackedBuff = "Nothing here yet — drag a buff in to pin it.",
   trackedBar  = "Nothing here yet — drag a buff in to pin it.",
   hiddenAura  = "Everything recorded is displayed.",
+  hiddenSpell = "Everything you have learned is displayed. Turn on Show Unlearned (cog) to see the rest.",
 }
 
 function Adapter.EmptyText(catID) return EMPTY_TEXT[catID] or "(empty)" end
@@ -94,44 +99,93 @@ function Adapter.Mode(catID)  return CATS[catID] and CATS[catID].mode or "spells
 
 -- ── Spell categories ────────────────────────────────────────────────────────────────────────────
 
--- true = listed and on, false = listed and off, nil = NOT MENTIONED (no list, or absent from it).
--- The nil case matters: it is what sends isPlaced to the curated defaults. Returning false for a
--- missing list instead of nil made that fallback unreachable and put every curated spell into the
--- Not Displayed catalog alongside itself.
-local function listHasEnabled(list, id)
-  if not list then return nil end
-  for _, e in ipairs(list) do
-    if e.spellID == id then return e.enabled and true or false end
-  end
-  return nil
-end
-
--- Is this spell currently placed in ANY spell viewer?
-local function isPlaced(id, class)
+-- Every spellID currently placed in a spell viewer, as a set.
+--
+-- ASKED, NOT RE-DERIVED (§H.3.22). This used to reimplement the placement rules — read the custom
+-- list, fall back to the curated default — which is the same question GetActiveSpellList already
+-- answers, and the copy drifted from the original. GetActiveSpellList also merges the player's
+-- RACIALS in (appendRacials), and the copy never knew racials existed, so every racial was placed
+-- and unplaced at the same time: shown in Utility by the viewer, and listed again under Not
+-- Displayed by this catalog. Draenei saw Gift of the Naaru twice, Orcs Blood Fury, and so on for
+-- every race with a racial at all.
+--
+-- Not Displayed is defined as "the catalog minus what is on screen", so it has to be computed from
+-- what is on screen. Any future merge into a display list is then inherited rather than re-missed.
+--
+-- includeUnlearned is TRUE deliberately: this asks about PLACEMENT, not castability. Letting the
+-- learn-gate run here would call an unlearned-but-placed spell unplaced and hand it to the catalog,
+-- putting it in two places again for a second reason.
+--
+-- Returns ids AND names. The names are the §H.3.23 half: the catalog must not offer a SECOND id for
+-- an ability already on screen under a first one, and an id comparison cannot see that.
+local function placedSet(class)
+  local ids, names = {}, {}
   for _, key in ipairs({ "essential", "utility" }) do
-    local state = listHasEnabled(M.GetCustomList(key, class), id)
-    if state == true then return true end
-    if state == nil then
-      -- No custom list, or the spell isn't in it: fall back to the curated default.
-      local src = M.SPELL_DATA_BY_CATEGORY[key] and M.SPELL_DATA_BY_CATEGORY[key][class]
-      if src and not M.GetCustomList(key, class) then
-        for _, cid in ipairs(src) do if cid == id then return true end end
-      end
+    for _, id in ipairs(M.GetActiveSpellList(key, true, class) or {}) do
+      ids[id] = true
+      local name = GetSpellInfo(id)
+      if name then names[name] = true end
     end
   end
-  return false
+  return ids, names
 end
 
 -- The Not Displayed catalog: every class ability with a real cooldown that is not currently placed,
--- plus the player's racials. Race-impossible spells are dropped outright — "show unlearned" is
--- about level, not about abilities this character can never have.
+-- plus the player's racials. Race-impossible spells are dropped outright — that is not a "not yet"
+-- but a "never", and no setting should surface it.
+--
+-- The LEARN gate applies here too now (§H.3.21). It did not, on the reasoning that an empty picker
+-- reads as broken on a fresh character — but the cost was worse: an untalented druid's Mangle sat in
+-- the catalog indistinguishable from an ability deliberately left undisplayed, one drag from a row
+-- that could never light up. Tinting it red said "not yet learned" where the section's own name
+-- already said "you chose not to show this", and the two readings cancel.
+--
+-- The empty-picker worry is answered where it belongs: the section's empty text names Show Unlearned,
+-- so the full arsenal is one click away and the player is told where.
 local function hiddenSpells(class)
-  local seen, out = {}, {}
+  local showAll = M.GetShowUnlearned and M.GetShowUnlearned()
+  local placed, placedNames = placedSet(class)
+  local _, race = UnitRace("player")
+  local rb = race and M.RACIAL_BY_RACE and M.RACIAL_BY_RACE[race]
+
+  -- Which id OWNS an ability, when the pools disagree about it (§H.3.23). The arsenal is generated and
+  -- the curated tables are authored, and for five abilities they picked different Spell.dbc rows for
+  -- the same thing — the DK's Icy Touch is curated as 45477 and generated as 52372. The catalog walks
+  -- the arsenal first, so without this the row the player drags would be the generated twin.
+  --
+  -- Nothing functional rides on the choice: highestKnownRankID resolves any id for an ability to the
+  -- player's known rank by name, so both tiles behave identically. It rides on CONSISTENCY — the
+  -- curated id is the one the seed, the starter layouts and the presets all name, and a layout is
+  -- easier to reason about when one ability means one number everywhere.
+  local ownerByName = {}
+  local function claim(id)
+    local name = id and GetSpellInfo(id)
+    if name and ownerByName[name] == nil then ownerByName[name] = id end
+  end
+  for _, key in ipairs({ "essential", "utility" }) do
+    local src = M.SPELL_DATA_BY_CATEGORY[key] and M.SPELL_DATA_BY_CATEGORY[key][class]
+    if src then for _, id in ipairs(src) do claim(id) end end
+    if rb and rb[key] then for _, id in ipairs(rb[key]) do claim(id) end end
+  end
+
+  local seen, seenNames, out = {}, {}, {}
   local function consider(id)
     if not id or seen[id] then return end
     seen[id] = true
     if M.SpellAllowedForRace and not M.SpellAllowedForRace(id) then return end
-    if not isPlaced(id, class) then out[#out + 1] = id end
+    -- IsSpellLearned, NOT IsTrackable: the latter waves through anything outside the curated tables,
+    -- which is most of this catalog — the arsenal is a separate generated pool. Gating on it would
+    -- have hidden Mangle (Cat), which the seed curates, and kept Mangle (Bear), which it does not.
+    if not showAll and M.IsSpellLearned and not M.IsSpellLearned(id) then return end
+    -- One tile per ABILITY. An id the client cannot name skips this and is judged by id alone —
+    -- there is nothing to compare it against, and dropping it would be a guess.
+    local name = GetSpellInfo(id)
+    if name then
+      local owner = ownerByName[name]
+      if (owner and owner ~= id) or placedNames[name] or seenNames[name] then return end
+      seenNames[name] = true
+    end
+    if not placed[id] then out[#out + 1] = id end
   end
 
   local arsenal = M.ARSENAL_BY_CLASS and M.ARSENAL_BY_CLASS[class]
@@ -144,8 +198,6 @@ local function hiddenSpells(class)
     if src then for _, id in ipairs(src) do consider(id) end end
   end
 
-  local _, race = UnitRace("player")
-  local rb = race and M.RACIAL_BY_RACE and M.RACIAL_BY_RACE[race]
   if rb then
     for _, key in ipairs({ "essential", "utility" }) do
       if rb[key] then for _, id in ipairs(rb[key]) do consider(id) end end
@@ -288,7 +340,7 @@ function Adapter.GetItems(catID, class)
     -- The learn gate applies here: Essential/Utility should show what you can cast, unless the
     -- player has asked to see everything.
     local showAll = M.GetShowUnlearned and M.GetShowUnlearned()
-    for _, id in ipairs(M.GetActiveSpellList(meta.list, showAll and true or false)) do
+    for _, id in ipairs(M.GetActiveSpellList(meta.list, showAll and true or false, class)) do
       out[#out + 1] = id
     end
     -- Trinkets placed in this viewer, listed after the spells — the same order the live viewer
@@ -297,8 +349,8 @@ function Adapter.GetItems(catID, class)
     return out
   end
 
-  -- Not Displayed: always the full catalog, learn state ignored. A fresh character seeing an empty
-  -- picker reads as broken, and the tile tints unlearned entries instead.
+  -- Not Displayed: the catalog minus whatever the display categories are showing right now. See
+  -- hiddenSpells and placedSet — the subtraction is against the real lists, not a re-derivation.
   for _, id in ipairs(hiddenSpells(class)) do out[#out + 1] = id end
   for _, e in ipairs(equipItemsAssigned("hidden", class)) do out[#out + 1] = e end
   return out

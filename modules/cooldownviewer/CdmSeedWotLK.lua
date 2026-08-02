@@ -2,8 +2,13 @@
 --
 -- The 3.3.5a counterpart of NewEra's CdmSeedTBC.lua, and structured the same way: ADDITIVE appends
 -- onto the vanilla curated lists in ClassData.lua, which carry the 1.12 staples whose rank-1 ids
--- still resolve on this client. Only genuinely NEW-to-WotLK abilities are listed here — plus the
--- whole of DEATHKNIGHT, which has no vanilla base at all.
+-- still resolve on this client. The two COOLDOWN tables list only genuinely new-to-WotLK abilities —
+-- plus the whole of DEATHKNIGHT, which has no vanilla base at all.
+--
+-- ROTATION_ADD is not bound by that, and is mostly vanilla spells. It exists because the generator
+-- could not previously emit a spell with no cooldown AT ALL — the resolver's castability test is
+-- `cooldown > 1.5s`, so Wrath, Frostbolt, Shred and every other filler resolved to nothing and were
+-- rejected as unresolvable names. Nothing had ever curated them, in either file.
 --
 -- FACTS, NOT GUESSES. Every spell ID below was resolved from THIS CLIENT'S OWN DATA, not typed
 -- from memory:
@@ -72,6 +77,7 @@ local ESSENTIAL_ADD = {
     2812,    -- Holy Wrath
     20216,   -- Divine Favor
     31842,   -- Divine Illumination
+    35395,   -- Crusader Strike
   },
   PRIEST = {
     47540,   -- Penance
@@ -94,6 +100,7 @@ local ESSENTIAL_ADD = {
     60103,   -- Lava Lash
     61295,   -- Riptide
     32182,   -- Heroism
+    8050,    -- Flame Shock
   },
   WARLOCK = {
     47241,   -- Metamorphosis
@@ -158,6 +165,7 @@ local UTILITY_ADD = {
     543,     -- Fire Ward
     11958,   -- Cold Snap
     31661,   -- Dragon's Breath
+    45438,   -- Ice Block
   },
   PALADIN = {
     64205,   -- Divine Sacrifice
@@ -207,6 +215,501 @@ local UTILITY_ADD = {
   },
 }
 
+-- ROTATION — the spells a spec presses constantly, none of which has a cooldown.
+--
+-- Its own table rather than more rows in ESSENTIAL_ADD, for two reasons. It documents the difference:
+-- everything above is something you WAIT for, and everything here is something that is simply always
+-- there. And it is what lets verify.py keep asserting "every id carries a real cooldown" of the two
+-- lists where that is true, instead of dropping the check for all three.
+--
+-- Appended into ESSENTIAL_BY_CLASS all the same, which is where retail would show them.
+--
+-- PER CLASS, not per spec: the runtime gate is "has the player learned it", and every druid has
+-- learned Wrath. So this is the union across a class's specs and a Feral druid will find Balance's
+-- nukes in the picker — prune per spec in /cdm, which is stored per talent group.
+local ROTATION_ADD = {
+  DEATHKNIGHT = {
+    45477,   -- Icy Touch
+    45462,   -- Plague Strike
+    45902,   -- Blood Strike
+    55050,   -- Heart Strike
+    49998,   -- Death Strike
+    49020,   -- Obliterate
+    55090,   -- Scourge Strike
+    49143,   -- Frost Strike
+    66217,   -- Rune Strike
+    47541,   -- Death Coil
+    48721,   -- Blood Boil
+    50842,   -- Pestilence
+  },
+  DRUID = {
+    5176,    -- Wrath
+    2912,    -- Starfire
+    8921,    -- Moonfire
+    5570,    -- Insect Swarm
+    5221,    -- Shred
+    33876,   -- Mangle (Cat)
+    1822,    -- Rake
+    1079,    -- Rip
+    22568,   -- Ferocious Bite
+    52610,   -- Savage Roar
+    6807,    -- Maul
+    33745,   -- Lacerate
+    779,     -- Swipe (Bear)
+    5185,    -- Healing Touch
+    50464,   -- Nourish
+    774,     -- Rejuvenation
+    8936,    -- Regrowth
+    33763,   -- Lifebloom
+  },
+  HUNTER = {
+    56641,   -- Steady Shot
+    1978,    -- Serpent Sting
+    1510,    -- Volley
+    1130,    -- Hunter's Mark
+  },
+  MAGE = {
+    133,     -- Fireball
+    116,     -- Frostbolt
+    30451,   -- Arcane Blast
+    5143,    -- Arcane Missiles
+    2948,    -- Scorch
+    44457,   -- Living Bomb
+    30455,   -- Ice Lance
+    44614,   -- Frostfire Bolt
+    11366,   -- Pyroblast
+    1449,    -- Arcane Explosion
+    10,      -- Blizzard
+    2120,    -- Flamestrike
+  },
+  PALADIN = {
+    635,     -- Holy Light
+    19750,   -- Flash of Light
+    20186,   -- Judgement of Wisdom
+    31801,   -- Seal of Vengeance
+    20154,   -- Seal of Righteousness
+    20375,   -- Seal of Command
+  },
+  PRIEST = {
+    585,     -- Smite
+    589,     -- Shadow Word: Pain
+    15407,   -- Mind Flay
+    34914,   -- Vampiric Touch
+    48045,   -- Mind Sear
+    2061,    -- Flash Heal
+    2060,    -- Greater Heal
+    139,     -- Renew
+    596,     -- Prayer of Healing
+  },
+  ROGUE = {
+    1752,    -- Sinister Strike
+    53,      -- Backstab
+    1329,    -- Mutilate
+    16511,   -- Hemorrhage
+    2098,    -- Eviscerate
+    32645,   -- Envenom
+    1943,    -- Rupture
+    5171,    -- Slice and Dice
+    8647,    -- Expose Armor
+    51723,   -- Fan of Knives
+  },
+  SHAMAN = {
+    403,     -- Lightning Bolt
+    331,     -- Healing Wave
+    8004,    -- Lesser Healing Wave
+    1064,    -- Chain Heal
+    974,     -- Earth Shield
+    3599,    -- Searing Totem
+    8190,    -- Magma Totem
+  },
+  WARLOCK = {
+    686,     -- Shadow Bolt
+    29722,   -- Incinerate
+    348,     -- Immolate
+    172,     -- Corruption
+    980,     -- Curse of Agony
+    30108,   -- Unstable Affliction
+    27243,   -- Seed of Corruption
+    1120,    -- Drain Soul
+    689,     -- Drain Life
+    1454,    -- Life Tap
+    5740,    -- Rain of Fire
+  },
+  WARRIOR = {
+    78,      -- Heroic Strike
+    845,     -- Cleave
+    1464,    -- Slam
+    5308,    -- Execute
+    772,     -- Rend
+    7386,    -- Sunder Armor
+    20243,   -- Devastate
+    34428,   -- Victory Rush
+    1715,    -- Hamstring
+  },
+}
+
+local STARTER_BY_CLASS = {
+  DEATHKNIGHT = {
+    [1] = {
+      45477,   -- Icy Touch
+      45462,   -- Plague Strike
+      55050,   -- Heart Strike
+      49998,   -- Death Strike
+      66217,   -- Rune Strike
+      47541,   -- Death Coil
+      48721,   -- Blood Boil
+      50842,   -- Pestilence
+      49028,   -- Dancing Rune Weapon
+      57330,   -- Horn of Winter
+    },
+    [2] = {
+      45477,   -- Icy Touch
+      45462,   -- Plague Strike
+      49020,   -- Obliterate
+      49143,   -- Frost Strike
+      49184,   -- Howling Blast
+      45902,   -- Blood Strike
+      50842,   -- Pestilence
+      47568,   -- Empower Rune Weapon
+      57330,   -- Horn of Winter
+    },
+    [3] = {
+      45477,   -- Icy Touch
+      45462,   -- Plague Strike
+      55090,   -- Scourge Strike
+      45902,   -- Blood Strike
+      47541,   -- Death Coil
+      43265,   -- Death and Decay
+      50842,   -- Pestilence
+      49206,   -- Summon Gargoyle
+      46584,   -- Raise Dead
+      57330,   -- Horn of Winter
+    },
+  },
+  DRUID = {
+    [1] = {
+      5176,    -- Wrath
+      2912,    -- Starfire
+      8921,    -- Moonfire
+      5570,    -- Insect Swarm
+      48505,   -- Starfall
+      50516,   -- Typhoon
+      16914,   -- Hurricane
+    },
+    [2] = {
+      5221,    -- Shred
+      33876,   -- Mangle (Cat)
+      1822,    -- Rake
+      1079,    -- Rip
+      22568,   -- Ferocious Bite
+      52610,   -- Savage Roar
+      5217,    -- Tiger's Fury
+      6807,    -- Maul
+      33745,   -- Lacerate
+      779,     -- Swipe (Bear)
+      50334,   -- Berserk
+      16857,   -- Faerie Fire (Feral)
+    },
+    [3] = {
+      5185,    -- Healing Touch
+      50464,   -- Nourish
+      774,     -- Rejuvenation
+      8936,    -- Regrowth
+      33763,   -- Lifebloom
+      48438,   -- Wild Growth
+      18562,   -- Swiftmend
+      17116,   -- Nature's Swiftness
+    },
+  },
+  HUNTER = {
+    [1] = {
+      56641,   -- Steady Shot
+      3044,    -- Arcane Shot
+      1978,    -- Serpent Sting
+      14288,   -- Multi-Shot
+      53351,   -- Kill Shot
+      19574,   -- Bestial Wrath
+      3045,    -- Rapid Fire
+      1130,    -- Hunter's Mark
+    },
+    [2] = {
+      56641,   -- Steady Shot
+      3044,    -- Arcane Shot
+      1978,    -- Serpent Sting
+      53209,   -- Chimera Shot
+      19434,   -- Aimed Shot
+      14288,   -- Multi-Shot
+      53351,   -- Kill Shot
+      34490,   -- Silencing Shot
+      3045,    -- Rapid Fire
+      1130,    -- Hunter's Mark
+    },
+    [3] = {
+      56641,   -- Steady Shot
+      53301,   -- Explosive Shot
+      1978,    -- Serpent Sting
+      3674,    -- Black Arrow
+      3044,    -- Arcane Shot
+      14288,   -- Multi-Shot
+      53351,   -- Kill Shot
+      3045,    -- Rapid Fire
+      1130,    -- Hunter's Mark
+    },
+  },
+  MAGE = {
+    [1] = {
+      30451,   -- Arcane Blast
+      5143,    -- Arcane Missiles
+      44425,   -- Arcane Barrage
+      1449,    -- Arcane Explosion
+      12043,   -- Presence of Mind
+      12042,   -- Arcane Power
+      55342,   -- Mirror Image
+      2136,    -- Fire Blast
+    },
+    [2] = {
+      133,     -- Fireball
+      2948,    -- Scorch
+      11366,   -- Pyroblast
+      44457,   -- Living Bomb
+      2120,    -- Flamestrike
+      11113,   -- Blast Wave
+      11129,   -- Combustion
+      2136,    -- Fire Blast
+      55342,   -- Mirror Image
+      44614,   -- Frostfire Bolt
+    },
+    [3] = {
+      116,     -- Frostbolt
+      30455,   -- Ice Lance
+      44572,   -- Deep Freeze
+      10,      -- Blizzard
+      44614,   -- Frostfire Bolt
+      12472,   -- Icy Veins
+      31687,   -- Summon Water Elemental
+      2136,    -- Fire Blast
+    },
+  },
+  PALADIN = {
+    [1] = {
+      635,     -- Holy Light
+      19750,   -- Flash of Light
+      20473,   -- Holy Shock
+      20216,   -- Divine Favor
+      31842,   -- Divine Illumination
+      20271,   -- Judgement of Light
+      20186,   -- Judgement of Wisdom
+      26573,   -- Consecration
+      879,     -- Exorcism
+    },
+    [2] = {
+      31935,   -- Avenger's Shield
+      53595,   -- Hammer of the Righteous
+      53600,   -- Shield of Righteousness
+      26573,   -- Consecration
+      2812,    -- Holy Wrath
+      20271,   -- Judgement of Light
+      20186,   -- Judgement of Wisdom
+      879,     -- Exorcism
+      24275,   -- Hammer of Wrath
+    },
+    [3] = {
+      35395,   -- Crusader Strike
+      53385,   -- Divine Storm
+      20186,   -- Judgement of Wisdom
+      20271,   -- Judgement of Light
+      26573,   -- Consecration
+      879,     -- Exorcism
+      24275,   -- Hammer of Wrath
+      20375,   -- Seal of Command
+      31801,   -- Seal of Vengeance
+      20154,   -- Seal of Righteousness
+    },
+  },
+  PRIEST = {
+    [1] = {
+      47540,   -- Penance
+      2061,    -- Flash Heal
+      2060,    -- Greater Heal
+      139,     -- Renew
+      596,     -- Prayer of Healing
+      33076,   -- Prayer of Mending
+      10060,   -- Power Infusion
+      14751,   -- Inner Focus
+      585,     -- Smite
+      14914,   -- Holy Fire
+    },
+    [2] = {
+      2061,    -- Flash Heal
+      2060,    -- Greater Heal
+      139,     -- Renew
+      596,     -- Prayer of Healing
+      33076,   -- Prayer of Mending
+      34861,   -- Circle of Healing
+      64843,   -- Divine Hymn
+      64901,   -- Hymn of Hope
+      14914,   -- Holy Fire
+      585,     -- Smite
+    },
+    [3] = {
+      8092,    -- Mind Blast
+      15407,   -- Mind Flay
+      589,     -- Shadow Word: Pain
+      34914,   -- Vampiric Touch
+      2944,    -- Devouring Plague
+      48045,   -- Mind Sear
+    },
+  },
+  ROGUE = {
+    [1] = {
+      1329,    -- Mutilate
+      32645,   -- Envenom
+      1943,    -- Rupture
+      5171,    -- Slice and Dice
+      2098,    -- Eviscerate
+      14177,   -- Cold Blood
+      8647,    -- Expose Armor
+      51723,   -- Fan of Knives
+      57934,   -- Tricks of the Trade
+    },
+    [2] = {
+      1752,    -- Sinister Strike
+      2098,    -- Eviscerate
+      5171,    -- Slice and Dice
+      1943,    -- Rupture
+      13750,   -- Adrenaline Rush
+      13877,   -- Blade Flurry
+      51690,   -- Killing Spree
+      51723,   -- Fan of Knives
+      11305,   -- Sprint
+      57934,   -- Tricks of the Trade
+    },
+    [3] = {
+      53,      -- Backstab
+      16511,   -- Hemorrhage
+      2098,    -- Eviscerate
+      5171,    -- Slice and Dice
+      1943,    -- Rupture
+      51713,   -- Shadow Dance
+      14183,   -- Premeditation
+      14278,   -- Ghostly Strike
+      51723,   -- Fan of Knives
+      57934,   -- Tricks of the Trade
+    },
+  },
+  SHAMAN = {
+    [1] = {
+      403,     -- Lightning Bolt
+      421,     -- Chain Lightning
+      51505,   -- Lava Burst
+      8050,    -- Flame Shock
+      8042,    -- Earth Shock
+      16166,   -- Elemental Mastery
+      51490,   -- Thunderstorm
+      8190,    -- Magma Totem
+      3599,    -- Searing Totem
+      32182,   -- Heroism
+      2825,    -- Bloodlust
+    },
+    [2] = {
+      17364,   -- Stormstrike
+      60103,   -- Lava Lash
+      403,     -- Lightning Bolt
+      8050,    -- Flame Shock
+      8042,    -- Earth Shock
+      51533,   -- Feral Spirit
+      8190,    -- Magma Totem
+      3599,    -- Searing Totem
+      32182,   -- Heroism
+      2825,    -- Bloodlust
+    },
+    [3] = {
+      331,     -- Healing Wave
+      8004,    -- Lesser Healing Wave
+      1064,    -- Chain Heal
+      61295,   -- Riptide
+      974,     -- Earth Shield
+      403,     -- Lightning Bolt
+      8050,    -- Flame Shock
+      32182,   -- Heroism
+      2825,    -- Bloodlust
+    },
+  },
+  WARLOCK = {
+    [1] = {
+      172,     -- Corruption
+      980,     -- Curse of Agony
+      30108,   -- Unstable Affliction
+      48181,   -- Haunt
+      686,     -- Shadow Bolt
+      1120,    -- Drain Soul
+      689,     -- Drain Life
+      1454,    -- Life Tap
+      27243,   -- Seed of Corruption
+      603,     -- Curse of Doom
+    },
+    [2] = {
+      686,     -- Shadow Bolt
+      348,     -- Immolate
+      172,     -- Corruption
+      980,     -- Curse of Agony
+      47241,   -- Metamorphosis
+      47193,   -- Demonic Empowerment
+      6353,    -- Soul Fire
+      1454,    -- Life Tap
+      47897,   -- Shadowflame
+    },
+    [3] = {
+      29722,   -- Incinerate
+      348,     -- Immolate
+      17962,   -- Conflagrate
+      50796,   -- Chaos Bolt
+      686,     -- Shadow Bolt
+      17877,   -- Shadowburn
+      603,     -- Curse of Doom
+      5740,    -- Rain of Fire
+      1454,    -- Life Tap
+      47897,   -- Shadowflame
+    },
+  },
+  WARRIOR = {
+    [1] = {
+      12294,   -- Mortal Strike
+      7384,    -- Overpower
+      1464,    -- Slam
+      5308,    -- Execute
+      772,     -- Rend
+      46924,   -- Bladestorm
+      12328,   -- Sweeping Strikes
+      78,      -- Heroic Strike
+      64382,   -- Shattering Throw
+      2687,    -- Bloodrage
+    },
+    [2] = {
+      23881,   -- Bloodthirst
+      78,      -- Heroic Strike
+      845,     -- Cleave
+      5308,    -- Execute
+      1464,    -- Slam
+      12292,   -- Death Wish
+      1719,    -- Recklessness
+      34428,   -- Victory Rush
+      2687,    -- Bloodrage
+    },
+    [3] = {
+      23922,   -- Shield Slam
+      6572,    -- Revenge
+      20243,   -- Devastate
+      78,      -- Heroic Strike
+      845,     -- Cleave
+      7386,    -- Sunder Armor
+      57755,   -- Heroic Throw
+      34428,   -- Victory Rush
+      2687,    -- Bloodrage
+    },
+  },
+}
+
 -- Append (deduped) into the existing per-class arrays. A class with no vanilla entry — i.e.
 -- DEATHKNIGHT — gets a fresh list rather than being skipped.
 local function appendAll(target, byClass)
@@ -224,6 +727,19 @@ end
 
 appendAll(M.ESSENTIAL_BY_CLASS, ESSENTIAL_ADD)
 appendAll(M.UTILITY_BY_CLASS,   UTILITY_ADD)
+appendAll(M.ESSENTIAL_BY_CLASS, ROTATION_ADD)
+
+-- STARTER LAYOUTS, per class and talent tab. Not appended anywhere: this is a lookup the runtime
+-- reads when a starter is applied (M.ApplySpecStarter), listing which of the class's Essential spells
+-- stay ON. Everything else in the list goes to Not Displayed rather than being deleted, so it is one
+-- drag away in the picker.
+--
+-- Tab INDEX is the key because that is what GetTalentTabInfo answers. Order is from TalentTab.dbc:
+-- 1/2/3 = Arms/Fury/Protection, Holy/Protection/Retribution, Beast Mastery/Marksmanship/Survival,
+-- Assassination/Combat/Subtlety, Discipline/Holy/Shadow, Blood/Frost/Unholy,
+-- Elemental/Enhancement/Restoration, Arcane/Fire/Frost, Affliction/Demonology/Destruction,
+-- Balance/Feral Combat/Restoration.
+M.STARTER_BY_CLASS = STARTER_BY_CLASS
 
 -- SPELL_DATA_BY_CATEGORY holds references to the same tables, so the appends above are already
 -- visible through it. The learn-gate memoises the curated set on first use, though, so drop that

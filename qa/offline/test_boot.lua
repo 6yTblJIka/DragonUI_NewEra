@@ -1451,6 +1451,31 @@ for _, id in ipairs(pEss) do
 end
 assertf(hasVanilla and hasWotlk, "seed appends to the vanilla list rather than replacing it")
 
+-- ── ROTATION: the spells that carry no cooldown at all ──
+--
+-- Reported as "lots of classes are missing default abilities that dont have cooldowns, such as druids
+-- with wrath". They were missing for a structural reason, not an oversight: the generator's
+-- castability filter is `cooldown > 1.5s`, so every rotational filler resolved to nothing and was
+-- rejected as an unresolvable name. It could not have emitted one.
+local drEss = M.ESSENTIAL_BY_CLASS.DRUID
+local hasWrath, hasMaxRank = false, false
+for _, id in ipairs(drEss) do
+  if id == 5176  then hasWrath   = true end   -- Wrath, RANK 1
+  if id == 48461 then hasMaxRank = true end   -- Wrath, rank 12
+end
+assertf(hasWrath, "the druid list carries Wrath, which has no cooldown and so could never resolve before")
+-- RANK 1, matching every other entry in the seed. A max-rank id would work for a level-80 druid and
+-- leave a level-20 one with a tile bound to a spell they cannot cast; the runtime walks UP from the
+-- listed rank on its own (NE.spellbook.HighestKnownRankID), which is why rank 1 is the right listing.
+assertf(not hasMaxRank, "…as its rank-1 id, leaving the rank walk to the runtime as everywhere else")
+
+-- Every class, which was the actual ask — Wrath was the example, not the scope.
+for _, class in ipairs({ "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "MAGE",
+                         "WARLOCK", "DRUID", "SHAMAN", "DEATHKNIGHT" }) do
+  local n = #(M.ESSENTIAL_BY_CLASS[class] or {})
+  assertf(n >= 10, class .. " has a full essential list after the rotation pass (" .. n .. ")")
+end
+
 -- No duplicates anywhere (appendAll dedupes).
 local dupes = 0
 for _, tbl in pairs({ M.ESSENTIAL_BY_CLASS, M.UTILITY_BY_CLASS }) do
@@ -1554,6 +1579,66 @@ do
     "…so the gate drops the other spec's talent with no interaction from the player")
 
   SPELLS[34861] = nil
+end
+
+print("\n=== LEARN GATE: THE BOOK IS AUTHORITATIVE (§H.3.21) ===")
+-- Reported in-game: an untalented druid saw Mangle in the Not Displayed catalog. Three faults, and
+-- what hid all three is that no consumer HID an unlearned row — they only tinted it, so a gate that
+-- answered "learned" for everything looked exactly like a gate that worked.
+do
+  -- 1. The database fallback must not outvote the book. §E4 chained book -> IsSpellKnown ->
+  --    GetSpellInfo(name) unconditionally, on the reasoning that it "could only widen". But the last
+  --    link answers from the spell DATABASE on this client, so it says yes to abilities the
+  --    character cannot have — and a chain whose last link always says yes is not a gate.
+  SPELLS[99001] = { "Untrained Talent", "" }
+  NAME_TO_ID["Untrained Talent"] = 99001
+  assertf(GetSpellInfo("Untrained Talent") ~= nil,
+          "the database resolves the name — this is the old fallback's input, unchanged")
+  assertf(NE.spellbook.IsSpellNameKnown("Untrained Talent") == false, "…while the book has never heard of it")
+  assertf(M.IsSpellLearned(99001) == false, "…and the book wins: the gate reports unlearned")
+
+  -- 2. …and the fallback is demoted, not deleted. With no book to ask, fail OPEN: showing an ability
+  --    the player lacks is a smaller fault than hiding one they have because a scan had not run.
+  local realEnsure = NE.spellbook.EnsureBuilt
+  NE.spellbook.EnsureBuilt = function() return false end
+  assertf(M.IsSpellLearned(99001) == true, "with no spellbook to ask, the gate fails OPEN")
+  NE.spellbook.EnsureBuilt = realEnsure
+  assertf(M.IsSpellLearned(99001) == false, "…and closes again once the book is back")
+
+  -- 3. The generated ARSENAL counts as class abilities for the gate's purposes. IsTrackable waves
+  --    through any id outside its class-ability set — that hatch exists for user-added on-use items,
+  --    whose use-spell is never "known" — and the arsenal used to fall through it. So the instant a
+  --    player dragged an arsenal-only ability into a viewer, the viewer showed it learned or not.
+  --    Mangle (Bear) is precisely that shape: arsenal-only, because the seed curates the Cat form.
+  local curated = {}
+  for _, byClass in pairs(M.SPELL_DATA_BY_CATEGORY) do
+    for _, id in ipairs(byClass.PRIEST or {}) do curated[id] = true end
+  end
+  local arsenalOnly
+  for _, id in ipairs(M.ARSENAL_BY_CLASS.PRIEST or {}) do
+    if not curated[id] and not M.IsSpellLearned(id) then arsenalOnly = id; break end
+  end
+  assertf(arsenalOnly ~= nil, "the priest arsenal holds an unlearned ability the curation does not")
+  assertf(M.IsSpellLearned(arsenalOnly) == false, "…which the gate reports unlearned")
+  assertf(M.IsTrackable(arsenalOnly, "PRIEST") == false,
+          "…and IsTrackable now agrees, instead of waving it through as an external")
+  -- The hatch itself still has to work, or every user-added trinket use-spell vanishes.
+  assertf(M.IsTrackable(99001, "PRIEST") == true,
+          "an id in no class table is still always trackable — that is the external hatch")
+
+  -- …and the consequence that made it worth fixing, stated end to end: placing an unlearned arsenal
+  -- ability in a viewer must not put it on screen. This is what the player would have done from the
+  -- picker, and before the widening the drag itself was what defeated the gate.
+  M.SetSpellEnabled("essential", arsenalOnly, true)
+  local live = {}
+  for _, id in ipairs(M.GetActiveSpellList("essential")) do live[id] = true end
+  assertf(live[arsenalOnly] == nil,
+          "an unlearned arsenal ability dragged into a viewer still does not render")
+  M.SetSpellEnabled("essential", 99001, true)
+  local live2 = {}
+  for _, id in ipairs(M.GetActiveSpellList("essential")) do live2[id] = true end
+  assertf(live2[99001] == true, "…while a genuine external placed the same way does")
+  M.ResetCustomList("essential", "PRIEST")
 end
 
 print("\n=== CUSTOM-LIST SHADOWING ===")
@@ -2799,6 +2884,24 @@ M.ResetCustomList("essential", "PRIEST")
 M.ResetCustomList("utility", "PRIEST")
 CDS.OpenTo("essential")
 
+-- The fake spellbook holds only the handful of ids earlier sections needed, so since §H.3.21 the
+-- catalog below would be empty for a real reason and the "…but still lists what you DO know" half of
+-- the check would pass vacuously. Teach the book one catalog ability so both directions are proved.
+do
+  local was = M.GetShowUnlearned()
+  M.SetShowUnlearned(true)
+  for _, id in ipairs(A.GetItems("hiddenSpell", "PRIEST")) do
+    if type(id) == "number" and not M.IsSpellLearned(id) then
+      SPELLS[id] = SPELLS[id] or { "Catalog Ability " .. id, "" }
+      BOOK[#BOOK + 1] = id
+      _G.__SLOT_IDS = BOOK
+      settle(function() NE.spellbook.BuildRankTable() end)
+      break
+    end
+  end
+  M.SetShowUnlearned(was)
+end
+
 local ess = A.GetItems("essential", "PRIEST")
 local hid = A.GetItems("hiddenSpell", "PRIEST")
 assertf(#ess > 0, "Essential lists the curated spells (" .. #ess .. ")")
@@ -2811,12 +2914,291 @@ local overlap = 0
 for _, id in ipairs(hid) do if placed[id] then overlap = overlap + 1 end end
 assertf(overlap == 0, "Not Displayed excludes what is already placed (" .. overlap .. " overlaps)")
 
+-- §H.3.21: Not Displayed is the CHARACTER's arsenal, not the class's. It used to list everything and
+-- tint what you could not cast, which put an untalented druid's Mangle one drag from a row that
+-- could never light up — in a section whose own name already means "you chose not to show this".
+do
+  local unlearnedListed, learnedListed = 0, 0
+  for _, id in ipairs(hid) do
+    if type(id) == "number" then
+      if M.IsSpellLearned(id) then learnedListed = learnedListed + 1
+      else unlearnedListed = unlearnedListed + 1 end
+    end
+  end
+  assertf(unlearnedListed == 0,
+          "Not Displayed lists nothing unlearned (" .. unlearnedListed .. " leaked)")
+  assertf(learnedListed > 0, "…and is not simply empty (" .. learnedListed .. " learned entries)")
+
+  -- Show Unlearned is the escape hatch, and it has to actually reach this section — it did not
+  -- before, which is what let the section drift into meaning something else.
+  local wasShow = M.GetShowUnlearned()
+  M.SetShowUnlearned(true)
+  local all = A.GetItems("hiddenSpell", "PRIEST")
+  assertf(#all > #hid, "Show Unlearned re-opens the full catalog (" .. #hid .. " -> " .. #all .. ")")
+  M.SetShowUnlearned(false)
+  assertf(#A.GetItems("hiddenSpell", "PRIEST") == #hid, "…and turning it back off closes it again")
+  M.SetShowUnlearned(wasShow)
+
+  -- The empty state has to name that setting. This section is now most likely to be empty on a
+  -- LOW-LEVEL character with nothing left to list, and "(empty)" there reads as a broken panel.
+  assertf(A.EmptyText("hiddenSpell"):find("Show Unlearned") ~= nil,
+          "the empty text points at the setting that brings the rest back")
+end
+
 -- Grids built and stacked.
 local grids = CDS._categories
 assertf(grids.essential ~= nil and grids.hiddenSpell ~= nil, "spell category frames built")
 assertf(grids.essential._count == #ess, "Essential grid holds every entry (" .. grids.essential._count .. ")")
 assertf(grids.essential.items[1] ~= nil and grids.essential.items[1].spellID ~= nil, "tiles bound to spells")
 assertf(sp.content:GetHeight() > 1, "scroll child sized to the stacked sections (" .. sp.content:GetHeight() .. ")")
+
+-- The red tint on a spell tile. Since §H.3.21 an unlearned row is only ever LISTED with Show
+-- Unlearned on, which makes this tint that setting's entire visual payload — the one thing telling
+-- the player why a row they cannot cast is on screen. Nothing asserted it before, and it was reading
+-- IsTrackable, which waves through most of the catalog and so tinted an arbitrary subset.
+do
+  local wasShow = M.GetShowUnlearned()
+  M.SetShowUnlearned(true)
+  CDS.RefreshLayout()
+  local tinted, plain, wrong = 0, 0, 0
+  for _, tile in ipairs(CDS._categories.hiddenSpell.items or {}) do
+    if tile:IsShown() and tile.spellID and not tile.token and not tile._aura then
+      if M.IsSpellLearned(tile.spellID) then
+        plain = plain + 1
+        if tile._unlearned == true then wrong = wrong + 1 end
+      else
+        tinted = tinted + 1
+        if not (tile._unlearned == true and tile.Icon._desat == true) then wrong = wrong + 1 end
+      end
+    end
+  end
+  assertf(tinted > 0, "Show Unlearned puts unlearned tiles on screen (" .. tinted .. ")")
+  assertf(plain > 0, "…alongside learned ones (" .. plain .. ")")
+  assertf(wrong == 0, "…and every tile's tint matches its learn state (" .. wrong .. " wrong)")
+  M.SetShowUnlearned(wasShow)
+  CDS.RefreshLayout()
+end
+
+print("\n=== NOT DISPLAYED IS THE CATALOG MINUS WHAT IS ON SCREEN (§H.3.22) ===")
+--
+-- Racials reach a display list through appendRacials, a merge that lives inside GetActiveSpellList.
+-- The adapter used to answer "is this placed?" with its own reimplementation of the placement rules,
+-- which knew about custom lists and the curated tables and nothing else — so every racial was placed
+-- AND unplaced at once, and showed up twice. Reported as "Gift of the Naaru is showing under Utility
+-- and Not Displayed".
+--
+-- The suite could not have caught it: the overlap check above runs as a HUMAN, and Human is the one
+-- race whose racial lists are empty. So this block picks a race that has one.
+do
+  local savedRace, savedShow = UnitRace, M.GetShowUnlearned()
+  UnitRace = function() return "Draenei", "Draenei" end
+  M.InvalidateCuratedCache()
+  M.ResetCustomList("essential", "PRIEST")
+  M.ResetCustomList("utility", "PRIEST")
+
+  local RACIAL = M.RACIAL_BY_RACE.Draenei.utility[1]     -- Gift of the Naaru
+  assertf(RACIAL ~= nil, "the Draenei racial is curated (" .. tostring(RACIAL) .. ")")
+  SPELLS[RACIAL] = SPELLS[RACIAL] or { "Gift of the Naaru", "" }
+  BOOK[#BOOK + 1] = RACIAL
+  _G.__SLOT_IDS = BOOK
+  settle(function() NE.spellbook.BuildRankTable() end)
+
+  local function has(cat, id)
+    local n = 0
+    for _, it in ipairs(A.GetItems(cat, "PRIEST")) do
+      if (type(it) == "table" and it.spellID or it) == id then n = n + 1 end
+    end
+    return n
+  end
+
+  assertf(has("utility", RACIAL) == 1, "the racial is merged into Utility (" .. has("utility", RACIAL) .. ")")
+  assertf(has("hiddenSpell", RACIAL) == 0, "…and is NOT offered again under Not Displayed")
+
+  -- The round trip has to survive: removing it is the only way back to the catalog, and if the
+  -- subtraction were done by hiding racials outright the ability would be gone for good.
+  M.SetSpellEnabled("utility", RACIAL, false)
+  assertf(has("utility", RACIAL) == 0, "removing it takes it out of Utility")
+  assertf(has("hiddenSpell", RACIAL) == 1,
+          "…and Not Displayed offers it back exactly once (" .. has("hiddenSpell", RACIAL) .. ")")
+  M.SetSpellEnabled("utility", RACIAL, true)
+  assertf(has("utility", RACIAL) == 1 and has("hiddenSpell", RACIAL) == 0, "…and dragging it back closes the loop")
+
+  -- The invariant itself, over every spell category at once, with Show Unlearned BOTH ways — the
+  -- catalog and the display lists are gated differently, and the whole point of deriving one from the
+  -- other is that no gate can put a spell in two places.
+  for _, show in ipairs({ true, false }) do
+    M.SetShowUnlearned(show)
+    local onScreen = {}
+    for _, cat in ipairs({ "essential", "utility" }) do
+      for _, it in ipairs(A.GetItems(cat, "PRIEST")) do
+        local id = type(it) == "table" and it.spellID or it
+        if id then onScreen[id] = cat end
+      end
+    end
+    local both = {}
+    for _, it in ipairs(A.GetItems("hiddenSpell", "PRIEST")) do
+      local id = type(it) == "table" and it.spellID or it
+      if id and onScreen[id] then both[#both + 1] = onScreen[id] .. ":" .. id end
+    end
+    assertf(#both == 0, "nothing is in two places at once with Show Unlearned " ..
+            (show and "on" or "off") .. " (" .. table.concat(both, ", ") .. ")")
+  end
+
+  M.SetShowUnlearned(savedShow)
+  BOOK[#BOOK] = nil
+  _G.__SLOT_IDS = BOOK
+  settle(function() NE.spellbook.BuildRankTable() end)
+  UnitRace = savedRace
+  M.InvalidateCuratedCache()
+  M.ResetCustomList("essential", "PRIEST")
+  M.ResetCustomList("utility", "PRIEST")
+  CDS.RefreshLayout()
+end
+
+print("\n=== ONE TILE PER ABILITY, NOT PER SPELL ID (§H.3.23) ===")
+--
+-- Spell.dbc holds a row per RANK, plus variants that never reach a spellbook, so one ability can enter
+-- a list under two ids and render as two identical tiles. Reported as "two versions of Icy Touch, the
+-- correct one and another with just the name and icon": the DK's is curated as 45477 and generated
+-- into the arsenal as 52372. Five abilities are in that state — Icy Touch, Multi-Shot, Hammer of
+-- Justice, Judgement of Wisdom and Sprint — because the arsenal is generated and the curated tables
+-- are authored, and for those five they picked different rows for the same thing.
+--
+-- Nothing here depends on the seed still disagreeing. It builds its own twin, so the check keeps
+-- meaning the same thing after any regeneration.
+do
+  local savedShow = M.GetShowUnlearned()
+  M.ResetCustomList("essential", "PRIEST")
+  M.ResetCustomList("utility", "PRIEST")
+
+  local REAL, TWIN = 90001, 90002        -- one ability, two Spell.dbc rows
+  SPELLS[REAL] = { "Twinned Ability", "Rank 1" }
+  SPELLS[TWIN] = { "Twinned Ability", "Rank 1" }
+  M.SPELL_DATA_BY_CATEGORY.essential.PRIEST[#M.SPELL_DATA_BY_CATEGORY.essential.PRIEST + 1] = REAL
+  M.ARSENAL_BY_CLASS.PRIEST[#M.ARSENAL_BY_CLASS.PRIEST + 1] = TWIN
+  M.InvalidateCuratedCache()
+  BOOK[#BOOK + 1] = REAL
+  _G.__SLOT_IDS = BOOK
+  settle(function() NE.spellbook.BuildRankTable() end)
+
+  local function count(pred)
+    local n = 0
+    for _, cat in ipairs({ "essential", "utility", "hiddenSpell" }) do
+      for _, it in ipairs(A.GetItems(cat, "PRIEST")) do
+        local id = type(it) == "table" and it.spellID or it
+        if id and pred(id) then n = n + 1 end
+      end
+    end
+    return n
+  end
+  local function tiles(id) return count(function(x) return x == id end) end
+  local function named(nm) return count(function(x) return GetSpellInfo(x) == nm end) end
+
+  assertf(tiles(REAL) == 1, "the curated id is listed once (" .. tiles(REAL) .. ")")
+  assertf(tiles(TWIN) == 0, "…and its generated twin is not listed at all (" .. tiles(TWIN) .. ")")
+
+  -- With Show Unlearned on too: that setting widens the catalog, and widening must not reintroduce a
+  -- second copy of something already on screen.
+  M.SetShowUnlearned(true)
+  assertf(tiles(REAL) == 1 and tiles(TWIN) == 0,
+          "Show Unlearned does not bring the twin back (" .. tiles(REAL) .. "/" .. tiles(TWIN) .. ")")
+  M.SetShowUnlearned(savedShow)
+
+  -- The CURATED id wins, and it must be the one that survives even though the catalog walks the
+  -- arsenal first. Nothing functional rides on it — highestKnownRankID resolves either id to the same
+  -- rank by name — but the starter layouts and presets all name the curated one.
+  M.SetSpellEnabled("essential", REAL, false)
+  local backInCatalog = 0
+  for _, it in ipairs(A.GetItems("hiddenSpell", "PRIEST")) do
+    if (type(it) == "table" and it.spellID or it) == REAL then backInCatalog = backInCatalog + 1 end
+  end
+  assertf(backInCatalog == 1, "removing it offers the CURATED id back, once (" .. backInCatalog .. ")")
+  assertf(tiles(TWIN) == 0, "…still never the twin")
+  M.SetSpellEnabled("essential", REAL, true)
+
+  -- BOTH ids inside one DISPLAY list. This is the state a player lands in by dragging the twin out of
+  -- the catalog before it was deduped — their saved list now holds both — and it is why the dedupe
+  -- lives in GetActiveSpellList rather than in the picker: the LIVE viewer reads that same function,
+  -- so a picker-only fix would have left two identical tiles on the cooldown bar itself.
+  do
+    M.SetSpellEnabled("essential", TWIN, true)
+    assertf(named("Twinned Ability") == 1,
+            "a list holding both ids still renders one tile (" .. named("Twinned Ability") .. ")")
+    M.SetSpellEnabled("essential", TWIN, false)
+  end
+
+  -- A placement the CATALOG'S OWN POOLS cannot see. This is not hypothetical: regenerating
+  -- CdmArsenal.lua drops ids (seven left it this session), and a saved layout goes on holding one long
+  -- after the arsenal stopped listing it. The placed id is then in no pool the catalog walks, so
+  -- nothing marks its name in passing and only the placed-NAME set can suppress the surviving twin.
+  do
+    local GONE, STILL = 90011, 90012                  -- one ability: a dropped id, and the current one
+    SPELLS[GONE]  = { "Arsenal Twin", "Rank 1" }
+    SPELLS[STILL] = { "Arsenal Twin", "Rank 1" }
+    local ars = M.ARSENAL_BY_CLASS.PRIEST
+    ars[#ars + 1] = STILL                             -- only the survivor is generated
+    M.InvalidateCuratedCache()
+    -- Learnable, or the gate drops both and the check passes for the wrong reason.
+    BOOK[#BOOK + 1] = GONE
+    _G.__SLOT_IDS = BOOK
+    settle(function() NE.spellbook.BuildRankTable() end)
+    M.SetSpellEnabled("essential", GONE, true)        -- the stale saved placement
+    assertf(named("Arsenal Twin") == 1,
+            "a placement outside every catalog pool still suppresses its twin ("
+            .. named("Arsenal Twin") .. ")")
+    M.SetSpellEnabled("essential", GONE, false)
+    ars[#ars] = nil
+    SPELLS[GONE], SPELLS[STILL] = nil, nil
+    BOOK[#BOOK] = nil
+    _G.__SLOT_IDS = BOOK
+    settle(function() NE.spellbook.BuildRankTable() end)
+    M.InvalidateCuratedCache()
+  end
+
+  -- Two GENERATED ids for one ability, neither placed nor curated — nothing outside the walk can
+  -- arbitrate, so the walk itself has to keep only the first.
+  do
+    local G1, G2 = 90021, 90022
+    SPELLS[G1] = { "Generated Twin", "Rank 1" }
+    SPELLS[G2] = { "Generated Twin", "Rank 1" }
+    local ars = M.ARSENAL_BY_CLASS.PRIEST
+    ars[#ars + 1] = G1; ars[#ars + 1] = G2
+    M.InvalidateCuratedCache()
+    M.SetShowUnlearned(true)
+    assertf(named("Generated Twin") == 1,
+            "two generated ids for one ability collapse to one tile (" .. named("Generated Twin") .. ")")
+    M.SetShowUnlearned(savedShow)
+    ars[#ars] = nil; ars[#ars] = nil
+    SPELLS[G1], SPELLS[G2] = nil, nil
+    M.InvalidateCuratedCache()
+  end
+
+  -- Ids the client cannot name are judged by id alone: there is nothing to compare, and treating
+  -- "no name" as one shared name would merge unrelated abilities into a single tile.
+  do
+    local N1, N2 = 90003, 90004
+    local ars = M.ARSENAL_BY_CLASS.PRIEST
+    ars[#ars + 1] = N1; ars[#ars + 1] = N2
+    M.InvalidateCuratedCache()
+    M.SetShowUnlearned(true)
+    assertf(tiles(N1) == 1 and tiles(N2) == 1,
+            "two unnamed ids stay two tiles (" .. tiles(N1) .. "/" .. tiles(N2) .. ")")
+    M.SetShowUnlearned(savedShow)
+    ars[#ars] = nil; ars[#ars] = nil
+    M.InvalidateCuratedCache()
+  end
+
+  M.ARSENAL_BY_CLASS.PRIEST[#M.ARSENAL_BY_CLASS.PRIEST] = nil
+  M.SPELL_DATA_BY_CATEGORY.essential.PRIEST[#M.SPELL_DATA_BY_CATEGORY.essential.PRIEST] = nil
+  SPELLS[REAL], SPELLS[TWIN] = nil, nil
+  BOOK[#BOOK] = nil
+  _G.__SLOT_IDS = BOOK
+  settle(function() NE.spellbook.BuildRankTable() end)
+  M.InvalidateCuratedCache()
+  M.ResetCustomList("essential", "PRIEST")
+  M.ResetCustomList("utility", "PRIEST")
+  CDS.RefreshLayout()
+end
 
 -- The OPEN WINDOW has to follow a spec swap on its own. The viewers subscribe to the spellbook
 -- rebuild (Register.lua) and this window did not, so it re-rendered once on the talent event — from
@@ -4631,6 +5013,79 @@ do
   -- Show Unlearned is the escape hatch: the gate is derived data, so there is a way past it.
   local shown = namesOf(M.GetAuraCatalog("PRIEST", true))
   assertf(shown["serendipity"] ~= nil, "Show Unlearned reveals the withheld row")
+
+  -- ── WHICH SPEC IS THIS? ──
+  --
+  -- Points spent per tree is the only signal 3.3.5a offers, and for a starter layout it is the right
+  -- one: the FIRST point is already a declaration of intent, which is what a starter needs. What the
+  -- detection must not do is guess when there is nothing to read — the owner's call, and the reason
+  -- these four cases are asserted rather than a single happy path.
+  local POINTS = { 0, 0, 0 }
+  local TREES  = { "Discipline", "Holy", "Shadow" }
+  GetTalentTabInfo = function(tab, _, _, group)
+    -- (index, isInspect, isPet, group) on this client. The GROUP argument is the whole reason the
+    -- inactive spec can be detected at all; group 2 here is deliberately a different build.
+    if group == 2 then return TREES[tab], "icon", ({ 51, 0, 0 })[tab] or 0 end
+    return TREES[tab], "icon", POINTS[tab] or 0
+  end
+
+  assertf(M.DetectSpec() == nil, "no talent points spent is UNKNOWN, not tree 1")
+  POINTS = { 5, 5, 0 }
+  assertf(M.DetectSpec() == nil, "…and so is an exact tie, which has no right answer either")
+  POINTS = { 1, 0, 0 }
+  local tab, name = M.DetectSpec()
+  assertf(tab == 1 and name == "Discipline",
+          "a SINGLE point names the spec — weak evidence of power, strong evidence of intent")
+  POINTS = { 11, 3, 57 }
+  assertf(M.DetectSpec() == 3, "…and the dominant tree wins once there are real points")
+  assertf(M.DetectSpec(2) == 1,
+          "…while the group argument reads the OTHER spec, which per-spec layouts depend on")
+  assertf(#M.SpecNames() == 3 and M.SpecNames()[3] == "Shadow", "the tree names come from the client")
+
+  -- ── The starter itself ──
+  local starter = M.STARTER_BY_CLASS and M.STARTER_BY_CLASS.PRIEST
+  assertf(starter ~= nil and starter[3] ~= nil, "the seed carries a per-spec starter for Shadow")
+  local P = NE.cooldownviewersettings.presets
+  assertf(P.UseSpecStarter(3), "…and it applies")
+  -- A tab the class does not have refuses rather than falling back to one it does. The menu passes
+  -- this through a StaticPopup's `data`, which outlives the menu that built it.
+  assertf(P.UseSpecStarter(9) == false and P.UseSpecStarter(nil) == false,
+          "…while a tab that does not exist applies nothing at all")
+
+  -- DISABLED, NOT DELETED, which is what keeps the starter undoable by hand: every curated spell is
+  -- still listed, so the off-spec ones sit under Not Displayed one drag from coming back.
+  local ent = M.GetEditableList("essential", "PRIEST")
+  local on, off = {}, {}
+  for _, e in ipairs(ent) do
+    if e.enabled then on[e.spellID] = true else off[e.spellID] = true end
+  end
+  assertf(on[8092] == true, "Mind Blast is on for Shadow")                      -- in the Shadow starter
+  assertf(off[47540] == true, "…and Penance is OFF rather than gone")           -- Discipline's
+  assertf(#ent == #M.ESSENTIAL_BY_CLASS.PRIEST,
+          "…with the full class list still present (" .. #ent .. ")")
+
+  -- ONCE PER BUCKET. This is the entire safety argument for auto-applying: a bucket is seeded the
+  -- first time a character plays a talent group and marked in the same breath, so the auto path can
+  -- never run a second time over curation the player has since done.
+  local lay = M._layoutBucket(true)
+  lay.starterSeeded = nil
+  M.SetSpellEnabled("essential", 47540, true)          -- the player's own edit, after the starter
+  assertf(P.SeedStarterIfFresh() == true, "a fresh bucket seeds its spec's starter")
+  assertf(lay.starterSeeded == 3, "…and is marked with the tree it seeded from")
+  M.SetSpellEnabled("essential", 47540, true)          -- edit it again
+  assertf(P.SeedStarterIfFresh() == false, "…and never seeds twice")
+  assertf(M.IsSpellEnabled("essential", 47540) == true,
+          "…so an edit made after the seed survives every later login")
+
+  -- No signal, no seed — and no marker either, so the FIRST point spent still gets a starter.
+  lay.starterSeeded = nil
+  POINTS = { 0, 0, 0 }
+  assertf(P.SeedStarterIfFresh() == false, "a character with no talent points is skipped")
+  assertf(lay.starterSeeded == nil, "…without being marked, so spending a point still seeds later")
+  POINTS = { 0, 0, 4 }
+  assertf(P.SeedStarterIfFresh() == true, "…which is exactly what happens on that first point")
+
+  GetTalentTabInfo = nil
 
   -- ── 7a: the seen registry ───────────────────────────────────────────────────────────────────
   M.ResetTracking()

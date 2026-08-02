@@ -3110,6 +3110,280 @@ and the options button back on Settings. The aura-viewer gate is probed through 
 than the item count — a profile with nothing tracked yet has zero items either way, so asserting on the
 count would have passed against the missing gate.
 
+#### H.3.19. The rotation spells, and why no class had any
+
+> "Lots of classes are missing default abilities that dont have cooldowns. Such as druids with wrath,
+> which i have added myself. Can you do a pass over classes and make sure the default rotation spells
+> are in for eahc spec?"
+
+Not an oversight in the curation — **the generator could not express one.** `resolve.py` defines a
+"castable" id as the lowest-rank entry carrying a cooldown `> 1.5s`, which is a good test for telling
+an ability from its triggered sub-spells and a useless one for asking whether something is an ability.
+Wrath has no cooldown. Neither does Frostbolt, Shred, Steady Shot, Shadow Bolt or Sinister Strike. Every
+one of them resolved to nothing, and `gen_wotlk.py` treats an unresolvable name as a hard error, so no
+rotational spell could ever have reached the seed. The owner's four hand-added Druid ids were the only
+ones in the file, and the next `gen_wotlk.py` run would have deleted them — `verify.py` rejects a
+no-cooldown id outright.
+
+**A second resolver, not a relaxed one.** `resolved_any.json` drops the cooldown test and replaces it
+with the two rules that test was standing in for, both picked by reading candidate dumps
+(`explore_nocd.py`, new, prints each class's no-cooldown non-passive non-talent abilities — the menu the
+curation is authored from) rather than by argument:
+
+* **Prefer an explicit `Rank 1`; fall back to unranked only when nothing is ranked.** Rejuvenation
+  forces it — fifteen ranks plus an *unranked* sixteenth (`64801`, the glyph's), and sorting by rank
+  number puts that one first, because an unparseable rank string scores 0. It is the same trap
+  `gen_alertdata.py` documents for Overpower, in the other direction.
+* **Drop passives.** Without a cooldown filter, nothing else keeps talent passives out of a list of
+  things to press.
+
+Emitted as its own `ROTATION_ADD` table rather than more rows in `ESSENTIAL_ADD`, which is what lets
+`verify.py` keep asserting "carries a real cooldown" of the two tables where that holds. In the rotation
+table the assertion is inverted — an entry that *does* carry a cooldown is an error — and that is how
+Crusader Strike (4s) and Flame Shock (6s) got moved up into Essential where they belong.
+
+**The class attribution was wrong, and the cooldown filter had been hiding it.** `skill2class` was a
+bare `most_common(1)` over every skill line. Skill line 202 is **Engineering**: 321 rows, 287 with no
+class mask, and the 34 that have one split 10 PALADIN / 9 SHAMAN / 9 DRUID — class-restricted engineering
+items — so `most_common` broke the tie for PALADIN and handed a profession's inventory to paladins. Line
+777 is **Mounts**, category 7 like the real class lines, unanimously PALADIN on the strength of 4 rows
+out of 315. Invisible while every answer had to carry a cooldown; it surfaced the moment the rotation
+resolver stopped filtering, as PALADIN reporting **661** abilities against 60–100 for every other class.
+Fixed with category 7 + Mounts excluded by name + 90% dominance, and verified to change **not one id**
+in the existing curation. Per-row class masks instead of the vote was tried and is worse: it loses every
+talent-granted ability (Penance, Starfall, Dispersion, all of DEATHKNIGHT), whose rows carry mask 0.
+
+**Two collision guards**, because the seed appends to `ClassData.lua` and `appendAll` dedupes by **id**,
+which is not the same as deduping by ability. `ClassData` lists Multi-Shot as `14288`; the resolver
+answers `2643`. Both real, both survive an id dedupe, and the viewer shows one spell twice. So the
+comparison is by NAME with every vanilla id mapped back through `Spell.dbc` — same id is redundant and
+merely printed, a different id is a hard error. Nine rotation names were dropped that way.
+
+**And it found live bugs in `ClassData.lua`.** The guard's first version matched the two table headers
+on entry and nothing on exit, so it ran on into the buff tables and raised a false alarm — which was
+worth having. Auditing every id in the file against its own comment turned up 23 disagreements. Most are
+vanilla→WotLK renames where the id is right (Blessing → Hand of Protection/Freedom, Soulstone → Create
+Soulstone, Arcane Intellect (Greater) → Arcane Brilliance). Twelve are genuinely wrong ids, and all
+twelve sit in `BUFFICON_BY_CLASS` / `BUFFBAR_BY_CLASS`, which `CooldownViewer.lua:789` records as unused
+— the aura viewers auto-track instead. Left alone as dead data, listed in the session notes.
+
+The two that were **not** dead are Mage's, and between them they cost mages a core button: `12472` was
+listed in Essential as "Cold Snap" and is **Icy Veins**; `11958` was listed in Utility as "Ice Block" and
+is **Cold Snap**. Two wrong labels, and Ice Block absent from every list. Both entries are dropped from
+`ClassData.lua` and all three abilities are now curated by name in the generator, which resolves them
+from the DBC.
+
+Curation is per CLASS, not per spec, because that is all the tables can express — the runtime gate is
+"has the player learned it" plus the talent gate, and every druid has learned Wrath. So each list is the
+union across a class's specs, and the per-spec layouts (§F2) are where a player prunes it. A Feral druid
+finding Balance's nukes in the picker is the cost of a Balance druid finding them there at all.
+
+232 ids verified against the DBC. Two mutations fail by name: the rotation table never appended (4
+failures), and Wrath listed at its max-rank id instead of rank 1.
+
+#### H.3.20. Starter layouts per spec, and how to tell what spec you are
+
+> "Yes lets do starter layouts per spec. Although im not sure the besty way to decide what spec for
+> lower levels? Would it be just talent points spent?"
+
+Yes — and `GetTalentTabInfo(tab, false, false, group)` takes a **talent group**, which is what makes it
+usable for the inactive spec's bucket as well as the active one. Without that argument dual spec would
+detect the same tree twice.
+
+The honest limits, since the question was about low levels:
+
+* **Levels 1–9 there is no signal at all.** Zero points; a pick would be one in three.
+* **At 10+ the first point is already a declaration of intent.** Someone who spends point one in Balance
+  is levelling Balance. It is weak evidence about power and strong evidence about intent — and intent is
+  what a starter layout needs, so a single point is enough.
+* **An exact tie (5/5/0) has no right answer.**
+
+**The failure that actually matters is not guessing wrong, it is guessing repeatedly.** A layout that
+re-derives itself as points are spent would silently overwrite curation every few levels. So detection
+runs at the moment of application and nowhere else, which reduces the low-level problem to being right
+*once*, with the player present. Owner's calls on the two forks: apply on demand **and** once on a fresh
+spec bucket; and when the spec is unreadable, **do not guess** — offer the three trees by name.
+
+`M.DetectSpec(group)` therefore returns **nil** for no-points and for a tie, rather than tab 1. The menu
+marks the detected tree with "(your spec)" instead of pre-selecting it — detection is derived data and
+can be wrong, the same reasoning that keeps "Show Unlearned" on the aura picker.
+
+**Once per bucket is the entire safety argument for the auto path.** `SeedStarterIfFresh` marks the
+bucket in the same breath as seeding it, so it can never run twice over curation the player has since
+done. It is hung on `NE.spellbook.OnRebuilt` rather than `PLAYER_LOGIN` because that fires once the
+client has finished answering about talents — at login and after a spec swap — and it is idempotent, so
+firing often is free. A character with no points is skipped **without being marked**, so the first point
+they spend still seeds them a starter.
+
+**Disabled, not deleted.** The starter writes a custom list holding every spell in the class's Essential
+list, the spec's own on and the rest off, so off-spec spells land under Not Displayed one drag from
+returning. Deleting them would make the starter the one action in the window you cannot undo by hand.
+**Essential only** — Utility is defensives, interrupts and escapes any spec might press, and the bloat
+this answers is all in Essential.
+
+30 lists, authored by name in `gen_wotlk.py` and resolved against **the ids the curated list actually
+holds**, not against a fresh resolve: `ClassData` keeps some abilities at a higher rank (Multi-Shot at
+`14288`), and a starter carrying the rank-1 `2643` would enable a row the picker has never heard of and
+appear to do nothing. A starter name that is not in that class's Essential list is a hard error — and it
+is checked against Essential specifically, not Essential+Utility, or a name living only in Utility would
+pass and then enable nothing. Tab order is from `TalentTab.dbc`, not memory.
+
+964 assertions. Seven mutations fail by name: no-points falling back to tree 1 (5 failures), a tie
+resolving to the first tree, the group argument ignored, the starter deleting instead of disabling, the
+seed marker never set, the marker set even when the spec is unknown, and an invalid tab falling back to
+tab 1.
+
+#### H.3.21. Unlearned spells are hidden, not tinted
+
+> "I can see spells I havent learnt yet on my druid. For instance Mangle which is a talent i dont have
+> yet, it lists under not displayed. I want spells that are not known to be hidden entirely"
+
+One report, three faults. What hid all three for this long is that **no consumer ever hid an unlearned
+row — they only tinted it**, so a learn-gate that answered "learned" for nearly everything looked
+exactly like a learn-gate that worked.
+
+**1. The gate barely gated.** §E4 replaced an id-keyed check with the spellbook, correctly, but kept the
+old checks chained after it "so the change can only widen what shows, never narrow it". The last link is
+`GetSpellInfo(name)`, which on this client answers from the spell **database** — §E4's own bullet list
+says so two lines earlier. A chain whose last link says yes to every ability in the game is not a gate.
+The fallbacks are now reached only when `SB.EnsureBuilt()` reports no book at all; with a book, the book
+is the answer. The condition is deliberately "built", not "non-empty": an empty book is a real answer for
+a character with no spells, whereas *not built yet* is the absence of one, and there the gate still fails
+**open** — showing an ability the player lacks beats hiding one they have because a scan had not run.
+
+**2. Not Displayed ignored the gate entirely**, by an explicit decision recorded in the code: a fresh
+character seeing an empty picker reads as broken. True, but the price was worse than the disease.
+`Mangle (Bear)` sat in a section whose name means *you chose not to show this*, one drag from a row that
+could never light up, and the red tint's "not yet learned" contradicted the heading rather than
+qualifying it. The catalog now honours **Show Unlearned** like every other spell section — the setting
+already existed and already meant this; it simply did not reach here. The empty-picker worry is answered
+where it belongs, in the section's empty text, which names the setting instead of saying "(empty)".
+
+**3. `IsTrackable` waved the whole arsenal through.** Its escape hatch — *an id outside the curated set
+is a user-added external, so always trackable* — was written when the curated lists were the only class
+data. `M.ARSENAL_BY_CLASS` is 296 more ids that are nothing but class abilities, and `Mangle (Bear)` is
+one of them (the seed curates the Cat form). So the gate was never consulted for most of the picker, and
+the moment a player dragged an arsenal-only ability into a viewer it rendered whether they could cast it
+or not. The arsenal now counts as class data for the gate. The hatch still exists, and still has to —
+delete it and every user-added trinket use-spell vanishes, which is its own mutation below.
+
+The picker surfaces ask `M.IsSpellLearned` (new, the raw test) rather than `M.IsTrackable`: on a picker
+row every entry is a class ability by construction, so "not in the class tables" means nothing there.
+Gating the catalog on `IsTrackable` would have hidden Mangle (Cat), which the seed curates, and kept
+Mangle (Bear), which it does not — the exact inversion of the report.
+
+Regenerating `CdmArsenal.lua` for the new footer also collected the §H.3.19 attribution fix, which had
+never been applied to this table: seven ids leave, all of them the bug that fix describes — `Stuck` and
+`Summon Friend` under DRUID, `Wormhole: Gadgetzan` under PALADIN, and four racials filed under ROGUE and
+WARRIOR. Its header had also drifted, still saying "Hidden" where the file on disk had been hand-edited
+to the §H.3 rename; the generator now carries the current wording so the next regen keeps it.
+
+984 assertions. Ten mutations fail by name: the database fallback restored unconditionally (2 failures),
+the gate failing closed with no book, the arsenal dropped from the class-ability set (2), the external
+hatch deleted, the catalog skipping the learn gate (2), the catalog ignoring Show Unlearned (3), the
+empty text back to "(empty)", and the tile tint stuck on, stuck off, or flagged without desaturating.
+Two mutations are **equivalent, not uncaught**, and worth naming so nobody re-tests them: gating the
+catalog on `IsTrackable` now behaves identically, because widening the class-ability set to include the
+arsenal made the two agree for every id the catalog can hold; and dropping `CdmArsenal.lua`'s
+`InvalidateCuratedCache()` footer changes nothing in a harness that loads every file before the first
+assertion, which is the one ordering it exists to protect against.
+
+#### H.3.22. Not Displayed is the catalog minus what is on screen
+
+Reported as "Gift of the Naaru is showing twice — under Utility and Not Displayed". It was every racial,
+for every race that has one, on every class: Blood Fury for Orcs, Berserking for Trolls, Stoneform for
+Dwarves, Cannibalize and Will of the Forsaken for the Forsaken, and so on. Only Human was clean, and only
+because its racial lists in `ClassData.lua` are deliberately empty.
+
+The catalog is defined as *the arsenal minus what is placed*, and `SettingsAdapter.lua` computed the
+subtrahend with its own `isPlaced` — a second implementation of the placement rules that read the custom
+list and fell back to the curated defaults. `GetActiveSpellList` answers the same question, and it does
+one more thing: `appendRacials` merges the player's racials into both lists at render time, because
+racials are class-agnostic and were never in the editable seed. The copy had no idea that merge existed,
+so a racial was placed and unplaced simultaneously — rendered by the viewer, and offered again by the
+catalog as something the player had chosen not to display.
+
+`isPlaced` is replaced by `placedSet`, which asks `GetActiveSpellList` for each display category and
+unions the results. Two properties follow that the old shape could not have:
+
+* **Duplication becomes impossible by construction.** `GetItems` renders `GetActiveSpellList(cat, showAll)`,
+  and `placedSet` subtracts `GetActiveSpellList(cat, true)`. The `includeUnlearned` list is a strict
+  superset of the gated one — the only difference is the `IsTrackable` filter — so anything on screen is
+  necessarily subtracted. Any *future* merge into a display list is inherited rather than re-missed.
+* **The round trip survives.** Suppressing racials in the catalog would have fixed the duplicate and made
+  a removed racial unrecoverable. Instead, removing one writes it disabled into the custom list, which is
+  exactly what `appendRacials`' `exclude` set reads, so it leaves the viewer and appears in the catalog —
+  once — ready to drag back.
+
+`includeUnlearned` is `true` deliberately: this asks about PLACEMENT, not castability. Gating it would
+call an unlearned-but-placed spell unplaced and hand it back to the catalog, restoring the double listing
+for a second, unrelated reason. `M.GetActiveSpellList` gained an optional third `class` argument for this
+caller, which carries a class down from `Adapter.GetItems`; every viewer still gets the player's.
+
+The suite could not have caught this. The pre-existing overlap check runs as a Human — the one race with
+nothing to duplicate. The new §H.3.22 block switches race, asserts the merge/subtract/round-trip cycle,
+and then asserts the invariant itself across both spell categories with Show Unlearned each way. 992
+assertions. Two mutations fail by name: `placedSet` re-deriving placement instead of asking (the original
+bug, reproduced exactly), and placement gated on learnedness.
+
+#### H.3.23. One tile per ability, not per spell ID
+
+Reported as "two versions of Icy Touch, the correct one and another with just the name and icon", after
+§H.3.22 had removed the id-level duplicates. This is the other half: an **ability is not an id**.
+`Spell.dbc` holds a row per rank plus variants that never reach a spellbook, so one ability can enter a
+list under two ids and render as two identical tiles — the tile draws `GetSpellInfo`'s name and icon, and
+by construction those match.
+
+Five abilities are in that state, because the arsenal is generated and the curated tables are authored
+and for these five they picked different rows for the same thing:
+
+| Class | Ability | arsenal | curated |
+|---|---|---|---|
+| DEATHKNIGHT | Icy Touch | 52372 | 45477 (essential) |
+| HUNTER | Multi-Shot | 2643 (R1) | 14288 (R2) |
+| PALADIN | Hammer of Justice | 853 (R1) | 10308 (R4) |
+| PALADIN | Judgement of Wisdom | 53408 | 20186 (R1) |
+| ROGUE | Sprint | 2983 (R1) | 11305 (R3) |
+
+**The data is deliberately left alone.** Every runtime read resolves through `highestKnownRankID`
+(ItemMixins), which maps a spellID to the player's highest KNOWN rank BY NAME — so any id for an ability
+lands on the same cooldown, icon and tooltip, and none of these five misbehaves in a viewer. Rewriting
+curated ids would churn saved layouts for no functional gain. Two are worth recording anyway, as data
+notes rather than bugs to fix here: `52372` is the untrained Icy Touch variant (`classmask=0`) against
+curated `45477` (`classmask=0x20`, the trained DK rank 1); and curated `20186` is the *vanilla* Judgement
+of Wisdom (Rank 1, skill line Holy) where WotLK's player-cast version is `53408` (skill line
+Retribution) — the arsenal has the better id there, and name resolution is why it has never shown.
+
+`classmask = 0` is **not** a "not a player ability" signal and must not be used as one: 72 of the 296
+arsenal ids have it, and most are talents (Starfall, Penance, Preparation, Last Stand).
+
+The dedupe lives in **`GetActiveSpellList`**, not in the picker, because the live viewer reads that same
+function — a picker-only fix would have left two identical tiles on the cooldown bar itself. The catalog
+adds the other half in `hiddenSpells`: a name already on screen, or already emitted during the walk, is
+not offered again. Three guards, each load-bearing in a different situation:
+
+* `ownerByName` — the CURATED id wins a collision even though the catalog walks the arsenal first.
+  Nothing functional rides on it; consistency does, since the seed, starter layouts and presets all name
+  the curated id.
+* `placedNames` — the placed id is not always in a pool the catalog walks. Regenerating `CdmArsenal.lua`
+  drops ids (seven left it in §H.3.21), and a saved layout goes on holding one; nothing then marks its
+  name in passing.
+* `seenNames` — two generated ids for one ability, neither placed nor curated. Nothing outside the walk
+  can arbitrate, so the walk keeps the first.
+
+An id the client cannot name is never collapsed: `GetSpellInfo` returns nil, there is nothing to compare,
+and treating "no name" as one shared name would merge unrelated abilities into a single tile.
+
+1001 assertions. Six mutations fail by name: the dedupe removed from `GetActiveSpellList`; the catalog
+ignoring what is on screen under another id; the generated twin winning the collision; no within-walk
+name memory; and `or ""` for a missing name in either file, which collapses every unnamed id together.
+The fixture builds its own twins rather than asserting against the five above, so it keeps meaning the
+same thing after any regeneration.
+
+Verified in bulk out-of-band as well: a probe that feeds the harness all 49,839 real `Spell.dbc` names
+and walks 10 races × 10 classes reports one tile per ability everywhere, and reports exactly the five
+collisions above when the dedupe is disabled.
+
 ## H.4. Suggested order
 
 **Phase 7 is done; what follows applies to 8 and 9.**

@@ -293,6 +293,73 @@ function Presets.UseStarter()
   return true
 end
 
+-- ── Per-spec starter ────────────────────────────────────────────────────────────────────────────
+--
+-- UseStarter above resets to the CLASS list — every curated spell the class has. That list is a union
+-- across the class's specs, because the curated tables cannot express anything narrower (the runtime
+-- gate is "have you learned it", and every druid has learned Wrath), so a Feral druid lands on
+-- Balance's nukes as well as their own. This narrows it to one tree.
+--
+-- DISABLED, NOT DELETED. The starter writes a custom list holding EVERY spell in the class's Essential
+-- list, with the spec's own turned on and the rest turned off — so off-spec spells land under Not
+-- Displayed in the picker, one drag from coming back. Deleting them would make the starter a thing you
+-- cannot undo except by resetting the whole layout.
+--
+-- ESSENTIAL ONLY. Utility is defensives, interrupts and escapes that a character of any spec might
+-- press; the bloat this exists to answer is all in Essential.
+function Presets.UseSpecStarter(tab)
+  tab = tonumber(tab)
+  local _, class = UnitClass("player")
+  local byTab = class and (M.STARTER_BY_CLASS or {})[class]
+  local want = byTab and tab and byTab[tab]
+  if not want then return false end
+
+  markUndo()
+
+  local keep = {}
+  for _, id in ipairs(want) do keep[id] = true end
+
+  -- Built from the CURATED list, not from the starter, so a spell the starter does not name is still
+  -- listed (disabled) rather than missing. GetEditableList seeds one from the curated defaults when
+  -- the character has no custom list yet, which is exactly the shape needed here.
+  local list = M.GetEditableList and M.GetEditableList("essential", class)
+  if not list then return false end
+  for _, entry in ipairs(list) do
+    entry.enabled = keep[entry.spellID] and true or false
+  end
+  if M.SetCustomList then M.SetCustomList("essential", class, list) end
+
+  -- Off any named layout: what is on screen is no longer what that layout said.
+  setCurrent(nil)
+  if M.InvalidateCuratedCache then M.InvalidateCuratedCache() end
+  if M.RefreshActiveViewer then M.RefreshActiveViewer() end
+  if CDS.RefreshLayout then CDS.RefreshLayout() end
+  if CDS.RefreshLayoutDropdown then CDS.RefreshLayoutDropdown() end
+  return true
+end
+
+-- ONCE PER BUCKET, and that is the whole safety argument. A layout bucket is created the first time a
+-- character plays a talent group, and this marks it the moment it is seeded — so the auto path can
+-- never run twice over the same bucket and can never overwrite curation. Re-deriving on every respec
+-- was considered and rejected by the owner for exactly that reason.
+--
+-- Skipped entirely when DetectSpec returns nil (no points, or a tie): there is nothing to seed FROM,
+-- and a level-5 character simply meets the full class list until they spend a point. The next call
+-- after that point lands, seeds properly, because the marker is only set when a starter is applied.
+function Presets.SeedStarterIfFresh()
+  local lay = M._layoutBucket and M._layoutBucket(true)
+  if not lay or lay.starterSeeded then return false end
+  local tab = M.DetectSpec and M.DetectSpec()
+  if not tab then return false end
+  lay.starterSeeded = tab
+  local ok = Presets.UseSpecStarter(tab)
+  if ok and NE.Log then
+    NE.Log("CDM", "seeded the " .. tostring((M.SpecNames and M.SpecNames()[tab]) or tab)
+                  .. " starter layout for a new spec")
+  end
+  return ok
+end
+
 -- ── Share-string codec ──────────────────────────────────────────────────────────────────────────
 -- Base64 over a hand-rolled typed serializer. Base64 because a share string has to survive being
 -- pasted through a chat window and a forum post; typed-serializer because the alternative — emitting
@@ -529,6 +596,18 @@ StaticPopupDialogs["NE_CDM_LAYOUT_STARTER"] = {
   OnAccept = function() Presets.UseStarter() end,
 }
 
+-- Confirms for the same reason the class starter does: it replaces the Essential list wholesale.
+-- Narrower in what it says, because it is narrower in what it does — tracked auras, trinkets, alerts
+-- and sounds are all left alone, and the off-spec spells are turned off rather than removed.
+StaticPopupDialogs["NE_CDM_LAYOUT_SPEC_STARTER"] = {
+  text = "Load the %s starter layout?\n\nEssential is set to that spec's spells. Everything else for "
+       .. "your class moves to Not Displayed — nothing is deleted, and you can drag any of it back.\n\n"
+       .. "Tracked auras, trinkets, alerts and frame positions are not affected.",
+  button1 = YES or "Yes", button2 = NO or "No",
+  timeout = 0, whileDead = 1, hideOnEscape = 1,
+  OnAccept = function(self) Presets.UseSpecStarter(self.data and self.data.tab) end,
+}
+
 -- ── The menu ────────────────────────────────────────────────────────────────────────────────────
 
 function CDS.BuildLayoutMenu(_, root)
@@ -562,7 +641,31 @@ function CDS.BuildLayoutMenu(_, root)
   end
 
   root:CreateDivider()
-  root:CreateButton("Use Starter Layout", function() StaticPopup_Show("NE_CDM_LAYOUT_STARTER") end)
+
+  -- Starter layouts, per spec. The detected tree is marked rather than pre-clicked — detection is
+  -- derived data and can be wrong, the same reason the aura picker keeps a "Show Unlearned" escape
+  -- hatch — and when DetectSpec answers nil (no talent points yet, or an exact tie) nothing is marked
+  -- and all three simply stand as choices. A level-5 character picking the spec they are heading for
+  -- is a better answer than a one-in-three guess wearing a detection's clothes.
+  local names = M.SpecNames and M.SpecNames() or {}
+  local detected = M.DetectSpec and M.DetectSpec()
+  if #names > 0 then
+    local sub = root:CreateButton("Starter Layout")
+    for tab = 1, #names do
+      local label = names[tab]
+      if tab == detected then label = label .. "  |cff44ff44(your spec)|r" end
+      sub:CreateButton(label, function()
+        StaticPopup_Show("NE_CDM_LAYOUT_SPEC_STARTER", names[tab], nil, { tab = tab })
+      end)
+    end
+    sub:CreateDivider()
+    sub:CreateButton("Everything (no spec)", function() StaticPopup_Show("NE_CDM_LAYOUT_STARTER") end)
+      :SetTooltip("Everything", "The full curated list for your class, both specs' spells|nincluded. "
+        .. "This is what the Cooldown Manager shipped with|nbefore per-spec starters.")
+  else
+    root:CreateButton("Use Starter Layout", function() StaticPopup_Show("NE_CDM_LAYOUT_STARTER") end)
+  end
+
   root:CreateButton("Import Layout", function() StaticPopup_Show("NE_CDM_LAYOUT_IMPORT") end)
   root:CreateButton("Export Layout", function() Presets.Export(cur) end)
     :SetTooltip("Export Layout", "Opens a share string you can copy with Ctrl+C.|nIt covers this "

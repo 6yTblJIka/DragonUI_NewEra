@@ -78,8 +78,6 @@ M.ARSENAL_BY_CLASS = {
     5215,   -- Prowl
     20484,   -- Rebirth
     48505,   -- Starfall
-    7355,   -- Stuck
-    45927,   -- Summon Friend
     61336,   -- Survival Instincts
     18562,   -- Swiftmend
     5217,   -- Tiger's Fury
@@ -198,7 +196,6 @@ M.ARSENAL_BY_CLASS = {
     20066,   -- Repentance
     31789,   -- Righteous Defense
     53600,   -- Shield of Righteousness
-    56273,   -- Wormhole: Gadgetzan
   },
   PRIEST = {
     34861,   -- Circle of Healing
@@ -226,7 +223,6 @@ M.ARSENAL_BY_CLASS = {
   },
   ROGUE = {
     13750,   -- Adrenaline Rush
-    25046,   -- Arcane Torrent
     13877,   -- Blade Flurry
     2094,   -- Blind
     31224,   -- Cloak of Shadows
@@ -308,7 +304,6 @@ M.ARSENAL_BY_CLASS = {
   WARRIOR = {
     18499,   -- Berserker Rage
     46924,   -- Bladestorm
-    20572,   -- Blood Fury
     2687,   -- Bloodrage
     23881,   -- Bloodthirst
     1161,   -- Challenging Shout
@@ -317,7 +312,6 @@ M.ARSENAL_BY_CLASS = {
     12292,   -- Death Wish
     676,   -- Disarm
     55694,   -- Enraged Regeneration
-    28880,   -- Gift of the Naaru
     60970,   -- Heroic Fury
     57755,   -- Heroic Throw
     20252,   -- Intercept
@@ -331,7 +325,6 @@ M.ARSENAL_BY_CLASS = {
     1719,   -- Recklessness
     20230,   -- Retaliation
     6572,   -- Revenge
-    58984,   -- Shadowmeld
     64382,   -- Shattering Throw
     72,   -- Shield Bash
     2565,   -- Shield Block
@@ -346,3 +339,4 @@ M.ARSENAL_BY_CLASS = {
   },
 }
 
+if M.InvalidateCuratedCache then M.InvalidateCuratedCache() end

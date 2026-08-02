@@ -135,6 +135,57 @@ function M.ActiveTalentGroup()
   return g
 end
 
+-- ── Which spec is this? ─────────────────────────────────────────────────────────────────────────
+--
+-- Points spent per tree, which is the only signal 3.3.5a offers and, for this purpose, a good one:
+-- the FIRST point is already a declaration of intent, and a starter layout wants intent rather than
+-- power. Someone who puts point one in Balance is levelling Balance.
+--
+-- IT RETURNS NIL RATHER THAN GUESSING, in the two cases where there is nothing to read:
+--
+--   * NO POINTS AT ALL. Below level 10 there is no signal whatsoever and a pick would be one in three.
+--   * AN EXACT TIE. 5/5/0 has no right answer either.
+--
+-- Both are handled by the caller offering the choice, never by picking the first tab — the owner's
+-- call, and the right one: an arbitrary index presented as a detected spec is worse than a question.
+--
+-- GROUP-AWARE, because GetTalentTabInfo takes one. That is what makes this usable for the INACTIVE
+-- spec's layout bucket as well as the active one; without it, dual spec would detect the same tree
+-- twice. Signature is (index, isInspect, isPet, group) on this client — see modules/talents/Behavior.
+--
+-- Deliberately NOT cached. It is read when a starter is applied and when a fresh bucket is seeded,
+-- both of which are one-off user-facing moments, and a stale answer there is worse than a DBC read.
+function M.DetectSpec(group)
+  if not (GetNumTalentTabs and GetTalentTabInfo) then return nil end
+  group = tonumber(group) or M.ActiveTalentGroup()
+  local best, bestPts, tied, total = nil, 0, false, 0
+  for tab = 1, (GetNumTalentTabs() or 0) do
+    local name, _, spent = GetTalentTabInfo(tab, false, false, group)
+    spent = tonumber(spent) or 0
+    total = total + spent
+    if spent > bestPts then
+      best, bestPts, tied = tab, spent, false
+    elseif spent == bestPts and spent > 0 then
+      tied = true
+    end
+    M._specNames = M._specNames or {}
+    M._specNames[tab] = name or M._specNames[tab]
+  end
+  if total == 0 or tied or not best then return nil end
+  return best, M._specNames and M._specNames[best], bestPts
+end
+
+-- The three tree names for the menu, in tab order. Read from the client rather than from the seed:
+-- the seed's tab->spec mapping is a comment for whoever edits it, and this is what a player reads.
+function M.SpecNames()
+  local out = {}
+  if not (GetNumTalentTabs and GetTalentTabInfo) then return out end
+  for tab = 1, (GetNumTalentTabs() or 0) do
+    out[tab] = (GetTalentTabInfo(tab, false, false, M.ActiveTalentGroup())) or ("Tree " .. tab)
+  end
+  return out
+end
+
 -- The bucket name. "shared" when the feature is off, which is also the bucket a new per-spec bucket
 -- inherits from — so turning it ON carries the layout you already had into the group you are in,
 -- rather than dropping you onto curated defaults with no warning.
@@ -609,8 +660,10 @@ end
 
 -- Should the settings panel list curated spells the player has not learned?
 --
--- Off by default: Essential/Utility show what you can actually cast. Not Displayed ignores this
--- and always lists everything, because a low-level character seeing an empty picker reads as broken.
+-- Off by default, and it now governs EVERY spell section including Not Displayed (§H.3.21). It used
+-- to mean "tint the ones you can't cast", which left an untalented druid's Mangle sitting in the
+-- catalog looking like something they had merely chosen not to display. It now means what it says:
+-- off, the picker is the character's own arsenal; on, it is the class's.
 function M.GetShowUnlearned()
   local cd = store(false)
   return (cd and cd.showUnlearned) and true or false
@@ -668,8 +721,14 @@ local function appendRacials(out, category, exclude)
   end
 end
 
--- Learn-gate. The curated per-class set is what we gate; a spellID NOT in it is a user-added
--- item/external (its use-spell is never "known"), so it is always trackable. Memoised per class.
+-- Learn-gate scope: the set of ids we are willing to call a CLASS ABILITY. Anything outside it is a
+-- user-added item/external whose use-spell is never "known", so it is always trackable. Memoised.
+--
+-- The ARSENAL belongs in here (§H.3.21) even though it is not curation. Before, the set was the
+-- curated lists alone — so the moment the player dragged an arsenal-only ability out of the picker
+-- and into a viewer, it fell through the escape hatch and the viewer showed it whether or not they
+-- could cast it. Mangle (Bear) is exactly that: arsenal-only, since the seed curates the Cat form.
+-- The escape hatch is for ids that are not class abilities at all, and the arsenal is nothing but.
 local curatedSetCache = {}
 local function curatedSet(class)
   if curatedSetCache[class] then return curatedSetCache[class] end
@@ -679,6 +738,9 @@ local function curatedSet(class)
       local list = byClass[class]
       if list then for _, id in ipairs(list) do set[id] = true end end
     end
+  end
+  if M.ARSENAL_BY_CLASS and M.ARSENAL_BY_CLASS[class] then
+    for _, id in ipairs(M.ARSENAL_BY_CLASS[class]) do set[id] = true end
   end
   if M.RACIAL_BY_RACE then
     for _, bucket in pairs(M.RACIAL_BY_RACE) do
@@ -711,14 +773,40 @@ end
 -- legitimately know an ability far below its stock level (Divine Hymn at 60).
 --
 -- So we ask the SPELLBOOK, by name (core/SpellRanks.lua). That is authoritative, rank-agnostic and
--- level-agnostic: if it is in the book, the player has it. The old checks stay as fallbacks in case
--- the book scan is unavailable, so this can only ever widen what shows, never narrow it.
+-- level-agnostic: if it is in the book, the player has it.
+--
+-- The old checks are kept, but ONLY for the case the book scan is unavailable — they are a fallback,
+-- not a widening. §E4 originally chained all three unconditionally so the fix "could only widen what
+-- shows", and that was the wrong shape: `GetSpellInfo(name)` answers from the spell DATABASE, so the
+-- last link says yes to abilities the character cannot have (an untalented druid's Mangle). Chained
+-- unconditionally it made the gate a near-no-op, which is invisible while every consumer merely
+-- TINTS an unlearned row and becomes the whole behaviour the moment one HIDES it (§H.3.21).
+--
+-- The book being built is the condition, not the book being non-empty: an empty book is a real
+-- answer for a character with no spells, whereas "not built yet" is an absence of one.
 local function isLearned(spellID)
   local name = GetSpellInfo(spellID)
   local SB = NE.spellbook
-  if name and SB and SB.IsSpellNameKnown and SB.IsSpellNameKnown(name) then return true end
+  if SB and SB.EnsureBuilt and SB.EnsureBuilt() then
+    if name and SB.IsSpellNameKnown and SB.IsSpellNameKnown(name) then return true end
+    -- Still worth asking: IsSpellKnown is a STRICT exact-rank test, so it can only ever confirm, and
+    -- it covers the odd grant that never surfaces in the book under a name we can match.
+    return (IsSpellKnown and IsSpellKnown(spellID)) and true or false
+  end
+  -- No book to ask. Fail OPEN — showing an ability the player lacks is a smaller fault than hiding
+  -- one they have because a scan had not run yet.
   if IsSpellKnown and IsSpellKnown(spellID) then return true end
   return (name and GetSpellInfo(name)) and true or false
+end
+
+-- The raw learn test, exported. IsTrackable below is this PLUS a curated-set escape hatch, and the
+-- two are not interchangeable: the escape hatch exists for user-added on-use items, which are never
+-- "known" spells, and it waves through everything outside the curated tables — including the whole
+-- generated ARSENAL. Ask IsTrackable about a viewer row; ask this about a picker row, where every
+-- entry is a class ability by construction and "not in the curated set" means nothing at all.
+function M.IsSpellLearned(spellID)
+  if not spellID then return true end
+  return isLearned(spellID)
 end
 
 -- Race gate. Upstream reads the generated NE_SPELL_RACEMASK table (SkillLineAbility RaceMask) to
@@ -744,8 +832,12 @@ end
 
 -- The live spell list for a category. `includeUnlearned` skips the learn-gate (used by the
 -- options-tab preview so an untrained character still sees the full curated set).
-function M.GetActiveSpellList(category, includeUnlearned)
-  local _, class = UnitClass("player")
+--
+-- `class` is an override for the callers that already hold one — the settings adapter takes a class
+-- argument all the way down, and it has to be able to ask THIS function what is on screen rather
+-- than re-deriving it (§H.3.22). Defaults to the player's, which is what every viewer wants.
+function M.GetActiveSpellList(category, includeUnlearned, class)
+  if not class then local _; _, class = UnitClass("player") end
   if not class then return {} end
 
   local raw = {}
@@ -768,9 +860,31 @@ function M.GetActiveSpellList(category, includeUnlearned)
   -- `present` keeps an explicit user disable authoritative.
   appendRacials(raw, category, present)
 
-  local allowed = {}
+  -- NAME-level dedupe (§H.3.23). An ABILITY is not an ID: Spell.dbc holds a separate row per rank,
+  -- plus variants that never reach a spellbook, so one ability can enter this list under two ids and
+  -- render as two identical tiles. Reported as "two versions of Icy Touch" — the DK's is curated as
+  -- 45477 (the trained rank 1) and generated into the arsenal as 52372.
+  --
+  -- Deduping by NAME rather than by id is the honest test, because the name is exactly what makes the
+  -- two indistinguishable: the tile draws GetSpellInfo's name and icon, so a list that holds both has
+  -- no way to tell the player which is which, and no reason to.
+  --
+  -- Which id survives does not matter, and that is why this is safe. Every runtime read resolves
+  -- through highestKnownRankID (ItemMixins), which maps a spellID to the player's highest KNOWN rank
+  -- BY NAME — so any id for the ability lands on the same cooldown, icon and tooltip. First occurrence
+  -- wins, which keeps a deliberate user ordering and keeps curated ids ahead of appended racials.
+  --
+  -- An id the client cannot name is never collapsed: GetSpellInfo returns nil for it, there is nothing
+  -- to compare, and dropping it would be guessing.
+  local allowed, byName = {}, {}
   for _, id in ipairs(raw) do
-    if M.SpellAllowedForRace(id) then allowed[#allowed + 1] = id end
+    if M.SpellAllowedForRace(id) then
+      local name = GetSpellInfo(id)
+      if not (name and byName[name]) then
+        if name then byName[name] = true end
+        allowed[#allowed + 1] = id
+      end
+    end
   end
   if includeUnlearned then return allowed end
 

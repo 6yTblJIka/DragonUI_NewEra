@@ -170,12 +170,14 @@ A standalone Dragonflight-style **Adventure Guide**, downported from NewEra's En
 Retail's **Cooldown Manager** (a *War Within* feature) downported from NewEra — four HUD viewers that track what's ready, what's running, and what's on you, plus the window that decides what goes in them. Open it with **`/cdm`**; the viewers themselves are placed from **`/dragonui edit`**.
 
 - **Four viewers** — **Essential** and **Utility** cooldown icon rows, a **Buff Icons** row, and **Tracked Bars** with names and countdowns. Each one is independently placed, sized, and toggled.
-- **Curated per class, then filtered by you** — spell lists come from the client's own DBC data (never hand-typed IDs), gated on the talents you've actually spent points in, and grouped into *Essential* / *Utility* / *Not Displayed*. Drag a tile between sections to move it; search to find one.
+- **Curated per class, then filtered by you** — spell lists come from the client's own DBC data (never hand-typed IDs), and grouped into *Essential* / *Utility* / *Not Displayed*. Drag a tile between sections to move it; search to find one.
+- **The picker is your character's arsenal, not your class's** — anything you haven't learned yet is hidden, talents you didn't take included, so *Not Displayed* means "you chose not to show this" rather than "you can't cast this". Newly trained abilities appear on their own. Turn on **Show Unlearned** in the cog to see the full class list anyway; unlearned entries there are tinted red.
 - **Tracked buffs** — a generated per-class aura catalog plus a live registry of every buff the scanner has actually seen on you, so procs that aren't in any list still turn up and can be tracked.
 - **Trinkets** — on-use trinkets are discovered from what you're wearing, no configuration.
 - **A spell's frame lights gold while its own buff is up**, so you can see at a glance which of your cooldowns is currently *doing* something rather than merely off cooldown.
 - **Alerts** — right-click any tile to pick a trigger (*Available*, *Refresh*, *Active*, *Usable*), an **FX Style**, a refresh window, and a **ready sound** from the client's full sound catalogue. A small badge marks every tile that has one configured.
 - **Edit mode** — `/dragonui edit` gives each viewer a mover and a settings dialog: orientation, icon limit and direction, icon size, padding, opacity, visibility, timers, and tooltips.
+- **Starter layouts per spec** — 30 curated starting points, one per talent tree. A new spec gets its own automatically the first time you play it; you can load any of them by hand from the Layout menu, and off-spec spells are switched *off* rather than removed, so anything you want back is one drag away in the picker. Your spec is read from talent points spent — with no points, or an exact tie, it asks rather than guessing.
 - **Layouts** — save and apply layouts, share them as import/export strings, drop back to a starter layout, and undo the last layout change with **Revert**. Layouts are stored **per spec**, so your dual-spec setups don't fight each other.
 
 Note: Module is off by default
