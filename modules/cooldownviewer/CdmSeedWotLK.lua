@@ -395,6 +395,7 @@ local STARTER_BY_CLASS = {
       48505,   -- Starfall
       50516,   -- Typhoon
       16914,   -- Hurricane
+      770,     -- Faerie Fire (Balance)
     },
     [2] = {
       5221,    -- Shred
@@ -408,7 +409,7 @@ local STARTER_BY_CLASS = {
       33745,   -- Lacerate
       779,     -- Swipe (Bear)
       50334,   -- Berserk
-      770,     -- Faerie Fire (Balance)
+      16857,   -- Faerie Fire (Feral)
     },
     [3] = {
       5185,    -- Healing Touch
@@ -728,6 +729,31 @@ end
 appendAll(M.ESSENTIAL_BY_CLASS, ESSENTIAL_ADD)
 appendAll(M.UTILITY_BY_CLASS,   UTILITY_ADD)
 appendAll(M.ESSENTIAL_BY_CLASS, ROTATION_ADD)
+
+-- The same ids again, flattened into a set, because ONE consumer needs to ask the question the other
+-- direction: given a spell, does it have a real cooldown at all?
+--
+-- ItemMixin:ConsumeReadyTransition — the edge the `available` alert and the ready sound hang off — is
+-- defined as "was on a REAL cooldown, now is not", and a real cooldown explicitly excludes the GCD
+-- and cast lockouts. For everything in the two COOLDOWN tables that is exactly right: a GCD flash on
+-- Starfall would be noise, because the event worth hearing about is the 90 seconds ending.
+--
+-- For a ROTATION spell it makes the edge unreachable. Wrath has no cooldown, so IsOnRealCooldown is
+-- false forever, `_wasOnRealCD` is never armed, and the transition never fires — the "available alert
+-- does nothing on the new filler spells" report. `usable` was unaffected because it polls
+-- IsUsableSpell rather than waiting on an edge, which is why one worked and the other did not.
+--
+-- Flat rather than per-class: an id is unique to one class already, and the lookup happens on a tile
+-- that has long since stopped caring which class list it came from.
+--
+-- Membership is a statement about the SPELL, and every entry here was verified cooldown-less against
+-- Spell.dbc by the same generator that authored the lists. It is not a runtime guess: "have we seen
+-- a real cooldown on this yet" would misfire for every long cooldown the player has not pressed this
+-- session, flashing a 2-minute ability at the end of an unrelated global.
+M.GCD_ONLY_SPELLS = M.GCD_ONLY_SPELLS or {}
+for _, ids in pairs(ROTATION_ADD) do
+  for _, id in ipairs(ids) do M.GCD_ONLY_SPELLS[id] = true end
+end
 
 -- STARTER LAYOUTS, per class and talent tab. Not appended anywhere: this is a lookup the runtime
 -- reads when a starter is applied (M.ApplySpecStarter), listing which of the class's Essential spells
