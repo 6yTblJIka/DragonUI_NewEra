@@ -471,6 +471,23 @@ function L.RegisterPane(key, buildFn)
   L.paneBuilders[key] = buildFn
 end
 
+-- Scrollbar for a pane's named FauxScrollFrame. Every list in this window goes through here
+-- rather than calling BuildCustom directly, because of the strata bump: this window runs at
+-- DIALOG (createWindow below) and BuildCustom parks its bar at HIGH, which is BELOW DIALOG --
+-- so the bar and its arrows rendered behind the window's own background and were invisible on
+-- every list here. Same trap, same fix as the Guild roster/event log and the Social channel
+-- list. The level is taken off the scroll frame so the bar clears the rows it sits beside.
+function L.BuildListBar(scroll, opts)
+  if not (scroll and NE.scrollbar and NE.scrollbar.BuildCustom) then return end
+  local ok, bar = pcall(NE.scrollbar.BuildCustom, scroll, opts)
+  if not (ok and bar) then return end
+  bar:SetFrameStrata("DIALOG")
+  bar:SetFrameLevel((scroll:GetFrameLevel() or 1) + 10)
+  if bar._upBtn then bar._upBtn:SetFrameStrata("DIALOG"); bar._upBtn:SetFrameLevel(bar:GetFrameLevel() + 1) end
+  if bar._downBtn then bar._downBtn:SetFrameStrata("DIALOG"); bar._downBtn:SetFrameLevel(bar:GetFrameLevel() + 1) end
+  return bar
+end
+
 -- Right-side pane host rect shared by both panes: everything right of the rail.
 local function panesHost(f)
   if f.PaneHost then return f.PaneHost end

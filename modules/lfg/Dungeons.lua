@@ -572,7 +572,9 @@ local function buildPane(host)
   -- Hand-built minimal scrollbar (same as the character window's lists). NE.scrollbar.Reskin's
   -- stock-slider re-skin leaves the bar untextured/invisible on 3.3.5a (its atlas sheets aren't
   -- shipped); BuildCustom draws a visible bar. See modules/character/Reputation.lua.
-  if NE.scrollbar and NE.scrollbar.BuildCustom then pcall(NE.scrollbar.BuildCustom, scroll, { x = -8, alwaysShow = true }) end
+  -- Via L.BuildListBar, not BuildCustom directly -- it adds the DIALOG strata bump this window
+  -- needs for the bar to render in front of its own background at all (see Window.lua).
+  L.BuildListBar(scroll, { x = -8, alwaysShow = true })
   scroll:EnableMouseWheel(true)
   scroll:SetScript("OnMouseWheel", function(self, delta)
     local sb = self.ScrollBar

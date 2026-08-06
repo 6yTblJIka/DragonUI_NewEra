@@ -637,7 +637,9 @@ local function buildPane(host)
   -- Hand-built minimal scrollbar (same as the character window's lists). NE.scrollbar.Reskin's
   -- stock-slider re-skin leaves the bar untextured/invisible on 3.3.5a; BuildCustom draws a
   -- visible bar. See modules/character/Reputation.lua.
-  if NE.scrollbar and NE.scrollbar.BuildCustom then pcall(NE.scrollbar.BuildCustom, raidScroll, { x = -8, alwaysShow = true }) end
+  -- Via L.BuildListBar, not BuildCustom directly -- it adds the DIALOG strata bump this window
+  -- needs for the bar to render in front of its own background at all (see Window.lua).
+  L.BuildListBar(raidScroll, { x = -8, alwaysShow = true })
   raidScroll:EnableMouseWheel(true)
   raidScroll:SetScript("OnMouseWheel", function(self, delta)
     local sb = self.ScrollBar
@@ -734,7 +736,7 @@ local function buildPane(host)
   end)
   browseScroll.ScrollBar = _G[BROWSE_SCROLL .. "ScrollBar"]   -- 3.3.5a template doesn't set the parentKey
   -- Hand-built minimal scrollbar (same as the character window's lists) — see raidScroll above.
-  if NE.scrollbar and NE.scrollbar.BuildCustom then pcall(NE.scrollbar.BuildCustom, browseScroll, { x = -8, alwaysShow = true }) end
+  L.BuildListBar(browseScroll, { x = -8, alwaysShow = true })
   browseScroll:EnableMouseWheel(true)
   browseScroll:SetScript("OnMouseWheel", function(self, delta)
     local sb = self.ScrollBar
