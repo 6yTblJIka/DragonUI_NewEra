@@ -408,7 +408,7 @@ local STARTER_BY_CLASS = {
       33745,   -- Lacerate
       779,     -- Swipe (Bear)
       50334,   -- Berserk
-      16857,   -- Faerie Fire (Feral)
+      770,     -- Faerie Fire (Balance)
     },
     [3] = {
       5185,    -- Healing Touch

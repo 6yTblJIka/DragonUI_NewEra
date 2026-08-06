@@ -76,6 +76,7 @@ M.ESSENTIAL_BY_CLASS = {
     603,   -- Curse of Doom (60s DoT)
   },
   DRUID = {
+    770,    -- Faerie Fire (Balance)
     16857,   -- Faerie Fire (Feral) armor debuff
     17116,   -- Nature's Swiftness (Resto 30pt)
     16914,   -- Hurricane (Balance 30pt AoE)
