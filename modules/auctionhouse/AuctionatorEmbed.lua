@@ -831,6 +831,13 @@ local function reskinDialogs()
       hideTexturesByFile(d, "UI-DialogBox-Header")
       darkFill(d, 0.06, 0.06, 0.07, 0.97)
       attachInset(d)
+      -- Red 3-slice on the dialogs' own buttons (Full Scan's Start Scanning/DONE/Reload,
+      -- Advanced Search's Search/Cancel, the buy/cancel confirmations). Window.lua Watches the
+      -- SHELL frame, which covers everything under ExternalPane -- but these dialogs are parented
+      -- to UIParent, not to the shell, so that sweep never reaches them and they kept the stock
+      -- UIPanelButtonTemplate art. Watch (rather than a one-shot sweep) re-runs on every OnShow,
+      -- which also picks up anything Auctionator builds into a dialog lazily.
+      if NE.buttonskin and NE.buttonskin.Watch then pcall(NE.buttonskin.Watch, d) end
     end
   end
   -- Nested results box inside the Full Scan dialog: border only (no second fill on a fill).
