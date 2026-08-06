@@ -97,6 +97,7 @@ modules\character\Honor.lua
 modules\character\Currency.lua
 modules\character\PetPaperDoll.lua
 modules\character\CloseButton.lua
+modules\character\SettingsCog.lua
 modules\character\EditModeRegister.lua
 
 # --- Collections (standalone retail-style Mounts & Pet Journal window) ---

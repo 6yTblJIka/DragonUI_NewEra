@@ -112,6 +112,47 @@ local function guard(label, fn)
 end
 
 -- ----------------------------------------------------------------------------
+-- Body background: stone (default) or dark.
+--
+-- chrome.Apply lays the shared grey-stone rock (FDID 374155) into f.Bg and PC.ApplyModernChrome
+-- tints it to PC.BODY_TINT (0.32) — a DOWNPORT fix for a first-paint colour flash on a different
+-- frame. Full brightness is what every other from-scratch standalone window in this addon shows
+-- (Guild, LFG, Professions, Auction House, Social, Collections, Cooldown Manager), so it's the
+-- default here too and this panel stops being the odd one out.
+--
+-- The tinted look is kept as an option rather than deleted because the argument for it is real and
+-- specific to this window: the character panel is nearly all Inset, so the stone survives only as a
+-- narrow gutter framing dark content, and which of the two reads better there is a matter of taste.
+-- The cog in the top-right corner (SettingsCog.lua) is the control; this is the setting.
+--
+-- Account-wide in NE.db.charPanel — it's a look, not a per-character choice.
+-- ----------------------------------------------------------------------------
+local function applyBodyBackground()
+  local f = CP.frame
+  if not (f and f.Bg and f.Bg.SetVertexColor) then return end
+  if CP.IsDarkBodyBackground() then
+    local t = (NE.panelchrome and NE.panelchrome.BODY_TINT) or { 0.32, 0.32, 0.32 }
+    f.Bg:SetVertexColor(t[1], t[2], t[3])
+  else
+    f.Bg:SetVertexColor(1, 1, 1)
+  end
+end
+CP.ApplyBodyBackground = applyBodyBackground
+
+function CP.IsDarkBodyBackground()
+  local t = NE.db and NE.db.charPanel
+  return (t and t.darkBody) and true or false
+end
+
+function CP.SetDarkBodyBackground(on)
+  if NE.db then
+    NE.db.charPanel = NE.db.charPanel or {}
+    NE.db.charPanel.darkBody = on and true or false
+  end
+  applyBodyBackground()
+end
+
+-- ----------------------------------------------------------------------------
 -- Class-icon portrait. CONTRACT §A0/§A.3: PaperDoll portrait is the CLASS icon
 -- (no spec system on 3.3.5a), drawn from the class-icon atlas (FDID 1662186,
 -- "classicon-<classfile>") registered by Agent F's Assets.lua.
@@ -199,11 +240,9 @@ local function buildFrame()
     end
   end)
 
-  -- chrome.Apply's f.Bg is the shared grey-stone rock (FDID 374155) sized to nearly the whole frame,
-  -- tinted to (0.32,0.32,0.32) by PC.ApplyModernChrome. DO NOT untint it here: on the character panel
-  -- the only place the rock shows is the gutter (title band -> Insets, plus the margins around them),
-  -- and at full brightness that gutter reads as a washed-out grey slab framing the dark insets. The
-  -- chrome tint is what makes it read as near-black and sit behind the content instead of fighting it.
+  -- Body background — the gutter between the title band and the Insets, plus the margins around
+  -- them, which is the only place chrome.Apply's rock sheet (FDID 374155) actually shows here.
+  guard("bodyBg", applyBodyBackground)
 
   -- Own the portrait region: build the cutout texture + seat it in the metal corner, then fill it
   -- with the CLASS icon (and keep it correct across model/portrait events).
