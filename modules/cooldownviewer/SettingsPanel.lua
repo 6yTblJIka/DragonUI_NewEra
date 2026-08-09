@@ -187,12 +187,22 @@ local function build()
     NE.portrait.ApplyCutout(f.portrait, f)
   end
 
+  -- 1.3 = the owner's +30%. Applied as a SCALE, not by growing PANEL_W/H: the grid geometry
+  -- (38px tiles on a 46px pitch, 7 to a row, a 344-wide category) is upstream's probe-confirmed
+  -- layout, and a bigger frame around unchanged tiles would just add margin.
+  --
+  -- That 1.3 now lives in core/Scale.lua as BASE_SCALE["cooldownmanager"], and this window is a
+  -- normal entry in the options tab's Window Scaling list (mode: ui / none / custom). Its default
+  -- mode is "none", which IS PinPixelPerfect(f, 1.3) — identical to the line this replaced, and
+  -- still re-pinned on any UI-scale change. PANEL_SCALE stays as the no-NE.scale fallback.
+  if NE.scale and NE.scale.Apply then
+    if NE.scale.SetFrame then NE.scale.SetFrame("cooldownmanager", f) end
+    NE.scale.Apply("cooldownmanager")
+  elseif NE.FrameUtil and NE.FrameUtil.PinPixelPerfect then
+    NE.FrameUtil.PinPixelPerfect(f, PANEL_SCALE)
+  end
+
   if NE.FrameUtil then
-    -- 1.3 = the owner's +30%. Applied as a SCALE, not by growing PANEL_W/H: the grid geometry
-    -- (38px tiles on a 46px pitch, 7 to a row, a 344-wide category) is upstream's probe-confirmed
-    -- layout, and a bigger frame around unchanged tiles would just add margin. PinPixelPerfect
-    -- folds this into its pixel-snap target and re-applies it on any UI-scale change.
-    if NE.FrameUtil.PinPixelPerfect then NE.FrameUtil.PinPixelPerfect(f, PANEL_SCALE) end
     if NE.FrameUtil.EscClose then NE.FrameUtil.EscClose(PANEL_NAME) end
     if NE.FrameUtil.WirePanelSounds then
       -- Retail plays the class-talent open/close kits; those are retail sound IDs, so the helper's

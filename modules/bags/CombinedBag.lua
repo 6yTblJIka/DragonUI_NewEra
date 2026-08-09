@@ -654,6 +654,15 @@ local function buildChrome()
     frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -25, 85)
   end
 
+  -- Per-window scaling via NE.scale (mode: ui / none / custom; options tab > Window Scaling). Same
+  -- "combinedbag" key PersistWindowPosition uses above. DEFAULTS["combinedbag"] is "ui" = a plain
+  -- SetScale(1.0), i.e. exactly what this window did before it had a setting. Applied AFTER the
+  -- position is restored so the anchor is already in place when the scale lands on it.
+  if NE.scale and NE.scale.Apply then
+    if NE.scale.SetFrame then NE.scale.SetFrame("combinedbag", frame) end
+    NE.scale.Apply("combinedbag")
+  end
+
   return frame
 end
 CB.BuildChrome = buildChrome

@@ -656,6 +656,14 @@ local function createWindow()
     if buy and buy.ResetSearch then pcall(buy.ResetSearch) end
   end)
 
+  -- Per-window scaling via NE.scale (mode: ui / none / custom; options tab > Window Scaling).
+  -- DEFAULTS["auctionhouse"] is "ui" = a plain SetScale(1.0), i.e. exactly what this window did
+  -- before it had a setting.
+  if NE.scale and NE.scale.Apply then
+    if NE.scale.SetFrame then NE.scale.SetFrame("auctionhouse", f) end
+    NE.scale.Apply("auctionhouse")
+  end
+
   if NE.FrameUtil and NE.FrameUtil.WirePanelSounds then
     NE.FrameUtil.WirePanelSounds(f, SOUNDKIT.AUCTION_WINDOW_OPEN, SOUNDKIT.AUCTION_WINDOW_CLOSE)
   end

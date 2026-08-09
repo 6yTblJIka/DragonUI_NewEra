@@ -109,6 +109,14 @@ function NE.FrameUtil.PinPixelPerfect(frame, userScale)
   end
 end
 
+-- Drop a frame back OUT of the re-pin registry. Needed by core/Scale.lua: its "ui"/"custom" modes
+-- are a plain SetScale, but a window that was previously pinned ("No scaling" mode, or a module's
+-- own build-time pin) stays in pinnedFrames forever, so the next UI-scale/resolution change would
+-- silently re-pin it and throw the user's chosen scale away. Unpin on every non-pixel-perfect apply.
+function NE.FrameUtil.Unpin(frame)
+  if frame then pinnedFrames[frame] = nil end
+end
+
 -- Central re-pin: when the user changes UI scale / resolution, re-pin every registered frame.
 local function repinAllFrames()
   for frame, us in pairs(pinnedFrames) do

@@ -36,8 +36,22 @@ local MODULE = "EncounterJournal"
 -- SetScale without touching any internal layout math. A raw frame:SetScale() elsewhere is useless:
 -- pinScale() runs on build/show/reposition and overwrites it, so change the window size HERE.
 -- 2026-07-23: bumped 1.25 → 1.5 (user asked for +20% on top of the previous 1.25).
+--
+-- 2026-08-09: that 1.5 moved into core/Scale.lua as BASE_SCALE["encounterjournal"], and the window
+-- became a normal entry in the options tab's Window Scaling list (mode: ui / none / custom). Its
+-- default mode is "none", which IS PinPixelPerfect(f, 1.5) — so the shipped look is unchanged, and
+-- pinScale() below still means "put this window at whatever size it should currently be", called
+-- from the same three places as before. WINDOW_USER_SCALE stays as the no-NE.scale fallback.
 local WINDOW_USER_SCALE = 1.5
-local function pinScale(f) NE.FrameUtil.PinPixelPerfect(f, WINDOW_USER_SCALE) end
+local function pinScale(f)
+  if not f then return end
+  if NE.scale and NE.scale.Apply then
+    if NE.scale.SetFrame then NE.scale.SetFrame("encounterjournal", f) end
+    NE.scale.Apply("encounterjournal")
+    return
+  end
+  NE.FrameUtil.PinPixelPerfect(f, WINDOW_USER_SCALE)
+end
 
 -- Options gate. Reads profile.modules["ne_"..MODULE].enabled -- the SAME flag DragonUI
 -- Options' Modules tab -> "Advanced - Individual Module Control" section actually writes for

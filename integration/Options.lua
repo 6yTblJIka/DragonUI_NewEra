@@ -137,13 +137,22 @@ local function builder(scroll)
             .. "locked unless that window's mode is set to Custom.")
         local AceGUI = LibStub and LibStub("AceGUI-3.0")
         local MODES = { ui = "Use UI scale", none = "No scaling", custom = "Custom" }
+        -- Keys are core/Scale.lua's window keys; every one of these frames registers itself with
+        -- NE.scale.SetFrame(key, frame) as it builds, so a change here lands on the live window.
+        -- A window that hasn't been opened yet this session simply has no frame registered — the
+        -- setting still persists and applies on its first build.
         local WINDOWS = {
-            { key = "character",   label = "Character" },
-            { key = "spellbook",   label = "Spellbook" },
-            { key = "talents",     label = "Talents" },
-            { key = "professions", label = "Professions" },
-            { key = "social",      label = "Social" },
-            { key = "guild",       label = "Guild" },
+            { key = "character",       label = "Character" },
+            { key = "spellbook",       label = "Spellbook" },
+            { key = "talents",         label = "Talents" },
+            { key = "professions",     label = "Professions" },
+            { key = "social",          label = "Social" },
+            { key = "guild",           label = "Guild" },
+            { key = "lfg",             label = "Looking For Group" },
+            { key = "auctionhouse",    label = "Auction House" },
+            { key = "cooldownmanager", label = "Cooldown Manager" },
+            { key = "encounterjournal", label = "Adventure Guide" },
+            { key = "combinedbag",     label = "Combined Bag" },
         }
 
         -- One window's stacked controls: a centered column header, a mode dropdown, and a custom-scale
