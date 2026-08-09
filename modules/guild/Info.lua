@@ -61,6 +61,17 @@ local function buildWell(parent, name, labelText, anchorTop, height, commitFn, c
   edit:SetScript("OnTextChanged", function(self, userInput) if userInput then self._dirty = true end end)
   scroll:SetScrollChild(edit)
 
+  -- Click anywhere in the well to start editing, not just on the text itself. As a scroll child the
+  -- EditBox is only as tall as the text it holds, so every empty row below the last line was dead
+  -- space that swallowed clicks. Routing the scroll frame's clicks into the box covers the whole well
+  -- without giving the box a fixed height, which would fight the multiline auto-grow the scrolling
+  -- depends on. Guarded on enabled state so a read-only well still refuses focus.
+  scroll:EnableMouse(true)
+  scroll:SetScript("OnMouseDown", function()
+    if edit.IsEnabled and not edit:IsEnabled() then return end
+    edit:SetFocus()
+  end)
+
   return { label = label, scroll = scroll, edit = edit, canEditFn = canEditFn }
 end
 
@@ -89,6 +100,30 @@ function G.SetupInfo(f)
     function() return CanEditGuildInfo and CanEditGuildInfo() end)
 end
 
+-- Apply edit permission to a well, but ONLY on an actual change of state.
+--
+-- EditBox:SetEnabled is a ClassicAPI shim (!!!ClassicAPI/Util/WidgetAPI.lua) and its Enable() path
+-- ends in ClearFocus(). RefreshInfo runs on every GUILD_ROSTER_UPDATE — and this window requests a
+-- fresh roster whenever it opens — so re-applying "enabled" unconditionally tore the cursor out of
+-- the box mid-sentence and the well read as uneditable. Guarding on change means Enable() fires once,
+-- before anyone is typing, instead of on every roster tick.
+--
+-- Enable() also swaps the font object to GameFontWhite, so the well's own font has to be re-applied
+-- after it or the text silently changes size.
+local function applyEditable(well, canEdit)
+  local want = canEdit and true or false
+  if well._editable == want then return end
+  well._editable = want
+
+  local edit = well.edit
+  if edit.SetEnabled then edit:SetEnabled(want)
+  elseif want then edit:Enable()
+  else edit:Disable() end
+
+  edit:SetFontObject("GameFontHighlightSmall")
+  edit:SetTextColor(1, 1, 1)
+end
+
 function G.RefreshInfo()
   local f = G.frame
   local panel = f and f.InfoFrame
@@ -97,16 +132,12 @@ function G.RefreshInfo()
   if panel.MOTD then
     local motd = (GetGuildRosterMOTD and GetGuildRosterMOTD()) or ""
     if not panel.MOTD.edit:HasFocus() then panel.MOTD.edit:SetText(motd) end
-    local canEdit = panel.MOTD.canEditFn and panel.MOTD.canEditFn()
-    panel.MOTD.edit:SetEnabled(canEdit and true or false)
-    panel.MOTD.edit:SetTextColor(1, 1, 1)
+    applyEditable(panel.MOTD, panel.MOTD.canEditFn and panel.MOTD.canEditFn())
   end
   if panel.Info then
     local info = (GetGuildInfoText and GetGuildInfoText()) or ""
     if not panel.Info.edit:HasFocus() then panel.Info.edit:SetText(info) end
-    local canEdit = panel.Info.canEditFn and panel.Info.canEditFn()
-    panel.Info.edit:SetEnabled(canEdit and true or false)
-    panel.Info.edit:SetTextColor(1, 1, 1)
+    applyEditable(panel.Info, panel.Info.canEditFn and panel.Info.canEditFn())
   end
 end
 

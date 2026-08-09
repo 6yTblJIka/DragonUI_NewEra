@@ -88,19 +88,49 @@ local function buildMemberDetail(parent)
   d:SetPoint("TOPLEFT", parent, "TOPRIGHT", -6, -40)
   d:Hide()
 
-  -- Dark backdrop (native DialogBox art — reliable on 3.3.5a).
-  d:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    tile = true, tileSize = 32, edgeSize = 32,
-    insets = { left = 11, right = 12, top = 12, bottom = 11 },
-  })
+  -- NE chrome, matching the event log and Guild Control popups (owner steer 2026-08-09) — replaces
+  -- the native DialogBox backdrop this used to carry.
+  --
+  -- Both the rock body and the nineslice live on an UNDERLAY frame one level below the panel, so all
+  -- of the chrome draws beneath the panel's own regions. That is what avoids the problem Guild Control
+  -- hit, where a nineslice parented to the frame painted its top border over the frame's first line of
+  -- text and needed the whole thing lifted to compensate. Below the content, the border sits at the
+  -- edges where nothing is drawn anyway, so no offsetting is required.
+  if d.SetBackdrop then d:SetBackdrop(nil) end
 
+  local under = CreateFrame("Frame", nil, d)
+  under:EnableMouse(false)
+  under:SetFrameLevel(math.max(0, (d:GetFrameLevel() or 1) - 1))
+  under:SetAllPoints(d)
+  d._neUnder = under
+
+  local body = under:CreateTexture(nil, "BACKGROUND")
+  local rockPath = NE.tex and NE.tex.localFiles and NE.tex.localFiles[374155]
+  body:SetTexture(rockPath or 374155, "REPEAT", "REPEAT")
+  body:SetHorizTile(true); body:SetVertTile(true)
+  -- Asymmetric insets: the square-edge chrome's left border piece is thicker than the other three, so
+  -- an even inset pokes out on the left while falling short on the right and bottom.
+  body:SetPoint("TOPLEFT",     under, "TOPLEFT",      5, -4)
+  body:SetPoint("BOTTOMRIGHT", under, "BOTTOMRIGHT", -2,  2)
+
+  if NE.nineslice and NE.nineslice.ApplyLayout then
+    NE.nineslice.ApplyLayout(under, "ButtonFrameTemplateNoPortrait")
+  end
+
+  -- Same close-button treatment and placement as the event log's (modules/guild/Window.lua): the old
+  -- -4,-4 inset predates this panel having a title band, and left the X straddling the top border
+  -- rather than sitting in it (owner-reported 2026-08-09).
   local close = CreateFrame("Button", nil, d, "UIPanelCloseButton")
-  close:SetPoint("TOPRIGHT", d, "TOPRIGHT", -4, -4)
+  if NE.panelchrome and NE.panelchrome.ModernizeCloseButton then
+    pcall(NE.panelchrome.ModernizeCloseButton, close, { frameLevelBump = 10 })
+  end
+  close:SetPoint("TOPRIGHT", d, "TOPRIGHT", 1, 0)
 
+  -- -30, not -18: the nineslice's title band occupies roughly the top 22px, and at -18 the name sat
+  -- on it and read as clipped (owner-reported 2026-08-09). Everything below chains off this anchor,
+  -- so moving it moves the whole panel's content, and the height re-fits itself on show.
   d.Name = d:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  d.Name:SetPoint("TOPLEFT", d, "TOPLEFT", 18, -18)
+  d.Name:SetPoint("TOPLEFT", d, "TOPLEFT", 18, -30)
   d.Name:SetWidth(160); d.Name:SetJustifyH("LEFT")
 
   d.Level = d:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -141,22 +171,85 @@ local function buildMemberDetail(parent)
   onote:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
   d.OfficerEdit = onote
 
-  -- Action buttons: Promote / Demote / Remove / Group Invite.
+  -- Both note boxes get the NE recessed well in place of InputBoxTemplate's own Left/Middle/Right
+  -- border art. That art was rendering broken on the officer box — its right cap detached and floated
+  -- clear of a too-short middle (owner-reported 2026-08-09; visible in earlier screenshots too, so it
+  -- predates the chrome change). Rather than chase why one instance of a shared template mis-stretches,
+  -- drop the template art on both and use the same flat-fill-plus-inset the Guild Information wells and
+  -- the Guild Control dropdown already use — which is also what the rest of this panel now looks like.
+  local function wellify(edit)
+    for _, r in ipairs({ edit:GetRegions() }) do
+      if r.GetObjectType and r:GetObjectType() == "Texture" then r:Hide() end
+    end
+    local bg = edit:CreateTexture(nil, "BACKGROUND")
+    bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    bg:SetVertexColor(0.06, 0.06, 0.07, 0.90)
+    bg:SetPoint("TOPLEFT",     edit, "TOPLEFT",     -4,  2)
+    bg:SetPoint("BOTTOMRIGHT", edit, "BOTTOMRIGHT",  4, -2)
+    if NE.nineslice and NE.nineslice.AttachInset then
+      pcall(NE.nineslice.AttachInset, edit, -4, 2, 4, -2)
+    end
+  end
+  wellify(note)
+  wellify(onote)
+
+  -- Rank up/down arrows, sitting on the Rank line itself — how stock 3.3.5a presents this (owner
+  -- steer 2026-08-09, with a reference screenshot of the native GuildMemberDetailFrame). Replaces the
+  -- pair of full-width Promote/Demote buttons that used to sit along the bottom: rank is a property of
+  -- the member shown on that row, not a bottom-of-panel action like Remove or Group Invite.
+  --
+  -- Art is the addon's own minimal-scrollbar arrow atlas (core/NineSliceLayouts.lua), the same set the
+  -- list scrollbars use, applied in the same normal/pushed/disabled/highlight pattern as
+  -- core/ScrollbarReskin.lua's arrow reskin. 17x11 is that atlas's native size.
+  -- Drawn larger than the atlas's native 17x11 and tinted gold: at native size in their default grey
+  -- they were hard to pick out against the rock body (owner-reported 2026-08-09). Gold is the accent
+  -- this UI already uses for interactive text, and is what the stock client uses for these same arrows.
+  local ARROW_W, ARROW_H = 22, 14
+  local function rankArrow(normalAtlas, overAtlas, downAtlas, onClick)
+    local b = CreateFrame("Button", nil, d)
+    b:SetSize(ARROW_W, ARROW_H)
+    b:EnableMouse(true)
+    local function tex(setter, atlas, desat)
+      local t = b:CreateTexture(nil, "ARTWORK")
+      if NE.tex and NE.tex.SetAtlas then NE.tex.SetAtlas(t, atlas, false) end
+      if desat then t:SetDesaturated(true) end
+      t:SetAllPoints(b)
+      setter(b, t)
+      return t
+    end
+    tex(b.SetNormalTexture, normalAtlas, false):SetVertexColor(1, 0.82, 0)
+    tex(b.SetPushedTexture, downAtlas,   false):SetVertexColor(1, 0.82, 0)
+    tex(b.SetDisabledTexture, normalAtlas, true)
+    local h = tex(b.SetHighlightTexture, overAtlas, false)
+    h:SetBlendMode("ADD")
+    b:SetScript("OnClick", onClick)
+    return b
+  end
+
+  d.Promote = rankArrow("minimal-scrollbar-arrow-top", "minimal-scrollbar-arrow-top-over",
+    "minimal-scrollbar-arrow-top-down",
+    function() if d._name and GuildPromote then GuildPromote(d._name); G.RefreshRoster() end end)
+  d.Promote:SetPoint("LEFT", d.Rank, "RIGHT", 10, 0)
+
+  d.Demote = rankArrow("minimal-scrollbar-arrow-bottom", "minimal-scrollbar-arrow-bottom-over",
+    "minimal-scrollbar-arrow-bottom-down",
+    function() if d._name and GuildDemote then GuildDemote(d._name); G.RefreshRoster() end end)
+  d.Demote:SetPoint("LEFT", d.Promote, "RIGHT", 6, 0)
+
+  -- Action buttons: Remove / Group Invite.
   local function actionButton(text, w)
     local b = CreateFrame("Button", nil, d, "UIPanelButtonTemplate")
     b:SetSize(w or 90, 20); b:SetText(text)
     return b
   end
-  d.Promote = actionButton(GUILD_PROMOTE or "Promote")
-  d.Promote:SetPoint("BOTTOMLEFT", d, "BOTTOMLEFT", 16, 40)
-  d.Promote:SetScript("OnClick", function() if d._name and GuildPromote then GuildPromote(d._name); G.RefreshRoster() end end)
 
-  d.Demote = actionButton(GUILD_DEMOTE or "Demote")
-  d.Demote:SetPoint("LEFT", d.Promote, "RIGHT", 4, 0)
-  d.Demote:SetScript("OnClick", function() if d._name and GuildDemote then GuildDemote(d._name); G.RefreshRoster() end end)
-
+  -- Anchored under the last visible note box rather than to the panel's bottom edge. The panel had a
+  -- fixed 300px height sized for its old two-row button block, which left a large dead gap under the
+  -- officer note once that block became the rank arrows (owner-reported 2026-08-09). Hanging the row
+  -- off the content also means it follows when the officer note is hidden for members who cannot view
+  -- it, instead of stranding the buttons further down.
   d.Invite = actionButton(GROUP_INVITE or "Invite")
-  d.Invite:SetPoint("BOTTOMLEFT", d.Promote, "TOPLEFT", 0, 6)
+  d.Invite:SetPoint("TOPLEFT", onote, "BOTTOMLEFT", -6, -18)
   d.Invite:SetScript("OnClick", function() if d._name and InviteUnit then InviteUnit(d._name) end end)
 
   d.Remove = actionButton(REMOVE or "Remove")
@@ -172,7 +265,7 @@ end
 local function showMemberDetail(f, index)
   local d = f.MemberDetail
   if not d then return end
-  local name, rank, _, level, _, zone, note, officernote, online, _, classFile = GetGuildRosterInfo(index)
+  local name, rank, rankIndex, level, _, zone, note, officernote, online, _, classFile = GetGuildRosterInfo(index)
   if not name then d:Hide(); return end
   d._index, d._name = index, name
   d.Name:SetText(name); d.Name:SetTextColor(classColor(classFile))
@@ -194,8 +287,36 @@ local function showMemberDetail(f, index)
 
   d.Promote:SetShown(CanGuildPromote and CanGuildPromote() and true or false)
   d.Demote:SetShown(CanGuildDemote and CanGuildDemote() and true or false)
+
+  -- Grey out at the ends of the rank ladder, as the stock client does. rankIndex is 0-based with 0 =
+  -- guild master, so:
+  --   * promote stops at 1 — one more step would make the member guild master, which is a different
+  --     action entirely (GuildSetLeader) and would be refused server-side anyway;
+  --   * demote stops at the last rank, and the guild master cannot be demoted at all.
+  -- GuildControlGetNumRanks() only answers for the guild master, so when it reads 0 the bottom of the
+  -- ladder is unknowable and demote is left enabled rather than wrongly greyed for an officer.
+  local numRanks = (GuildControlGetNumRanks and GuildControlGetNumRanks()) or 0
+  local function setArrowEnabled(btn, ok)
+    if ok then btn:Enable() else btn:Disable() end
+  end
+  setArrowEnabled(d.Promote, rankIndex and rankIndex > 1)
+  setArrowEnabled(d.Demote,  rankIndex and rankIndex > 0 and (numRanks <= 0 or rankIndex < numRanks - 1))
   d.Remove:SetShown(CanGuildRemove and CanGuildRemove() and true or false)
+
+  -- Re-anchor the button row under whichever note box is actually the last one visible.
+  d.Invite:ClearAllPoints()
+  d.Invite:SetPoint("TOPLEFT", canViewOfficer and d.OfficerEdit or d.NoteEdit, "BOTTOMLEFT", -6, -18)
+
   d:Show()
+
+  -- Fit the panel to its content. Measured after Show rather than computed from the anchor constants,
+  -- because the officer note block is conditional — a fixed height is either too tall without it or
+  -- too short with it. GetBottom() reports nothing until the frame has been laid out, hence deferred.
+  local function fitHeight()
+    local top, bottom = d:GetTop(), d.Invite:GetBottom()
+    if top and bottom and top > bottom then d:SetHeight(top - bottom + 16) end
+  end
+  if C_Timer and C_Timer.After then C_Timer.After(0, fitHeight) else fitHeight() end
 end
 
 -- ---------------------------------------------------------------------------
@@ -223,7 +344,10 @@ local function openRosterMenu(idx)
   menu[#menu + 1] = { text = IGNORE or "Ignore", notCheckable = true,
     func = function() if AddIgnore then AddIgnore(name) end end }
   if CanGuildPromote and CanGuildPromote() then
-    menu[#menu + 1] = { text = GUILD_PROMOTE or "Promote", notCheckable = true,
+    -- Not GUILD_PROMOTE: on this client that global reads "Promote to Guildmaster", which is not what
+    -- GuildPromote() does — it moves the member up ONE rank. Promoting to guild master is a separate
+    -- action (GuildSetLeader) that this module does not offer.
+    menu[#menu + 1] = { text = "Promote", notCheckable = true,
       func = function() if GuildPromote then GuildPromote(name) end; G.RefreshRoster() end }
   end
   if CanGuildDemote and CanGuildDemote() then
