@@ -791,10 +791,18 @@ function AH.BuildBrowsePane(parent)
   local applySort -- assigned below once the paging helpers it drives exist
   local headerButtons = {}
 
+  -- Right-anchored header `x` values are chosen so the header text's right edge lands exactly on its
+  -- column's right edge in the rows below: rows are inset -30 from `list`, their own content another
+  -- -8 (or -96 for Lvl), so -38 / -126 here. ("Available" previously sat at -80, floating 42px left
+  -- of the numbers it labels -- with a Lvl column now next to it that gap reads as a misprint.)
   local headers = {
     { text = AUCTION_HOUSE_BROWSE_HEADER_PRICE or "Price", x = 10, w = 120, just = "LEFT", key = "price" },
     { text = AUCTION_HOUSE_BROWSE_HEADER_NAME or NAME or "Name", x = 180, w = 260, just = "LEFT", key = "name" },
-    { text = AUCTION_HOUSE_BROWSE_HEADER_QUANTITY or "Available", x = -80, w = 72, just = "RIGHT", right = true, key = "qty" },
+    -- "Lvl" (the stock AH's own name for the required-level column) rather than a spelled-out
+    -- "Req. Level": the same column has to fit the much tighter item-detail header strip below, and
+    -- one label across both views beats a wide one here and an abbreviation there.
+    { text = "Lvl", x = -126, w = 64, just = "RIGHT", right = true, key = "level" },
+    { text = AUCTION_HOUSE_BROWSE_HEADER_QUANTITY or "Available", x = -38, w = 72, just = "RIGHT", right = true, key = "qty" },
   }
 
   for i = 1, #headers do
@@ -954,6 +962,21 @@ function AH.BuildBrowsePane(parent)
     return tostring(copper)
   end
 
+  -- Required-level cell for both the aggregate results list and the item-detail listing rows.
+  -- Returns text + colour: "-" for the level-1 / no-requirement case (same "nothing to show here"
+  -- glyph moneyText uses), and red when the requirement is above the player's own level, matching
+  -- the stock Auction House's Lvl column.
+  local function levelText(level)
+    if not level or level <= 1 then return "-", 1, 1, 1 end
+    local playerLevel = UnitLevel and UnitLevel("player") or 0
+    if playerLevel > 0 and level > playerLevel then
+      local c = RED_FONT_COLOR
+      if c then return tostring(level), c.r, c.g, c.b end
+      return tostring(level), 1, 0.1, 0.1
+    end
+    return tostring(level), 1, 1, 1
+  end
+
   local listRows = {}     -- every auction the scan collected, across all server pages
   local listTotal = 0     -- auctions the server says match, across all server pages
   local displayRows = {}  -- listRows collapsed to one entry per item name
@@ -1091,7 +1114,9 @@ function AH.BuildBrowsePane(parent)
       -- "levelColumnName" slot the generic retail/Wowpedia signature has): name, texture, count,
       -- quality, canUse, level, minBid, minIncrement, buyoutPrice, bidAmount, highestBidder, owner,
       -- sold. minBid is position 7 and buyoutPrice is position 9 on THIS client.
-      local name, texture, count, quality, _, _, minBid, _, buyoutPrice = GetAuctionItemInfo("list", index)
+      -- `level` (slot 6) is the item's REQUIRED level on this client, not its item level -- it's what
+      -- the stock AH's own "Lvl" column shows.
+      local name, texture, count, quality, _, level, minBid, _, buyoutPrice = GetAuctionItemInfo("list", index)
       if not name then
         break
       end
@@ -1104,6 +1129,7 @@ function AH.BuildBrowsePane(parent)
         texture = texture,
         quality = quality,
         count = count,
+        level = level,
         minBid = minBid,
         buyoutPrice = buyoutPrice,
         link = link,
@@ -1130,6 +1156,9 @@ function AH.BuildBrowsePane(parent)
         order[#order + 1] = g
       end
       g.link = g.link or r.link
+      -- Required level is a property of the item, so it's uniform across a group by construction --
+      -- first non-nil wins (the server can leave it nil on a row it hasn't filled in yet).
+      g.level = g.level or r.level
       g.count = g.count + (r.count or 1)
       if r.buyoutPrice and r.buyoutPrice > 0 then
         if not g.minBuyout or r.buyoutPrice < g.minBuyout then g.minBuyout = r.buyoutPrice end
@@ -1209,9 +1238,15 @@ function AH.BuildBrowsePane(parent)
 
     local name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     name:SetPoint("LEFT", icon, "RIGHT", 4, 0)
-    name:SetPoint("RIGHT", row, "RIGHT", -90, 0)
+    name:SetPoint("RIGHT", row, "RIGHT", -148, 0)
     name:SetJustifyH("LEFT")
     row.Name = name
+
+    local level = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    level:SetPoint("RIGHT", row, "RIGHT", -96, 0)
+    level:SetWidth(44)
+    level:SetJustifyH("RIGHT")
+    row.Level = level
 
     local qty = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     qty:SetPoint("RIGHT", row, "RIGHT", -8, 0)
@@ -1292,6 +1327,9 @@ function AH.BuildBrowsePane(parent)
         if row.Icon then
           row.Icon:SetTexture(data.texture or "Interface\\Icons\\INV_Misc_QuestionMark")
         end
+        local lvText, lr, lg, lb = levelText(data.level)
+        row.Level:SetText(lvText)
+        row.Level:SetTextColor(lr, lg, lb)
         row.Qty:SetText(data.count and tostring(data.count) or "1")
         row:Show()
       else
@@ -1536,6 +1574,8 @@ function AH.BuildBrowsePane(parent)
         if av == nil then av, bv = 0, 0 end
       elseif key == "qty" then
         av, bv = a.count or 0, b.count or 0
+      elseif key == "level" then
+        av, bv = a.level or 0, b.level or 0
       else
         av, bv = a.name or "", b.name or ""
       end
@@ -1917,18 +1957,26 @@ function AH.BuildBrowsePane(parent)
   detailHeaderStrip:SetHeight(21)
 
   -- Auctionator-style column order: the per-item price leads (it's the number listings are
-  -- compared by), then the whole-stack Buyout and Current Bid, then a Quantity column wide enough
-  -- for a grouped row's "6 stacks of 20" breakdown. Per Item and Buyout are BOTH always visible --
-  -- swapping one display into the other's column (an earlier iteration) made it impossible to see
-  -- what a whole stack costs while comparing unit prices. There is no Seller column anymore: a
-  -- grouped row can span several sellers, so seller info lives in the row hover tooltip instead
-  -- (see ensureDetailRow), where a group can list all of them.
+  -- compared by), then the whole-stack Buyout and Current Bid, then the item's required level, a
+  -- Quantity column wide enough for a grouped row's "6 stacks of 20" breakdown, and the Seller.
+  -- Per Item and Buyout are BOTH always visible -- swapping one display into the other's column (an
+  -- earlier iteration) made it impossible to see what a whole stack costs while comparing unit
+  -- prices. Seller shows "Multiple" on a grouped row that spans several sellers; the row hover
+  -- tooltip (see ensureDetailRow) is still where the full list of them lives.
+  --
+  -- The seven columns only fit across the ~575px row if the three money columns give up the slack
+  -- they used to carry (110 -> 92), so every x/w below is load-bearing against its neighbours.
+  -- Header x values match each column's own offset in ensureDetailRow plus the rows' 6px inset;
+  -- Time Left's right anchor is -38 (rows are inset -30 from detailList, their text another -8),
+  -- not the -80 it previously used, which floated the label 42px clear of its own column.
   local detailCols = {
-    { text = "Per Item",                                               x = 8,   w = 110, just = "RIGHT" },
-    { text = AUCTION_HOUSE_HEADER_BUYOUT or BUYOUT or "Buyout",        x = 128, w = 110, just = "RIGHT" },
-    { text = AUCTION_HOUSE_HEADER_CURRENT_BID or BID or "Current Bid", x = 248, w = 110, just = "RIGHT" },
-    { text = AUCTION_HOUSE_HEADER_QUANTITY or "Quantity",              x = 372, w = 150, just = "LEFT" },
-    { text = AUCTION_HOUSE_HEADER_TIME_LEFT or "Time Left",            x = -80, w = 72,  just = "RIGHT", right = true },
+    { text = "Per Item",                                               x = 6,   w = 92, just = "RIGHT" },
+    { text = AUCTION_HOUSE_HEADER_BUYOUT or BUYOUT or "Buyout",        x = 104, w = 92, just = "RIGHT" },
+    { text = AUCTION_HOUSE_HEADER_CURRENT_BID or BID or "Current Bid", x = 202, w = 92, just = "RIGHT" },
+    { text = "Lvl",                                                    x = 300, w = 36, just = "RIGHT" },
+    { text = AUCTION_HOUSE_HEADER_QUANTITY or "Quantity",              x = 344, w = 82, just = "LEFT" },
+    { text = AUCTION_HOUSE_HEADER_SELLER or "Seller",                  x = 430, w = 76, just = "LEFT" },
+    { text = AUCTION_HOUSE_HEADER_TIME_LEFT or "Time Left",            x = -38, w = 62, just = "RIGHT", right = true },
   }
   for i = 1, #detailCols do
     local h = detailCols[i]
@@ -2044,37 +2092,52 @@ function AH.BuildBrowsePane(parent)
       hl:SetBlendMode("ADD")
     end
 
+    -- Offsets here are the source of truth the detailCols header x values are derived from; keep
+    -- the two in step when touching either.
     local each = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     each:SetPoint("LEFT", row, "LEFT", 0, 0)
-    each:SetWidth(116)
+    each:SetWidth(92)
     each:SetJustifyH("RIGHT")
     row.Each = each
 
     local buyout = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    buyout:SetPoint("LEFT", row, "LEFT", 122, 0)
-    buyout:SetWidth(114)
+    buyout:SetPoint("LEFT", row, "LEFT", 98, 0)
+    buyout:SetWidth(92)
     buyout:SetJustifyH("RIGHT")
     row.Buyout = buyout
 
     local bid = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    bid:SetPoint("LEFT", row, "LEFT", 242, 0)
-    bid:SetWidth(114)
+    bid:SetPoint("LEFT", row, "LEFT", 196, 0)
+    bid:SetWidth(92)
     bid:SetJustifyH("RIGHT")
     row.Bid = bid
 
+    local level = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    level:SetPoint("LEFT", row, "LEFT", 294, 0)
+    level:SetWidth(36)
+    level:SetJustifyH("RIGHT")
+    row.Level = level
+
     local qty = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    qty:SetPoint("LEFT", row, "LEFT", 370, 0)
-    qty:SetPoint("RIGHT", row, "RIGHT", -84, 0)
+    qty:SetPoint("LEFT", row, "LEFT", 338, 0)
+    qty:SetWidth(82)
     qty:SetJustifyH("LEFT")
     row.Qty = qty
 
+    local seller = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    seller:SetPoint("LEFT", row, "LEFT", 424, 0)
+    seller:SetWidth(76)
+    seller:SetJustifyH("LEFT")
+    row.Seller = seller
+
     local time = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     time:SetPoint("RIGHT", row, "RIGHT", -8, 0)
-    time:SetWidth(76)
+    time:SetWidth(62)
     time:SetJustifyH("RIGHT")
     row.Time = time
 
-    -- Seller info moved off the row into this tooltip (a grouped row can span several sellers).
+    -- The Seller column only has room for one name, so a grouped row spanning several sellers shows
+    -- "Multiple" and defers the full list to this tooltip.
     row:SetScript("OnEnter", function(self)
       local d = self._data
       if not d then return end
@@ -2145,12 +2208,12 @@ function AH.BuildBrowsePane(parent)
     local wantName = detail.CurrentItem and detail.CurrentItem.name
     for i = 1, batch do
       -- Same 13-value field order as capturePageAuctions above.
-      local name, _, count, _, _, _, minBid, minInc, buyout, bidAmt, _, owner = GetAuctionItemInfo("list", i)
+      local name, _, count, _, _, level, minBid, minInc, buyout, bidAmt, _, owner = GetAuctionItemInfo("list", i)
       if name and (not wantName or name == wantName) then
         local cur = (bidAmt and bidAmt > 0) and bidAmt or minBid
         local tl = GetAuctionItemTimeLeft and GetAuctionItemTimeLeft("list", i)
         out[#out + 1] = {
-          index = i, count = count or 1,
+          index = i, count = count or 1, level = level,
           curBid = cur, nextBid = (cur or 0) + (minInc or 0),
           buyout = buyout, owner = owner,
           hasBid = (bidAmt and bidAmt > 0) and true or false,
@@ -2224,6 +2287,30 @@ function AH.BuildBrowsePane(parent)
     return out
   end
 
+  -- Seller cell. A grouped row keeps `owner` only while every member shares it (see the grouping
+  -- above), so fall back to its `owners` list: still one distinct name after de-duping (a seller
+  -- posting six identical stacks is the common case) shows that name, genuinely mixed shows
+  -- "Multiple", and all-unknown shows nothing -- owner comes back nil on this client until the
+  -- server fills it in, and "?" on a whole page of fresh listings reads like an error.
+  local function sellerText(d)
+    if d.owner and d.owner ~= "" then return d.owner end
+    local owners = d.owners
+    if owners then
+      local seen, count, last = {}, 0, nil
+      for i = 1, #owners do
+        local s = owners[i]
+        if s and s ~= "" and not seen[s] then
+          seen[s] = true
+          count = count + 1
+          last = s
+        end
+      end
+      if count == 1 then return last end
+      if count > 1 then return "Multiple" end
+    end
+    return ""
+  end
+
   refreshDetailRows = function()
     detailRowsData = readDetailPage()
     local drawCount = #detailRowsData
@@ -2275,11 +2362,15 @@ function AH.BuildBrowsePane(parent)
         row.Each:SetText(moneyText(math.ceil((data.buyout or 0) / per)))
         row.Buyout:SetText(moneyText(data.buyout or 0))
         row.Bid:SetText(moneyText(data.curBid or 0))
+        local lvText, lr, lg, lb = levelText(data.level)
+        row.Level:SetText(lvText)
+        row.Level:SetTextColor(lr, lg, lb)
         if (data.num or 1) > 1 then
           row.Qty:SetText(string.format("%d stacks of %d", data.num, data.count or 1))
         else
           row.Qty:SetText(tostring(data.count or 1))
         end
+        row.Seller:SetText(sellerText(data))
         row.Time:SetText(data.timeText or "")
         if row.Sel then row.Sel:SetShown(data == detailSelected) end
         row:Show()
