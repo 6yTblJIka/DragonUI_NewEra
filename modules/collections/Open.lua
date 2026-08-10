@@ -24,6 +24,10 @@ BINDING_NAME_NEWERA_TOGGLECOLLECTIONS = BINDING_NAME_NEWERA_TOGGLECOLLECTIONS or
 local DEFAULT_KEY = "SHIFT-P"
 
 local function applyDefaultBinding()
+  -- Not while the module is off (its default, since DragonUI ships its own collections UI) — taking
+  -- SHIFT-P over for a window that refuses to open would just eat the key. The latch below is never
+  -- set in that case, so enabling the module later still applies the default on the next login.
+  if C.IsEnabled and not C.IsEnabled() then return end
   local db = NE.db
   if not db or db.collectionsKeybindApplied then return end
   if InCombatLockdown and InCombatLockdown() then return end   -- SetBinding is blocked in combat; retry next login

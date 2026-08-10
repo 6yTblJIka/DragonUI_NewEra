@@ -621,6 +621,11 @@ local BLIZ_TAB_TO_NAME = {
 }
 
 function CP.Toggle(show, whichTab)
+  -- The module ships OFF (DragonUI has its own character window) and "disabled" means "never booted".
+  -- This function builds the frame lazily, so the callers that live outside the boot dispatcher —
+  -- DragonUI's ModuleRegistry Enable/Disable and the /dnetest harness, both wired from
+  -- registerWithDragon() at file scope — would otherwise raise a panel whose sub-modules never ran.
+  if NE.modules and NE.modules.IsEnabled and not NE.modules.IsEnabled(MODULE) then return end
   local f = CP.frame or buildFrame()
   if not f then return end
 
@@ -719,9 +724,11 @@ CP.Boot = boot
 if NE.modules and NE.modules.Register then
   NE.modules.Register{
     name    = MODULE,
-    default = true,
+    default = false,  -- Default OFF: DragonUI now ships its own character window, so ours would be a
+                      -- second replacement fighting for the same frame. Players opt in from the
+                      -- "Windows" section of the options tab (integration/Options.lua).
     label   = "Character Panel",
-    desc    = "The modern Dragonflight character window. Disable to keep the stock Blizzard frame.",
+    desc    = "The modern Dragonflight character window. Off by default because DragonUI ships its own.",
     events  = { "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD" },
     onBoot  = function() boot() end,
   }

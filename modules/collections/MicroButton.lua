@@ -183,7 +183,16 @@ local function reposition()
 end
 NE.collections.RefreshMicroButton = reposition
 
+-- The module ships disabled (DragonUI has its own collections UI), and this file's frames are built
+-- outside the module dispatcher — so gate here too, or a disabled module still leaves a dead button
+-- in the micromenu and shoves the whole Character..LFD cluster one slot left for nothing.
+local function enabled()
+  local C = NE.collections
+  return not (C and C.IsEnabled) or C.IsEnabled()
+end
+
 local function init()
+  if not enabled() then return end
   create()
   reposition()
 end

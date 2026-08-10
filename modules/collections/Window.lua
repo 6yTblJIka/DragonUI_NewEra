@@ -28,6 +28,16 @@ local C = NE.collections
 local FRAME_NAME = "NE_CollectionsFrame"
 local MODULE     = "Collections"
 
+-- Enable gate. The module is registered default-OFF (DragonUI ships its own collections UI), and
+-- "disabled" means "never booted" — but the show/toggle entry points below build the window lazily,
+-- so a keybind or micro-button click would resurrect it past the boot gate. Every entry point checks
+-- here instead. Reads NE.modules so the registered default applies when nothing is stored yet.
+local function isModuleEnabled()
+  if not (NE.modules and NE.modules.IsEnabled) then return true end
+  return NE.modules.IsEnabled(MODULE) and true or false
+end
+C.IsEnabled = isModuleEnabled
+
 -- Geometry (tunable). Portrait frame with a ~24px title band; a top strip for search/count/filter/
 -- summon; twin recessed insets (narrow list on the left, wide model+info on the right); a bottom
 -- strip for the action button. Bottom tabs hang BELOW the frame, character-panel style.
@@ -325,6 +335,7 @@ C.BuildWindow = buildWindow
 -- Show / hide / toggle.
 -- ---------------------------------------------------------------------------
 function C.SetShown(shown)
+  if not isModuleEnabled() then return end
   local f = C.frame or buildWindow()
   if not f then return end
   if shown then
@@ -338,6 +349,7 @@ function C.Open()   C.SetShown(true) end
 function C.Show()   C.SetShown(true) end
 function C.Hide()   C.SetShown(false) end
 function C.Toggle()
+  if not isModuleEnabled() then return end
   local f = C.frame or buildWindow()
   if not f then return end
   if f:IsShown() then C.SetShown(false) else C.SetShown(true) end
@@ -364,10 +376,11 @@ C.Boot = boot
 
 if NE.modules and NE.modules.Register then
   NE.modules.Register(MODULE, {
-    default  = true,
+    default  = false,  -- Default OFF: DragonUI now ships its own collections UI. Players opt in from
+                       -- the "Windows" section of the options tab (integration/Options.lua).
     label    = "Collections",
     category = "Windows",
-    desc     = "The modern Dragonflight Collections window (Mounts & Pet Journal). Opens on the companion keybind.",
+    desc     = "The modern Dragonflight Collections window (Mounts & Pet Journal). Off by default because DragonUI ships its own.",
     events   = {
       "PLAYER_LOGIN", "COMPANION_LEARNED", "COMPANION_UPDATE", "COMPANION_UNLEARNED",
     },

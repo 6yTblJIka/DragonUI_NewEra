@@ -70,8 +70,13 @@ local function builder(scroll)
         -- the combined bag itself IS toggleable so players can turn our bag UI off entirely and fall
         -- back to the stock Blizzard bags. To also re-expose the per-window restyle, add a row:
         --   { id = "bags", label = "Retail bags" }
+        -- "Character panel" and "Collections" both ship OFF: DragonUI now has its own versions of
+        -- those two windows, so ours are opt-in rather than a second replacement over the top.
         local WINDOWS = {
-            { id = "character",   label = "Character panel" },
+            { id = "character",   label = "Character panel",
+              desc = "Our Dragonflight character window. OFF by default — DragonUI ships its own. Reload (/reload) to apply." },
+            { id = "Collections", label = "Collections (Mounts & Pets)",
+              desc = "Our Mounts & Pet Journal window, on SHIFT-P and its own micro button. OFF by default — DragonUI ships its own. Reload (/reload) to apply." },
             { id = "Spellbook",   label = "Spellbook" },
             { id = "Talents",     label = "Talents" },
             { id = "Professions", label = "Professions" },
