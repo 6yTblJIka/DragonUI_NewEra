@@ -259,6 +259,11 @@ local function buildWindow()
     f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
   end
 
+  -- Join the panel row (core/PanelManager.lua). The centre default above is kept as this window's
+  -- HOME: the manager only tiles it when a second window is on screen with it (the Character panel
+  -- and the Adventure Guide both open near the same centre).
+  if NE.panelmgr and NE.panelmgr.Register then NE.panelmgr.Register(f) end
+
   -- Open/close sounds via a child watcher (never on the frame itself).
   guard("sounds", function()
     if NE.FrameUtil and NE.FrameUtil.WirePanelSounds then

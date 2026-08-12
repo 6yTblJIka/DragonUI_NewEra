@@ -664,6 +664,12 @@ local function createWindow()
     NE.scale.Apply("auctionhouse")
   end
 
+  -- Join the panel row (core/PanelManager.lua). This window is 800 wide and shares its default
+  -- LEFT+16 anchor with Social / Guild / LFG, which is what github issue #49 reported: open the
+  -- friends list at the auctioneer and it rendered inside this frame. Registered AFTER the size,
+  -- the default SetPoint and the drag scripts, all of which the manager reads.
+  if NE.panelmgr and NE.panelmgr.Register then NE.panelmgr.Register(f) end
+
   if NE.FrameUtil and NE.FrameUtil.WirePanelSounds then
     NE.FrameUtil.WirePanelSounds(f, SOUNDKIT.AUCTION_WINDOW_OPEN, SOUNDKIT.AUCTION_WINDOW_CLOSE)
   end

@@ -37,6 +37,10 @@ Locales\Load_Locales.xml
 # --- core: downported NewEra Core chrome toolkit (owner: Core/Chrome Engineer) ---
 core\FrameUtil.lua
 core\Scale.lua
+# PanelManager = the one coordinator for the standalone panel windows (they all hard-code a default
+# anchor and several picked the same one — issue #49). Loads before every module, since each window
+# builder calls NE.panelmgr.Register at the end of its build.
+core\PanelManager.lua
 core\Texture.lua
 core\NineSlice.lua
 core\NineSliceLayouts.lua

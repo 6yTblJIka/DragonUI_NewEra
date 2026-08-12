@@ -255,6 +255,12 @@ local function buildWindow()
   f:Hide()
   SB.frame = f
 
+  -- Join the panel row (core/PanelManager.lua). Registered `watch` in its DEFAULTS entry: this
+  -- frame's OnShow/OnHide carry a SecureHandlerWrapScript (the ESC binding below), so the manager
+  -- watches an invisible child instead of hooking those scripts, and never repositions
+  -- synchronously inside the secure show.
+  if NE.panelmgr and NE.panelmgr.Register then NE.panelmgr.Register(f) end
+
   -- Open/close sounds (igCharacterInfoOpen/Close), via a child watcher (never on the frame).
   guard("sounds", function()
     if NE.FrameUtil and NE.FrameUtil.WirePanelSounds then

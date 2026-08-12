@@ -1304,6 +1304,10 @@ local function createWindow()
     NE.panelchrome.PinPixelPerfect(f)
   end
 
+  -- Join the panel row (core/PanelManager.lua), which now owns the "open to the right of whatever
+  -- is already up" rule this module used to implement by hand against the Social window alone.
+  if NE.panelmgr and NE.panelmgr.Register then NE.panelmgr.Register(f) end
+
   G.SetDisplayMode("ROSTER")   -- owner steer 2026-07-15: Roster is the default tab, not Chat
   return f
 end
@@ -1311,14 +1315,6 @@ end
 function G.Show()
   if not isModuleEnabled() then return end
   local f = createWindow()
-  -- If the Social/Friends window is open (its Guild tab is what usually launches us), open to its
-  -- RIGHT instead of stacking on the same default LEFT anchor (both windows default to
-  -- UIParent LEFT +16 -- identical spots -- so without this they land fully overlapped).
-  local social = NE.social and NE.social.frame
-  if social and social:IsShown() then
-    f:ClearAllPoints()
-    f:SetPoint("LEFT", social, "RIGHT", 8, 0)
-  end
   f:Show()
 end
 function G.Hide() if G.frame then G.frame:Hide() end end

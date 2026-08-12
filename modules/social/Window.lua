@@ -307,6 +307,11 @@ local function createWindow()
     NE.panelchrome.PinPixelPerfect(f)
   end
 
+  -- Join the panel row (core/PanelManager.lua) — this replaces the hand-rolled "push Guild to my
+  -- right" rule that used to live in SO.Show, which only ever knew about the Guild window and so
+  -- left this frame stacked on top of the Auction House (github issue #49).
+  if NE.panelmgr and NE.panelmgr.Register then NE.panelmgr.Register(f) end
+
   SO.SetMode("FRIENDS")
   SO.UpdateGuildTab()
   return f
@@ -316,17 +321,11 @@ function SO.Show()
   if not isModuleEnabled() then return end
   local f = createWindow()
   f:Show()
-  -- Mirror of Guild's G.Show() repositioning (modules/guild/Window.lua): both windows default to
-  -- the same UIParent LEFT+16 anchor, so opening one after the other stacks them fully overlapped.
-  -- Guild already re-anchors itself to our RIGHT when it opens second; this covers the reverse
-  -- order — if Guild is already open when we show, push IT to our right instead (owner steer
-  -- 2026-07-17: "guild window then social window they overlap... guild window gets pushed to its
-  -- right").
-  local guild = NE.guild and NE.guild.frame
-  if guild and guild:IsShown() then
-    guild:ClearAllPoints()
-    guild:SetPoint("LEFT", f, "RIGHT", 8, 0)
-  end
+  -- The old body here re-anchored the Guild window to our RIGHT when it was already open (owner
+  -- steer 2026-07-17: "guild window then social window they overlap... guild window gets pushed to
+  -- its right"). That behaviour is now core/PanelManager.lua's, which does the same thing for EVERY
+  -- pair of windows rather than just this one — including the Auction House, whose absence from the
+  -- old rule is what github issue #49 reported.
 end
 function SO.Hide() if SO.frame then SO.frame:Hide() end end
 function SO.Toggle()

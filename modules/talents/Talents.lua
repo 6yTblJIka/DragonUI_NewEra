@@ -568,6 +568,10 @@ local function buildWindow()
   f:Hide()
   T.frame = f
 
+  -- Join the panel row (core/PanelManager.lua); shares the Spellbook's rightmost slot, as retail's
+  -- PlayerSpells window does. The TOP anchor above stays this window's HOME when it is alone.
+  if NE.panelmgr and NE.panelmgr.Register then NE.panelmgr.Register(f) end
+
   -- Open/close sounds (igCharacterInfoOpen/Close), via a child watcher (never on the frame).
   guard("sounds", function()
     if NE.FrameUtil and NE.FrameUtil.WirePanelSounds then

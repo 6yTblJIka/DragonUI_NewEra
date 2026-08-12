@@ -642,6 +642,10 @@ local function createWindow()
     NE.panelchrome.PinPixelPerfect(f)
   end
 
+  -- Join the panel row (core/PanelManager.lua): this window's default TOPLEFT 16,-116 is the row's
+  -- own start, so it opened underneath anything else already sitting there.
+  if NE.panelmgr and NE.panelmgr.Register then NE.panelmgr.Register(f) end
+
   return f
 end
 L.Create = createWindow
