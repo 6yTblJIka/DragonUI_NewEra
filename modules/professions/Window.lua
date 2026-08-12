@@ -480,6 +480,11 @@ local function buildWindow()
     f:SetScript("OnDragStop",  f.StopMovingOrSizing)
   end
 
+  -- Join the panel row (core/PanelManager.lua). Shares its TOP 0,-55 default with the Spellbook, so
+  -- the two used to open exactly on top of each other. A saved position (windowPos.professions)
+  -- counts as user placement and opts this window out of the row entirely.
+  if NE.panelmgr and NE.panelmgr.Register then NE.panelmgr.Register(f) end
+
   -- Open/close sounds.
   guard("sounds", function()
     if NE.FrameUtil and NE.FrameUtil.WirePanelSounds then

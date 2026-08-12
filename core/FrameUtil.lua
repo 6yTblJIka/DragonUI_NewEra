@@ -287,6 +287,10 @@ local function resetAllToDefault()
     if db and db.windowPos then db.windowPos[e.key] = nil end
     NE.FrameUtil.RestoreWindowPosition(e.frame, e.key, e.default)   -- no saved entry -> uses default
   end
+  -- Dropping the saved spots also puts every window back under the panel coordinator: the reason we
+  -- discard them is that a position chosen at another resolution can strand a window off-screen, and
+  -- "the player placed this" is exactly the claim that just stopped being true.
+  if NE.panelmgr and NE.panelmgr.ClearUserPlaced then NE.panelmgr.ClearUserPlaced() end
 end
 
 -- One shared watcher: when the screen RESOLUTION actually changes, reset all persisted windows to
@@ -332,15 +336,31 @@ function NE.FrameUtil.PersistWindowPosition(frame, key, default, dragHandle)
   frame:SetClampedToScreen(true)
   handle:EnableMouse(true)
   handle:RegisterForDrag("LeftButton")
-  handle:SetScript("OnDragStart", function() frame:StartMoving() end)
+  handle:SetScript("OnDragStart", function()
+    frame:StartMoving()
+    -- Baseline for the did-it-actually-move test below. Recorded here rather than in PanelManager's
+    -- own hook because several windows drag by a separate handle, whose OnDragStart the frame never
+    -- sees (the character panel's title band).
+    if NE.panelmgr and NE.panelmgr.NoteDragStart then NE.panelmgr.NoteDragStart(frame) end
+  end)
   handle:SetScript("OnDragStop", function()
     frame:StopMovingOrSizing()
+    -- A click on dead space that twitches a pixel or two fires a full drag on these windows (they
+    -- are mouse-enabled and drag-registered across their whole body). Saving that would persist a
+    -- position the player never chose, and — via the panel coordinator — opt the window out of
+    -- layout for good. Ignore anything under the threshold.
+    if NE.panelmgr and NE.panelmgr.DragMoved and not NE.panelmgr.DragMoved(frame) then return end
     local t = store()
     if not t then return end
     local p, _, rp, x, y = frame:GetPoint(1)
     if p then
       t.point, t.relPoint, t.x, t.y = p, rp or p, x or 0, y or 0
     end
+    -- A window the player has placed themselves stops taking part in the panel row
+    -- (core/PanelManager.lua) — it is never moved again, and the other windows tile without it.
+    -- Needed here as well as in PanelManager's own drag hook because several windows drag by a
+    -- separate handle (the character panel's title band), whose OnDragStop the frame never sees.
+    if NE.panelmgr and NE.panelmgr.MarkUserPlaced then NE.panelmgr.MarkUserPlaced(frame) end
   end)
 
   table.insert(NE.FrameUtil._persisted, { frame = frame, key = key, default = default })

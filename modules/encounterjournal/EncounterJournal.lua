@@ -13,7 +13,9 @@
 --   * NE.flavor is pinned "tbc" (Assets.lua): this WotLK server serves Classic + TBC content,
 --     so the dropdown is the expansion-TIER selector and TBC dungeons get Normal/Heroic.
 --     The Era-only continent/phase filter path is kept (dead) for parity with the source.
---   * No NE.panelmgr on 3.3.5a (guarded call stays); ESC-close via UISpecialFrames.
+--   * NE.panelmgr now EXISTS here (core/PanelManager.lua, a trimmed downport of the source's
+--     Core/Chrome/PanelManager.lua added for github issue #49), so the guarded Register call below
+--     is live rather than dead. ESC-close is still via UISpecialFrames.
 --   * Opens via /aguide (/adventureguide, /ej), the ToggleEncounterJournal global we CREATE
 --     (3.3.5a ships none — the EJ is a Cataclysm feature), and a Bindings.xml entry.
 --
@@ -542,7 +544,6 @@ local function build()
   if NE.buttonskin and NE.buttonskin.Watch then pcall(NE.buttonskin.Watch, frame) end
   frame:SetSize(FRAME_W, FRAME_H)
   frame:SetPoint("CENTER")
-  if NE.panelmgr then NE.panelmgr.Register(frame) end   -- absent on 3.3.5a; guarded
   frame:SetFrameStrata("MEDIUM")
   frame:SetToplevel(true)
   NE.FrameUtil.WirePanelSounds(frame,
@@ -554,6 +555,10 @@ local function build()
   frame:RegisterForDrag("LeftButton")
   frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
   frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+  -- Join the panel row (core/PanelManager.lua). MOVED down from just after the SetPoint above: the
+  -- manager hooks OnDragStop to notice user placement, and the SetScript on the line above would
+  -- have discarded that hook had it been installed first.
+  if NE.panelmgr and NE.panelmgr.Register then NE.panelmgr.Register(frame) end
   frame:Hide()
 
   buildChrome(frame)

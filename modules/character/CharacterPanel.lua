@@ -224,6 +224,12 @@ local function buildFrame()
     drag:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
   end
 
+  -- Join the panel row (core/PanelManager.lua). The CENTER 0,60 default above stays this window's
+  -- HOME — it only tiles when another managed window is open at the same time. Dragging by the band
+  -- above opts it out for good; PersistWindowPosition reports that (the manager never sees this
+  -- handle's OnDragStop, only the frame's).
+  if NE.panelmgr and NE.panelmgr.Register then NE.panelmgr.Register(f) end
+
   -- DF portrait-frame chrome (nineslice + Rock bg + title). noPortrait=true: PanelChrome's default
   -- portrait fill is the PLAYER portrait + a watcher that re-asserts it on UNIT_PORTRAIT_UPDATE,
   -- which would fight our CLASS icon (§A.3). So we suppress its portrait entirely and OWN the
