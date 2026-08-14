@@ -19,8 +19,9 @@
 -- itself does this for MainMenuBarBackpackButton around micromenu.lua:2525) and re-installing the
 -- no-op afterward so its own protections hold.
 --
--- The gap is measured live off PVP/MainMenu's current positions every call rather than hardcoded,
--- so it stays correct across grayscale/scale/spacing changes. This is safe because DragonUI's
+-- The inter-button padding is measured live off Help/MainMenu's current positions every call
+-- rather than hardcoded, so it stays correct across grayscale/scale/spacing changes (as does the
+-- button's own size, copied from MainMenu). This is safe because DragonUI's
 -- layout is idempotent from scratch each refresh (position = f(index), not relative to last
 -- frame), so by the time our hooksecurefunc callback runs, every native button is always freshly
 -- pristine (un-shifted) -- see setupMicroButtons/LayoutMicroButtons in micromenu.lua. That also
@@ -108,6 +109,9 @@ local function create()
   bgPushed:Hide()
   b:SetScript("OnMouseDown", function() bg:Hide(); bgPushed:Show() end)
   b:SetScript("OnMouseUp", function() bg:Show(); bgPushed:Hide() end)
+  -- Kept so reposition() can re-apply the (sizeX, sizeY + 1) formula when the button is resized
+  -- to match the native ones (grayscale mode swaps 32x40 for 14x19).
+  b.neBackgrounds = { bg, bgPushed }
 
   local n = b:CreateTexture(nil, "ARTWORK")
   NE.tex.SetAtlas(n, "ui-hud-micromenu-adventureguide-up-2x", false)
@@ -157,13 +161,19 @@ local function setPointThroughNoop(button, ...)
   if wasNooped then button.SetPoint = noop end
 end
 
--- The native buttons left of MainMenu, in DragonUI's own left-to-right MICRO_BUTTONS order
--- (micromenu.lua:112-124, non-Ascension branch -- this server has no PathToAscensionMicroButton).
+-- The native buttons left of MainMenu, in DragonUI's own right-to-left MICRO_BUTTONS order
+-- (micromenu.lua:108-120, non-Ascension branch -- this server has no PathToAscensionMicroButton).
 -- We shift this whole cluster one slot left to open a gap for our button, cascading from PVP
 -- (the one immediately left of MainMenu) back to Character.
+--
+-- This list MUST stay in sync with that array. CollectionsMicroButton is not a stock 3.3.5a button
+-- -- DragonUI's Pets & Mounts module creates it (modules/collections/microbutton.lua) -- and it was
+-- missing here, so the cascade jumped straight from PVP to LFD and dropped PVP directly on top of
+-- it. Anything DragonUI later inserts into MICRO_BUTTONS has to be added here too.
 local LEFT_CLUSTER_NAMES = {
-  "PVPMicroButton", "LFDMicroButton", "SocialsMicroButton", "QuestLogMicroButton",
-  "AchievementMicroButton", "TalentMicroButton", "SpellbookMicroButton", "CharacterMicroButton",
+  "PVPMicroButton", "CollectionsMicroButton", "LFDMicroButton", "SocialsMicroButton",
+  "QuestLogMicroButton", "AchievementMicroButton", "TalentMicroButton", "SpellbookMicroButton",
+  "CharacterMicroButton",
 }
 
 local function reposition()
@@ -183,40 +193,70 @@ local function reposition()
     return
   end
 
-  -- Live gap between two already-adjacent native buttons, measured fresh so it tracks the
-  -- user's current spacing/scale/grayscale settings. Deliberately measured from Help/MainMenu --
-  -- the two buttons this module NEVER moves -- not from PVP/MainMenu. PVP gets relocated by us
-  -- every call, so measuring off it fed our own prior output back into itself: each retry
-  -- (1s/3s/6s/10s) compounded the drift outward, since DragonUI doesn't re-run its own layout on
-  -- every one of our timers to reset PVP back to pristine in between. Help/MainMenu are a stable
-  -- ground truth immune to that feedback loop, however many times this runs.
-  local realGap = help:GetLeft() - mainMenu:GetRight()
+  -- create() can run before DragonUI has built pUiMicroMenu, in which case it fell back to
+  -- UIParent. Adopt the real menu the moment it exists: everything below assumes our button shares
+  -- the native buttons' parent, and therefore their scale.
+  if btn:GetParent() ~= menu then btn:SetParent(menu) end
+
+  -- Track whatever size DragonUI gave the native buttons on its last pass -- 32x40 normally, but
+  -- 14x19 with grayscale_icons on (micromenu.lua:2012-2016). Keeping our hardcoded 32 there would
+  -- be an 18px overlap all by itself.
+  local bw, bh = mainMenu:GetWidth(), mainMenu:GetHeight()
+  if bw and bh and bw > 0 and bh > 0 then
+    btn:SetSize(bw, bh)
+    for _, plate in ipairs(btn.neBackgrounds) do plate:SetSize(bw, bh + 1) end
+  end
+
+  -- Live edge-to-edge padding between two already-adjacent native buttons, measured fresh so it
+  -- tracks the user's current spacing/scale/grayscale settings. Deliberately measured from
+  -- Help/MainMenu -- the two buttons this module NEVER moves -- not from PVP/MainMenu. PVP gets
+  -- relocated by us every call, so measuring off it fed our own prior output back into itself:
+  -- each retry (1s/3s/6s/10s) compounded the drift outward, since DragonUI doesn't re-run its own
+  -- layout on every one of our timers to reset PVP back to pristine in between. Help/MainMenu are
+  -- a stable ground truth immune to that feedback loop, however many times this runs.
+  --
+  -- Normally NEGATIVE: DragonUI's default icon_spacing is -6, i.e. the plates deliberately tuck
+  -- under each other by 6 (stride = 32 + (-6) = 26, micromenu.lua:1834-1841).
+  local helpLeft, mainRight = help:GetLeft(), mainMenu:GetRight()
+  if not (helpLeft and mainRight) then
+    btn:Hide()
+    return
+  end
+  local pad = helpLeft - mainRight
 
   -- Sanity guard: belt-and-suspenders in case DragonUI's skin hasn't applied yet at all (its
   -- buttons still at stock Blizzard positions, spread across a much wider bar). A sane packed
   -- gap is a handful of pixels either way; bail out and let the next scheduled retry (or the
   -- next real DragonUI refresh) catch it once the skin has actually settled.
-  if realGap > 100 or realGap < -100 then
+  if pad > 100 or pad < -100 then
     btn:Hide()
     return
   end
 
-  local menuScale = menu:GetEffectiveScale()
-  local localGap = menuScale ~= 0 and (realGap / menuScale) or realGap
+  -- NO scale conversion here. GetLeft/GetRight already report in the queried frame's OWN
+  -- coordinate space (screen pixels divided by its effective scale), and every micro button --
+  -- ours included -- is an UNSCALED child of pUiMicroMenu (DragonUI only ever scales the menu
+  -- frame itself, micromenu.lua:1929/2391/2509). So `pad` is already in exactly the units SetPoint
+  -- offsets use below. Dividing it by menu:GetEffectiveScale() -- as this did -- inflated it by
+  -- 1/(uiScale * scale_menu), e.g. 1/(0.64*0.9) = 1.74x at 1440p: -6 became -10.4, so each of the
+  -- nine buttons we move landed ~4px too far right, and the compounding chain stacked the left end
+  -- of the strip on top of itself.
+  btn:ClearAllPoints()
+  btn:SetPoint("BOTTOMRIGHT", mainMenu, "BOTTOMLEFT", -pad, 0)
+  btn:Show()
 
   -- MainMenu/Help are NOT touched -- pUiMicroMenu is pinned flush to UIParent's BOTTOMRIGHT with
   -- no slack, so pushing them further right runs them off the edge of the screen. Our button sits
   -- immediately left of MainMenu instead, and the whole PVP..Character cluster shifts one slot
   -- further left (open screen space there) to make room.
-  btn:ClearAllPoints()
-  btn:SetPoint("BOTTOMRIGHT", mainMenu, "BOTTOMLEFT", -localGap, 0)
-  btn:Show()
-
+  -- dragonUISuppressed marks a button whose owning module was switched off; DragonUI drops it from
+  -- the strip entirely and closes the gap (CollectPresentMicroButtons, micromenu.lua:1824). Chain
+  -- past those the same way, or we'd spend a slot on a hidden button and leave a hole in the row.
   local prev = btn
   for _, name in ipairs(LEFT_CLUSTER_NAMES) do
     local b = _G[name]
-    if b then
-      setPointThroughNoop(b, "BOTTOMRIGHT", prev, "BOTTOMLEFT", -localGap, 0)
+    if b and not b.dragonUISuppressed then
+      setPointThroughNoop(b, "BOTTOMRIGHT", prev, "BOTTOMLEFT", -pad, 0)
       prev = b
     end
   end
