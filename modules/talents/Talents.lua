@@ -174,10 +174,10 @@ local FRAME_TOP_OFFSET = -55
 -- Node center, relative to the tree frame's TOPLEFT (retail anchors CENTER→TOPLEFT).
 -- ----------------------------------------------------------------------------
 local function nodeCenter(tier, column)
-  -- x: prefer the per-tier CENTERED layout (built per tab by T.SetCenteredLayout) so a tier with
-  -- fewer than COLS talents is packed + centered (3 talents -> middle centered, etc.); else the grid.
-  local lay = T._tierColX
-  local x = (lay and lay[tier] and lay[tier][column]) or ((column - 1) * PITCH_X + NODE / 2)
+  -- x: the per-tab column map (T.SetColumnLayout) — ONE x per column for the whole tree, so a talent
+  -- and its prereq in the same column line up dead-vertically; else the plain grid.
+  local lay = T._colX
+  local x = (lay and lay[column]) or ((column - 1) * PITCH_X + NODE / 2)
   -- The final (deepest) tier can take extra drop; WotLK sets LAST_TIER_EXTRA=0 → no-op.
   local extraLast = (tier == TIERS) and LAST_TIER_EXTRA or 0
   -- T._nodeYShift pushes the whole grid DOWN (0 for player's full 11-tier trees; >0 for a shallow pet
@@ -189,34 +189,45 @@ end
 -- Expose layout + helpers so Behavior.lua can drive real rendering.
 T.LAYOUT = { NODE = NODE, ICON = ICON, PITCH = PITCH_X, PITCH_X = PITCH_X, PITCH_Y = PITCH_Y,
              COLS = COLS, TIERS = TIERS, HEADER_H = HEADER_H, HEADER_CENTER_Y = HEADER_CENTER_Y,
-             TREE_W = TREE_W }
+             TREE_W = TREE_W, ICON_INSET = ICON_INSET }
 T.nodeCenter = nodeCenter
 
--- Build the per-tier centered column->x map for the CURRENT tab from its occupied (tier,column)
--- cells. Mirrors the reference TalentFrameBase TALENT_CENTER_ROWS mod: each tier's k talents are
--- packed and centered across the COLS-wide row. nodeCenter reads the result (T._tierColX).
--- `occupied` = array of { tier=, column= }. Edges connect occupied cells only, so empty columns
--- need no interpolation here.
-function T.SetCenteredLayout(occupied)
-  local byTier = {}
+-- Build the column->x map for the CURRENT tab from its occupied (tier,column) cells. Every column
+-- gets ONE x for the whole tree — a talent sits at its true column, exactly like Blizzard's stock
+-- tree, so a talent and the prereq above it in the same column line up dead-vertically and the
+-- dependency line runs straight down (Behavior's edge router only has to bend for the genuinely
+-- diagonal links).
+--
+-- The whole tree is then shifted to centre it in the COLS-wide band. The shift is on the tree's
+-- MASS (mean occupied column), not its bounding box: a tree where a single talent reaches into
+-- column 4 while every other row uses 1-3 is 4 columns wide by bounding box, so box-centring leaves
+-- it flush left with a dead column of empty space down the right. Mass-centring leans it over so the
+-- body sits centred and the outlier hangs into the (empty) gap between trees, capped at half a pitch
+-- of overhang. One shift for the whole tree, so nothing moves relative to anything else.
+--
+-- Do NOT make this per-row. Centring each row on its own occupied columns closes the dead space, but
+-- a shift moves a column's x for that row alone: rows then drift half a pitch against each other and
+-- the columns visibly zigzag. Pinning prereq-linked rows to a shared shift keeps their lines
+-- straight but does nothing for the jitter everywhere else — it was tried, and it reads as janky.
+-- `occupied` = array of { tier=, column= }.
+function T.SetColumnLayout(occupied)
+  local sum, n, minC, maxC = 0, 0, nil, nil
   for _, c in ipairs(occupied) do
-    if c.tier and c.column then
-      byTier[c.tier] = byTier[c.tier] or {}
-      byTier[c.tier][c.column] = true
+    local col = c.column
+    if col then
+      sum, n = sum + col, n + 1
+      if not minC or col < minC then minC = col end
+      if not maxC or col > maxC then maxC = col end
     end
   end
+  if n == 0 then T._colX = nil; return end
+  -- shift is in COLUMNS: positive moves the tree right. 0 when the mass already sits mid-band.
+  local shift = (COLS + 1) / 2 - sum / n
+  local hi, lo = (COLS - maxC) + 0.5, -((minC - 1) + 0.5)   -- ≤ half a pitch past either edge
+  if shift > hi then shift = hi elseif shift < lo then shift = lo end
   local lay = {}
-  for tier, cols in pairs(byTier) do
-    local list = {}
-    for col = 1, COLS do if cols[col] then list[#list + 1] = col end end
-    local k = #list
-    lay[tier] = {}
-    local leftCenter = NODE / 2 + ((COLS - k) / 2) * PITCH_X   -- center-x of the first packed talent
-    for m = 1, k do
-      lay[tier][list[m]] = leftCenter + (m - 1) * PITCH_X
-    end
-  end
-  T._tierColX = lay
+  for col = 1, COLS do lay[col] = (col - 1 + shift) * PITCH_X + NODE / 2 end
+  T._colX = lay
 end
 
 -- Frame geometry (consumed by Behavior / others). The host insets the content by CHROME_*.
@@ -363,6 +374,9 @@ local function CreateNode(parent)
       base = base * SQUARE_NODE_FIT                              -- scale the whole square node (56/64)
     end
     local ringAdj   = 0                                          -- StateBorder = node size; frames the icon
+    -- The button frame stays NODE-sized; `base` is what the node actually DRAWS at. Behavior's edge
+    -- router treats each node as an obstacle, so it needs the drawn size, not the frame size.
+    self._visualSize = base
     self.ring:SetSize(base + ringAdj, base + ringAdj)
     self.icon:SetSize(base * ICON_INSET, base * ICON_INSET)     -- inset so corners tuck under the border
     if self.sheen then self.sheen:SetSize(base * ICON_INSET, base * ICON_INSET); self._sheenSpan = base * ICON_INSET end   -- peak = icon size (driver re-sizes per frame)

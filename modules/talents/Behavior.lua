@@ -22,10 +22,10 @@
 -- confirm), discard via ResetGroupPreviewTalentPoints. Nothing is destructive until the confirm.
 --
 -- EDGES: NewEra rotated arrow textures with atan2/cos/sin + Texture:SetRotation. SetRotation and
--- CreateLine DO NOT EXIST on 3.3.5a (both Cata+). So edges here mirror Blizzard's stock 3.3.5a
--- TalentFrame.lua branch drawing: axis-aligned WHITE8X8 strips (vertical / horizontal segments) +
--- a directional arrowhead via SetTexCoord flips. L-routing (column AND tier differ) is drawn as a
--- vertical drop + horizontal run; see drawEdge.
+-- CreateLine DO NOT EXIST on 3.3.5a (both Cata+), so edges here are axis-aligned WHITE8X8 pips laid
+-- along an ORTHOGONAL routed path (vertical drops + horizontal runs, like Blizzard's stock 3.3.5a
+-- TalentFrame.lua branch drawing) rather than a free diagonal that would slice through unrelated
+-- nodes. The router and its obstacle model live in the EDGE DRAWING block below.
 
 local NE = DragonUI_NewEra
 local L = NE.L
@@ -241,17 +241,233 @@ T._WireNode = wireNode
 
 -- ----------------------------------------------------------------------------
 -- EDGE DRAWING & FLOW ENGINE
+--
+-- Edges are ORTHOGONAL polylines, never free diagonals. T.SetColumnLayout gives every
+-- column ONE x across the whole tree, so the common case — a prereq directly above its
+-- dependent in the same column — is already aligned and draws as a plain vertical. This
+-- block handles the rest: a prereq that sits in a DIFFERENT column, where a straight
+-- center-to-center line would cut diagonally across whatever node lies between the two
+-- rows, which is exactly the "which talent needs which?" confusion to avoid.
+--
+-- So each edge is ROUTED: a handful of axis-aligned candidate paths (straight, an L,
+-- a Z that jogs sideways in the corridor between two tier rows, or a wider detour
+-- around a blocking node) are scored against this tree's node boxes and the cheapest
+-- wins. Node art is a HARD obstacle; the rank text under each icon is a soft one
+-- (avoided when there's an alternative, crossed when there isn't). Ties fall to the
+-- straightest path, so an aligned link stays a single unbroken run, and a bent one
+-- leaves the prereq's SIDE and drops into the dependent from above (see SIDE_EXIT).
 -- ----------------------------------------------------------------------------
-local sqrt = math.sqrt
+local sqrt, abs, floor = math.sqrt, math.abs, math.floor
 local DOT_SIZE, DOT_GAP, HEAD_SIZE, FLOW_SPEED = 4, 9, 7, 16
 
+-- Routing costs. Path cost = pixel length + bends + obstacles hit; HIT_HARD is large
+-- enough that any collision-free route beats any route through a node.
+local NODE_PAD  = 2                     -- slack around the art before a line counts as "through" it
+local HIT_HARD, HIT_SOFT, BEND_COST = 1000, 6, 4
+-- A bent edge should leave its PREREQ sideways and drop into the dependent from above, not drop out
+-- of the prereq's underside and slide into the dependent's flank. Charged against any bent path whose
+-- first leg is vertical. Above HIT_SOFT (so it outranks clipping a rank number) and far below
+-- HIT_HARD (so it never argues a line through a node). Straight runs are exempt — they have no bend.
+local SIDE_EXIT = 7
+local RANK_HALF_W, RANK_DROP, RANK_H = 11, 1, 12   -- the "3/5" box hanging under an icon
+local EMPTY = {}
+
+-- Obstacle for one placed node, in tree-local coords (y is negative-down). Keyed by cell so the
+-- edge's own endpoints can be excluded — a line always leaves/enters its own node.
+local function addNodeRect(tf, tier, col, x, y, visual)
+  local rects = tf._nodeRects
+  if not rects then return end
+  local vs   = visual or T.LAYOUT.NODE
+  local half = vs / 2 + NODE_PAD
+  local key  = tier * 10 + col
+  tf._nodeHalf[key] = half
+  rects[#rects + 1] = { key = key, cost = HIT_HARD, tier = tier, cx = x,
+                        x0 = x - half, x1 = x + half, y0 = y - half, y1 = y + half }
+  local top = y - vs * (T.LAYOUT.ICON_INSET or 0.84) / 2 - RANK_DROP
+  rects[#rects + 1] = { key = key, cost = HIT_SOFT, tier = tier, cx = x,
+                        x0 = x - RANK_HALF_W, x1 = x + RANK_HALF_W, y0 = top - RANK_H, y1 = top }
+end
+
+-- Clear vertical lanes for a detour past a node sitting on the direct path, nearest first. Derived
+-- from where the rows in the way ACTUALLY sit rather than a fixed half-pitch offset — under the
+-- centred layout a half-pitch step often lands straight on the neighbouring column.
+local function sideLanes(rects, lo, hi, sx)
+  local pitch = (T.LAYOUT and T.LAYOUT.PITCH_X) or 54
+  local xs, seen = {}, {}
+  for i = 1, #rects do
+    local r = rects[i]
+    if r.cost == HIT_HARD and r.tier > lo and r.tier < hi and not seen[r.cx] then
+      seen[r.cx] = true
+      xs[#xs + 1] = r.cx
+    end
+  end
+  if #xs == 0 then return { sx } end
+  table.sort(xs)
+  local lanes = { xs[1] - pitch * 0.5, xs[#xs] + pitch * 0.5 }
+  for i = 1, #xs - 1 do
+    if xs[i + 1] - xs[i] > ((T.LAYOUT and T.LAYOUT.NODE) or 36) then
+      lanes[#lanes + 1] = (xs[i] + xs[i + 1]) / 2
+    end
+  end
+  -- nearest lane first, but strongly prefer one that stays inside the tree's own column band
+  local width = (T.LAYOUT and T.LAYOUT.TREE_W) or ((((T.LAYOUT and T.LAYOUT.COLS) or 4) - 1) * pitch + 36)
+  local function rank(x)
+    return abs(x - sx) + ((x < 0 or x > width) and 1000 or 0)
+  end
+  table.sort(lanes, function(a, b) return rank(a) < rank(b) end)
+  return lanes
+end
+
+-- Mid-y of each tier-to-tier corridor: gapY[t] is the clear band between tier t and t+1. Rebuilt per
+-- tab because nodeCenter's y depends on T._nodeYShift (shallow pet trees are centred vertically).
+local function buildGapY()
+  local tiers = (T.LAYOUT and T.LAYOUT.TIERS) or 11
+  local g = {}
+  for t = 1, tiers - 1 do
+    local _, y1 = T.nodeCenter(t, 1)
+    local _, y2 = T.nodeCenter(t + 1, 1)
+    g[t] = (y1 + y2) / 2
+  end
+  return g
+end
+
+-- Every candidate segment is axis-aligned, so "does it hit this box" is a plain AABB overlap.
+local function pathCost(pts, rects, skipA, skipB)
+  local n = #pts / 2
+  local cost = (n - 2) * BEND_COST
+  if n > 2 and abs(pts[3] - pts[1]) < 0.5 then cost = cost + SIDE_EXIT end
+  for i = 1, n - 1 do
+    local ax, ay = pts[i * 2 - 1], pts[i * 2]
+    local bx, by = pts[i * 2 + 1], pts[i * 2 + 2]
+    cost = cost + abs(bx - ax) + abs(by - ay)
+    local x0, x1 = ax, bx; if x0 > x1 then x0, x1 = x1, x0 end
+    local y0, y1 = ay, by; if y0 > y1 then y0, y1 = y1, y0 end
+    for k = 1, #rects do
+      local r = rects[k]
+      if r.key ~= skipA and r.key ~= skipB
+         and not (x1 < r.x0 or x0 > r.x1 or y1 < r.y0 or y0 > r.y1) then
+        cost = cost + r.cost
+      end
+    end
+  end
+  return cost
+end
+
+-- Drop repeated and collinear points so a degenerate Z scores (and draws) as the straight line it is.
+local function tidyPath(pts)
+  local out = {}
+  for i = 1, #pts, 2 do
+    local x, y = pts[i], pts[i + 1]
+    local n = #out
+    if not (n >= 2 and abs(out[n - 1] - x) < 0.5 and abs(out[n] - y) < 0.5) then
+      out[n + 1], out[n + 2] = x, y
+    end
+  end
+  local k = 2
+  while k * 2 <= #out - 2 do
+    local ax, ay = out[k * 2 - 3], out[k * 2 - 2]
+    local bx, by = out[k * 2 - 1], out[k * 2]
+    local cx, cy = out[k * 2 + 1], out[k * 2 + 2]
+    if (abs(ax - bx) < 0.5 and abs(bx - cx) < 0.5) or (abs(ay - by) < 0.5 and abs(by - cy) < 0.5) then
+      table.remove(out, k * 2); table.remove(out, k * 2 - 1)
+    else
+      k = k + 1
+    end
+  end
+  return out
+end
+
+local function routeCandidates(tf, sx, sy, ex, ey, sTier, dTier)
+  local gapY, rects = tf._gapY or EMPTY, tf._nodeRects or EMPTY
+  local out = {}
+  -- Straight run — only when the two nodes actually line up (a diagonal is never a candidate).
+  if abs(ex - sx) < 0.5 or abs(ey - sy) < 0.5 then
+    out[#out + 1] = { sx, sy, ex, ey }
+  end
+  local lo, hi = sTier, dTier
+  if lo > hi then lo, hi = hi, lo end
+  -- Corridors available to a sideways jog, nearest the DEPENDENT first: entering a talent from
+  -- directly above reads as "this is what feeds it" better than sliding in from the side.
+  local corridors = {}
+  if hi > lo then
+    if dTier >= sTier then
+      for t = hi - 1, lo, -1 do corridors[#corridors + 1] = gapY[t] end
+    else
+      for t = lo, hi - 1 do corridors[#corridors + 1] = gapY[t] end
+    end
+  else
+    corridors[#corridors + 1] = gapY[lo - 1]   -- same tier: hop over...
+    corridors[#corridors + 1] = gapY[lo]       -- ...or under the row
+  end
+  for i = 1, #corridors do
+    local g = corridors[i]
+    if g then out[#out + 1] = { sx, sy, sx, g, ex, g, ex, ey } end
+  end
+  -- Plain Ls (one bend, so these win over a Z whenever they're clear). Side-exit first: it's the
+  -- preferred shape (see SIDE_EXIT), and the vertical-first one is the fallback when it's blocked.
+  out[#out + 1] = { sx, sy, ex, sy, ex, ey }
+  out[#out + 1] = { sx, sy, sx, ey, ex, ey }
+  -- Two rows or more apart: allow a swing out into a clear lane to get around a node sitting on the
+  -- direct path (a same-column prereq with an unrelated talent parked between the two).
+  local g1, g2 = gapY[lo], gapY[hi - 1]
+  if g1 and g2 and abs(g1 - g2) > 0.5 then
+    local lanes = sideLanes(rects, lo, hi, sx)
+    for i = 1, math.min(#lanes, 2) do
+      local jx = lanes[i]
+      out[#out + 1] = { sx, sy, sx, g1, jx, g1, jx, g2, ex, g2, ex, ey }
+    end
+  end
+  return out
+end
+
+-- Pull the path's ends back to the node borders so the dots start and stop clear of the art. Both
+-- walk segment by segment, so a trim longer than the first/last leg eats into the next one.
+local function trimStart(pts, amount)
+  while amount > 0 and #pts >= 4 do
+    local dx, dy = pts[3] - pts[1], pts[4] - pts[2]
+    local len = sqrt(dx * dx + dy * dy)
+    if len > amount + 0.01 then
+      pts[1] = pts[1] + dx / len * amount
+      pts[2] = pts[2] + dy / len * amount
+      return true
+    end
+    table.remove(pts, 1); table.remove(pts, 1)
+    amount = amount - len
+  end
+  return #pts >= 4
+end
+
+local function trimEnd(pts, amount)
+  while amount > 0 and #pts >= 4 do
+    local n = #pts
+    local dx, dy = pts[n - 3] - pts[n - 1], pts[n - 2] - pts[n]
+    local len = sqrt(dx * dx + dy * dy)
+    if len > amount + 0.01 then
+      pts[n - 1] = pts[n - 1] + dx / len * amount
+      pts[n]     = pts[n] + dy / len * amount
+      return true
+    end
+    pts[n] = nil; pts[n - 1] = nil
+    amount = amount - len
+  end
+  return #pts >= 4
+end
+
+-- Walk the polyline by arc length so the flow stays evenly spaced around the corners.
 local function positionEdge(edge, phase)
-  local dots, span, gap = edge.dots, edge.span, edge.gap
+  local dots, span, gap, pts, cum = edge.dots, edge.span, edge.gap, edge.pts, edge.cum
+  local nseg = #cum - 1
   for i = 1, #dots do
     local dist = ((i - 1) * gap + phase) % span
+    local s = 1
+    while s < nseg and dist > cum[s + 1] do s = s + 1 end
+    local segLen = cum[s + 1] - cum[s]
+    local t = (segLen > 0) and ((dist - cum[s]) / segLen) or 0
+    local ax, ay = pts[s * 2 - 1], pts[s * 2]
+    local bx, by = pts[s * 2 + 1], pts[s * 2 + 2]
     local d = dots[i]
     d:ClearAllPoints()
-    d:SetPoint("CENTER", edge.tf, "TOPLEFT", edge.x0 + edge.ux * dist, edge.y0 + edge.uy * dist)
+    d:SetPoint("CENTER", edge.tf, "TOPLEFT", ax + (bx - ax) * t, ay + (by - ay) * t)
   end
 end
 
@@ -326,15 +542,37 @@ end
 local function drawEdge(tf, sTier, sCol, dTier, dCol, color)
   local sx, sy = T.nodeCenter(sTier, sCol)
   local ex, ey = T.nodeCenter(dTier, dCol)
-  local dx, dy = ex - sx, ey - sy
-  local dist = sqrt(dx * dx + dy * dy)
-  if dist < 1 then return end
-  local ux, uy = dx / dist, dy / dist
-  local half = T.LAYOUT.NODE / 2
-  local x0, y0 = sx + ux * half, sy + uy * half
-  local span = dist - 2 * half
+  if abs(ex - sx) < 1 and abs(ey - sy) < 1 then return end
+
+  local rects = tf._nodeRects or EMPTY
+  local skipA, skipB = sTier * 10 + sCol, dTier * 10 + dCol
+  local cands = routeCandidates(tf, sx, sy, ex, ey, sTier, dTier)
+  local best, bestCost
+  for i = 1, #cands do
+    local pts = tidyPath(cands[i])
+    if #pts >= 4 then
+      local cost = pathCost(pts, rects, skipA, skipB)
+      if not bestCost or cost < bestCost then best, bestCost = pts, cost end
+    end
+  end
+  if not best then return end
+
+  local halves = tf._nodeHalf or EMPTY
+  local fallback = T.LAYOUT.NODE / 2
+  if not (trimStart(best, (halves[skipA] or fallback) + 1)) then return end
+  if not (trimEnd(best, (halves[skipB] or fallback) + 1)) then return end
+
+  local cum, span = { 0 }, 0
+  local n = #best / 2
+  for i = 1, n - 1 do
+    local dx = best[i * 2 + 1] - best[i * 2 - 1]
+    local dy = best[i * 2 + 2] - best[i * 2]
+    span = span + sqrt(dx * dx + dy * dy)
+    cum[i + 1] = span
+  end
   if span <= 0 then return end
-  local count = math.floor(span / DOT_GAP + 0.5)
+
+  local count = floor(span / DOT_GAP + 0.5)
   if count < 1 then count = 1 end
   local gap = span / count
   local dots = {}
@@ -344,7 +582,7 @@ local function drawEdge(tf, sTier, sCol, dTier, dCol, color)
     d:SetVertexColor(color[1], color[2], color[3], color[4])
     dots[#dots + 1] = d
   end
-  local edge = { tf = tf, x0 = x0, y0 = y0, ux = ux, uy = uy, span = span, gap = gap, dots = dots }
+  local edge = { tf = tf, pts = best, cum = cum, span = span, gap = gap, dots = dots }
   tf._edgeList[#tf._edgeList + 1] = edge
   positionEdge(edge, T._edgePhase or 0)
 end
@@ -544,6 +782,7 @@ function T.Populate()
     tf:ResetEdges(); tf:ResetGates()
     tf._edgeList = {}
     tf._sheenList = {}
+    tf._nodeRects, tf._nodeHalf = {}, {}   -- obstacles for the edge router; filled as nodes are placed
     local used = {}
 
     if tabIdx <= numTabs then
@@ -562,17 +801,21 @@ function T.Populate()
       if (spent or 0) > domSpent then domSpent = (spent or 0); domIcon = icon; domTab = tabIdx end
 
       local numTalents = (GetNumTalents and GetNumTalents(tabIdx, false, isPet)) or 0
-      local byCell, infos = {}, {}
+      local byCell, infos, prereqs = {}, {}, {}
 
+      -- Prereqs are read here (not in the edge pass below) so the API is queried once per talent.
       local occupied = {}
       for i = 1, numTalents do
         local info = talentInfo(tabIdx, i, group, isPet)
         if info and info.tier and info.column then
           infos[i] = info
           occupied[#occupied + 1] = { tier = info.tier, column = info.column }
+          if GetTalentPrereqs then
+            prereqs[i] = { GetTalentPrereqs(tabIdx, i, false, isPet, group) }
+          end
         end
       end
-      if T.SetCenteredLayout then T.SetCenteredLayout(occupied) end
+      if T.SetColumnLayout then T.SetColumnLayout(occupied) end
 
       for i = 1, numTalents do
         local info = infos[i]
@@ -600,6 +843,7 @@ function T.Populate()
           if not editable and node.icon and node.icon.SetDesaturated then node.icon:SetDesaturated(true) end
           local x, y = T.nodeCenter(info.tier, info.column)
           node:ClearAllPoints(); node:SetPoint("CENTER", tf, "TOPLEFT", x, y); node:Show()
+          addNodeRect(tf, info.tier, info.column, x, y, node._visualSize)
           wireNode(node)
           
           if editable and (displayRank or 0) > 0 then
@@ -613,10 +857,11 @@ function T.Populate()
       end
 
       if editable then
+        tf._gapY = buildGapY()   -- after SetRowLayout/_nodeYShift, so the corridors match the rows
         for i = 1, numTalents do
           local info = infos[i]
-          if info and GetTalentPrereqs then
-            local pre = { GetTalentPrereqs(tabIdx, i, false, isPet, group) }
+          local pre  = prereqs[i]
+          if info and pre then
             for p = 1, #pre, 4 do
               local ptier, pcol = pre[p], pre[p + 1]
               local srcInfo = ptier and pcol and byCell[ptier * 10 + pcol]
