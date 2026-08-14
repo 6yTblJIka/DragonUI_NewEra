@@ -429,6 +429,42 @@ other:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 M.Register(other)
 check("not registered", M._reg[other] == nil and 1 or 0, 1)
 
+-- ── 15. every shown window user-placed: an EMPTY row is not an error ────────
+-- The early-out only counted `shown`, so a screen where the player had placed ALL of the open
+-- windows walked into the row layout with nothing to lay out and indexed tile[1] (issue #67). The
+-- pcall in M.Reflow kept it out of the client's face, but every later pass died in the same spot,
+-- so the next window to open was never tiled at all.
+print("\n[15] a row emptied by user placement is a no-op, not a fault (issue #67)")
+reset()
+M._lastError = nil
+a, s = ah(), social()
+a:Show(); s:Show()
+s:Drag(); a:Drag()             -- the player has now placed BOTH of them
+flushTimers()
+before = a._anchorCount + s._anchorCount
+a:Hide(); a:Show()             -- churn the row so a fresh reflow runs with both shown
+flushTimers()
+check("no layout error", M._lastError == nil and 1 or 0, 1)
+check("neither window repositioned", a._anchorCount + s._anchorCount, before)
+
+print("\n[15b] and the same from db.windowPos alone, with no drag this session")
+reset()
+M._lastError = nil
+DragonUI_NewEra.db.windowPos.talents   = { point = "TOP", relPoint = "TOP", x = 40, y = -200 }
+DragonUI_NewEra.db.windowPos.spellbook = { point = "TOP", relPoint = "TOP", x = 0,  y = -55 }
+t  = makeWindow("NE_TalentFrame",    900, 600, 1, { "TOP", "TOP", 40, -200 })
+sb = makeWindow("NE_SpellBookFrame", 700, 600, 1, { "TOP", "TOP", 0, -55 })
+t:Show(); sb:Show()
+flushTimers()
+check("no layout error on a restored pair", M._lastError == nil and 1 or 0, 1)
+-- A third, unplaced window still has to be tiled - the point of not dying is that the pass survives
+-- to do this. Two windows are already up, so the AH takes the row start and does not go home.
+a = ah()
+a:Show()
+flushTimers()
+_, x = a:Placement()
+check("a managed window still tiles alongside them", x, 16)
+
 print("")
 if fails == 0 then print("ALL PANELMANAGER CHECKS PASSED") else print(fails .. " FAILURE(S)") end
 os.exit(fails == 0 and 0 or 1)

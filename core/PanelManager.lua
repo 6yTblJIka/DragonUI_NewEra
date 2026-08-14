@@ -358,7 +358,11 @@ local function reflowBody()
 
   -- Alone on screen (counting user-placed windows, which we cannot move but which DO mean the
   -- player is looking at two things at once): go back to the module's own default anchor.
-  if #shown <= 1 then
+  -- An EMPTY row is the other way out of here: several windows are up but the player has placed
+  -- every one of them, so there is nothing left for us to position. That is not exotic — six of
+  -- these windows persist their spot, so two of them restored from db.windowPos on a fresh login
+  -- reach this with `shown` full and `tile` empty (github issue #67).
+  if #shown <= 1 or #tile == 0 then
     if tile[1] then goHome(tile[1]) end
     return
   end

@@ -34,14 +34,15 @@ per-child scale, retired/hidden children, degenerate cases):
 luajit qa/offline/test_gridlayout.lua
 ```
 
-Unit-test the panel coordinator (50 assertions: home-when-alone, the row starting from the leading
+Unit-test the panel coordinator (54 assertions: home-when-alone, the row starting from the leading
 window's own position so nothing already on screen moves, left-to-right tiling by pushable then
 show-recency, the frame-units conversion for scaled windows, the slide-left/tight-pack/cascade
 escalation on a row that will not fit, user placement leaving the system both by drag and from
 `db.windowPos`, the drag threshold that stops an accidental twitch counting as placement, the reset,
 home coming from the declared default rather than a restored position, re-flow on resize, the combat
-rule where a protected window keeps its slot but not its position, and the secure-wrapped `watch`
-path):
+rule where a protected window keeps its slot but not its position, the secure-wrapped `watch` path,
+and a row emptied by user placement — several windows up but the player has placed every one of them
+— being a no-op rather than a fault):
 
 ```bash
 luajit qa/offline/test_panelmgr.lua
