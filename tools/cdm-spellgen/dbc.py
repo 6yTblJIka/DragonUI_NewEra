@@ -5,7 +5,13 @@ Locale archives hold the DBCs. Load order is locale-enUS then patch-enUS, -2, -3
 import os, struct, glob
 from mpyq import MPQArchive
 
-DATA = r"D:/Project Reforged 3.3.5a/Data"
+# The client to read. Overridable via CDM_DATA (pointing at the Data directory), because this
+# pipeline was authored against one box and the DBCs are identical across stock 3.3.5a installs —
+# a hardcoded path meant nobody else could regenerate, and a file nobody can regenerate is a file
+# that drifts from its generator. Falls back to the first known install that exists.
+DATA = os.environ.get("CDM_DATA") or next(
+    (p for p in (r"D:/Triumvirate/Data", r"D:/Project Reforged 3.3.5a/Data")
+     if os.path.isdir(p)), r"D:/Triumvirate/Data")
 TARGET = "DBFilesClient\\Spell.dbc"
 
 # lowest -> highest priority

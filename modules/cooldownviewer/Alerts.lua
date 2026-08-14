@@ -452,22 +452,19 @@ end
 
 -- Is the tracked aura inside the last `window` fraction of its duration?
 --
--- The aura a cooldown maintains shares the spell's NAME (a DoT, HoT or self-buff), which is the only
--- handle available: 3.3.5a cannot query an aura by spellID. Player first (HoTs, self-buffs), then
--- target (DoTs). NE.aura caches one scan per unit per frame, so polling this at 5Hz is cheap.
+-- WIDENED (issues #57, #52). This used to look for an aura sharing the spell's NAME, on the player
+-- and then the target, and nothing else — so it could never fire for an ability whose aura is named
+-- differently (Bloodsurge's `Slam!`) or lands on a party member (Earth Shield), and it matched
+-- another player's debuff of the same name on your target as readily as your own. M.FindSpellAura
+-- resolves all three through the generated CdmSpellAuras.lua edge; NE.aura still caches one scan per
+-- unit per frame, so polling it at 5Hz stays cheap.
 local function inRefreshWindow(item, window)
-  local name = item.spellName
-  if not (name and NE.aura) then return false end
+  local aura = M.FindSpellAura and M.FindSpellAura(item)
+  if not (aura and aura.duration and aura.duration > 0 and aura.expirationTime) then return false end
 
-  local row = NE.aura.FindByName("player", name)
-  if not (row and row.duration and row.duration > 0) then
-    row = NE.aura.FindByName("target", name)
-  end
-  if not (row and row.duration and row.duration > 0 and row.expiration) then return false end
-
-  local remaining = row.expiration - GetTime()
+  local remaining = aura.expirationTime - GetTime()
   if remaining <= 0 then return false end
-  return (remaining / row.duration) <= (window or DEFAULT_WINDOW)
+  return (remaining / aura.duration) <= (window or DEFAULT_WINDOW)
 end
 
 -- Castable right now: resources available and not on a real cooldown. A GCD-length lockout does not
@@ -526,13 +523,15 @@ end
 -- report this answers.
 --
 -- The item's own cached flag first: both aura mixins maintain `_auraActive` from the scan that built
--- them, so this costs nothing on the path that matters. The name lookup is the fallback for an item
--- that has no such flag, which is any spell tile that somehow carries this type.
+-- them, so this costs nothing on the path that matters. The lookup is the fallback for an item that
+-- has no such flag, which is any spell tile that somehow carries this type.
+--
+-- That fallback is no longer a curiosity. `active` is now the honest answer for a DoT — "glow for as
+-- long as it is ticking on the target" is precisely what issue #57 asked for — so a SPELL tile
+-- carrying this type is an ordinary case, and it goes through the same widened resolver as the rest.
 local function inActiveState(item)
   if item._auraActive ~= nil then return item._auraActive and true or false end
-  local name = item.spellName
-  if not (name and NE.aura and NE.aura.FindByName) then return false end
-  return NE.aura.FindByName("player", name) ~= nil
+  return (M.FindSpellAura and M.FindSpellAura(item)) ~= nil
 end
 
 -- Evaluate one item's assigned alert. `available` is edge-triggered elsewhere, so the ticker leaves

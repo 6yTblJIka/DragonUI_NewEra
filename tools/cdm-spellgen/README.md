@@ -24,9 +24,40 @@ Run from this directory, in order:
 | `explore_nocd.py` | not a pipeline step. Prints each class's no-cooldown, non-passive, non-talent abilities — the menu the rotation curation is authored from — or one name's candidate IDs | `listing_nocd.txt` |
 | `gen_alertdata.py` | resolves the Execute / Reactive ability names to **every** rank | `../../modules/cooldownviewer/AlertData.lua` |
 | `gen_auracatalog.py` | the per-class pool of trackable **self-buffs** — standalone, reads the DBCs itself | `../../modules/cooldownviewer/CdmAuraCatalog.lua` |
+| `gen_spellauras.py` | which aura a castable spell **drives**, and on which **unit** — standalone | `../../modules/cooldownviewer/CdmSpellAuras.lua` |
+
+`gen_spellauras.py` is the odd one out in what it is *for*. Everything else here answers "which spells
+exist"; this one answers "what does pressing one put up, and where do I look for it". The viewer used
+to answer that by comparing the aura's name to the spell's name, on the player, which is silently
+wrong for two families of ability — an aura under a different name (Bloodsurge turns Slam into
+`Slam!`) and an aura on someone else (every DoT; Earth Shield on a party member). Both were reported
+from the game as "the alerts just don't work on this spell".
+
+It takes `CDM_DATA` from the environment, or auto-detects among the known installs, rather than
+hardcoding one box's path like its neighbours.
 
 `listing.txt` is the useful artefact for curation: every class's abilities that carry a real
 cooldown, sorted longest-first.
+
+## Paths, and the drift they caused
+
+Every script used to hardcode an absolute path into one particular install — and `gen_wotlk.py` and
+`verify.py` hardcoded the *output* path into a **different checkout of the addon than the one they
+live in**. So running the pipeline appeared to succeed while writing somewhere nobody read, the only
+way to change the shipped seed was to hand-edit it, and the two silently diverged. That is how
+`CdmSeedWotLK.lua` came to carry a druid Faerie Fire row (770) and a whole `GCD_ONLY_SPELLS` block
+that no generator knew about.
+
+Both are now curated in `gen_wotlk.py` where they belong, and paths are resolved so this cannot
+recur:
+
+- **outputs** are resolved relative to the script (`__file__`), so a generator can only ever write
+  into the checkout it was run from;
+- **client data** auto-detects among the known installs, and is overridable with `CDM_DATA`
+  (a `Data` directory, for `dbc.py`) or `CDM_DATA_LOCALE` (a `Data/enUS` directory, for the rest).
+
+If you hand-edit a generated file, the next `gen_wotlk.py` run will silently revert it. Put the
+change in the curation lists at the top of the generator instead, then regenerate and run `verify.py`.
 
 ## Where the data comes from
 

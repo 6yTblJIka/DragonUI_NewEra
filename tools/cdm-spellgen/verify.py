@@ -4,7 +4,10 @@ import json, re, sys
 spells = {int(k): tuple(v) for k, v in json.load(open("spells.json", encoding="utf-8")).items()}
 import os, struct
 from mpyq import MPQArchive
-DATA = r"D:/Project Reforged 3.3.5a/Data/enUS"
+# See dbc.py for why this is overridable rather than hardcoded.
+DATA = os.environ.get("CDM_DATA_LOCALE") or next(
+    (p for p in (r"D:/Triumvirate/Data/enUS", r"D:/Project Reforged 3.3.5a/Data/enUS")
+     if os.path.isdir(p)), r"D:/Triumvirate/Data/enUS")
 def grab(n):
     best = None
     for a in ["locale-enUS.MPQ","patch-enUS.MPQ","patch-enUS-2.MPQ","patch-enUS-3.MPQ"]:
@@ -22,7 +25,8 @@ for i in range(rc):
     r = struct.unpack_from(f"<{fc}I", blob, 20 + i*rs)
     recs[r[0]] = r
 
-path = r"D:/Project Reforged 3.3.5a/Interface/AddOns/DragonUI_NewEra/modules/cooldownviewer/CdmSeedWotLK.lua"
+REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+path = os.path.join(REPO, "modules", "cooldownviewer", "CdmSeedWotLK.lua")
 bad = 0; n = 0; ids = []
 # Which table we are inside. The rotation list is the ONE place a zero cooldown is correct — that is
 # what it is for — so the check is relaxed there and nowhere else. Tracking the section rather than
@@ -70,7 +74,7 @@ if dupes:
 # and the starter silently does less than it says. ClassData's vanilla entries count too — a starter
 # may legitimately name Mind Blast, which lives there and not in this file.
 seed_ids = set(ids)
-for line in open(r"D:/Project Reforged 3.3.5a/Interface/AddOns/DragonUI_NewEra/modules/cooldownviewer/ClassData.lua",
+for line in open(os.path.join(REPO, "modules", "cooldownviewer", "ClassData.lua"),
                 encoding="utf-8"):
     m = re.match(r"\s+(\d+),\s*--", line)
     if m: seed_ids.add(int(m.group(1)))

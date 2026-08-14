@@ -46,7 +46,10 @@ REACTIVE = {
 # avoid. Excluded on the mechanic, not on the id.
 
 RANKED = re.compile(r"(\d+)\s*$")
-DATA = r"D:/Project Reforged 3.3.5a/Data/enUS"
+# See dbc.py for why this is overridable rather than hardcoded.
+DATA = os.environ.get("CDM_DATA_LOCALE") or next(
+    (p for p in (r"D:/Triumvirate/Data/enUS", r"D:/Project Reforged 3.3.5a/Data/enUS")
+     if os.path.isdir(p)), r"D:/Triumvirate/Data/enUS")
 CLASS_BY_ID = {1: "WARRIOR", 2: "PALADIN", 3: "HUNTER", 4: "ROGUE", 5: "PRIEST", 6: "DEATHKNIGHT",
                7: "SHAMAN", 8: "MAGE", 9: "WARLOCK", 11: "DRUID"}
 

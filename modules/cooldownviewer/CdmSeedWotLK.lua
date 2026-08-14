@@ -319,6 +319,8 @@ local ROTATION_ADD = {
     8004,    -- Lesser Healing Wave
     1064,    -- Chain Heal
     974,     -- Earth Shield
+    324,     -- Lightning Shield
+    52127,   -- Water Shield
     3599,    -- Searing Totem
     8190,    -- Magma Totem
   },
@@ -395,7 +397,7 @@ local STARTER_BY_CLASS = {
       48505,   -- Starfall
       50516,   -- Typhoon
       16914,   -- Hurricane
-      770,     -- Faerie Fire (Balance)
+      770,     -- Faerie Fire
     },
     [2] = {
       5221,    -- Shred
@@ -611,6 +613,7 @@ local STARTER_BY_CLASS = {
       3599,    -- Searing Totem
       32182,   -- Heroism
       2825,    -- Bloodlust
+      52127,   -- Water Shield
     },
     [2] = {
       17364,   -- Stormstrike
@@ -623,6 +626,7 @@ local STARTER_BY_CLASS = {
       3599,    -- Searing Totem
       32182,   -- Heroism
       2825,    -- Bloodlust
+      324,     -- Lightning Shield
     },
     [3] = {
       331,     -- Healing Wave
@@ -634,6 +638,7 @@ local STARTER_BY_CLASS = {
       8050,    -- Flame Shock
       32182,   -- Heroism
       2825,    -- Bloodlust
+      52127,   -- Water Shield
     },
   },
   WARLOCK = {
@@ -733,16 +738,6 @@ appendAll(M.ESSENTIAL_BY_CLASS, ROTATION_ADD)
 -- The same ids again, flattened into a set, because ONE consumer needs to ask the question the other
 -- direction: given a spell, does it have a real cooldown at all?
 --
--- ItemMixin:ConsumeReadyTransition — the edge the `available` alert and the ready sound hang off — is
--- defined as "was on a REAL cooldown, now is not", and a real cooldown explicitly excludes the GCD
--- and cast lockouts. For everything in the two COOLDOWN tables that is exactly right: a GCD flash on
--- Starfall would be noise, because the event worth hearing about is the 90 seconds ending.
---
--- For a ROTATION spell it makes the edge unreachable. Wrath has no cooldown, so IsOnRealCooldown is
--- false forever, `_wasOnRealCD` is never armed, and the transition never fires — the "available alert
--- does nothing on the new filler spells" report. `usable` was unaffected because it polls
--- IsUsableSpell rather than waiting on an edge, which is why one worked and the other did not.
---
 -- Flat rather than per-class: an id is unique to one class already, and the lookup happens on a tile
 -- that has long since stopped caring which class list it came from.
 --
@@ -753,6 +748,35 @@ appendAll(M.ESSENTIAL_BY_CLASS, ROTATION_ADD)
 M.GCD_ONLY_SPELLS = M.GCD_ONLY_SPELLS or {}
 for _, ids in pairs(ROTATION_ADD) do
   for _, id in ipairs(ids) do M.GCD_ONLY_SPELLS[id] = true end
+end
+
+-- The same statement about two abilities the VANILLA curation in ClassData.lua carries, which this
+-- seed does not append to and therefore never swept up. Both were reported (#52): "`Tremor Totem` is
+-- listed as a Spell to track, but it doesn't have any cooldown on WOTLK" and "`Purge` this is also
+-- listed as a Spell to track but it doesn't have any cooldown". Both are correct —
+-- max(RecoveryTime, CategoryRecoveryTime) is 0 for 370 and 8143 in this client's Spell.dbc.
+--
+-- Tremor Totem's tile is NOT broken, incidentally, and is worth recording: a totem sources its swipe
+-- from the live totem timer (M.FindTotemByName), which is exactly the "it just displays the totem
+-- lifetime" the report describes. That is the feature, not the fault.
+for _, id in ipairs({
+  370,     -- Purge
+  8143,    -- Tremor Totem
+}) do M.GCD_ONLY_SPELLS[id] = true end
+
+-- WHAT READS THIS, which for a long time was nothing at all.
+--
+-- The table used to be introduced as existing so the `available` edge could be reached for a
+-- cooldown-less spell. It never was: nothing in the addon referenced M.GCD_ONLY_SPELLS, and
+-- ConsumeReadyTransition still gates on IsOnRealCooldown, so `available` on Wrath was as dead after
+-- this table shipped as before it. The table was right; the conclusion drawn from it was backwards.
+--
+-- Reaching the edge would mean firing `available` every time the GLOBAL ends — a flash every 1.5
+-- seconds on a filler spell, which is a strobe, not an alert. The honest use of the same fact is the
+-- opposite one: a spell with no cooldown cannot offer the two triggers that need one, so the menu
+-- stops offering them. See M.SpellHasNoCooldown, consumed by SettingsMenu.lua.
+function M.SpellHasNoCooldown(spellID)
+  return (spellID and M.GCD_ONLY_SPELLS[spellID]) and true or false
 end
 
 -- STARTER LAYOUTS, per class and talent tab. Not appended anywhere: this is a lookup the runtime

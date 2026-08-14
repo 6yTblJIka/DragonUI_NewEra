@@ -8,7 +8,7 @@ resolve is a hard error, so the file can't silently ship a wrong id.
 Essential = offensive burst / damage / throughput cooldowns.
 Utility    = defensives, interrupts, CC, escapes, dispels, raid cooldowns.
 """
-import json, re, sys
+import json, os, re, sys
 
 resolved = json.load(open("resolved.json", encoding="utf-8"))
 resolved_any = json.load(open("resolved_any.json", encoding="utf-8"))
@@ -102,8 +102,14 @@ ROTATION = {
  "DRUID":   ["Wrath", "Starfire", "Moonfire", "Insect Swarm", "Shred", "Mangle (Cat)", "Rake", "Rip",
              "Ferocious Bite", "Savage Roar", "Maul", "Lacerate", "Swipe (Bear)", "Healing Touch",
              "Nourish", "Rejuvenation", "Regrowth", "Lifebloom"],
+ # The three shields are here rather than in Essential because none of them has a cooldown, and here
+ # rather than left to the buff viewers because that is what issue #52 asked for in as many words:
+ # "they maybe should be trackable as spells and not buffs... I'd like to see the stack count when
+ # active, but they're usually active all the time, it's weird to have buffs tracked that are active
+ # all the time." A spell tile draws the charge count (ItemMixin:SetAuraCount) and, with no cooldown
+ # to compete with, sources its swipe from the shield's own remaining time.
  "SHAMAN":  ["Lightning Bolt", "Healing Wave", "Lesser Healing Wave", "Chain Heal",
-             "Earth Shield", "Searing Totem", "Magma Totem"],
+             "Earth Shield", "Lightning Shield", "Water Shield", "Searing Totem", "Magma Totem"],
  "DEATHKNIGHT": ["Icy Touch", "Plague Strike", "Blood Strike", "Heart Strike", "Death Strike",
                  "Obliterate", "Scourge Strike", "Frost Strike", "Rune Strike", "Death Coil",
                  "Blood Boil", "Pestilence"],
@@ -185,13 +191,17 @@ STARTER = {
   3: ["Icy Touch", "Plague Strike", "Scourge Strike", "Blood Strike", "Death Coil", "Death and Decay",
       "Pestilence", "Summon Gargoyle", "Raise Dead", "Horn of Winter"],
  },
+ # Shields per spec, the way the spec actually plays them: Elemental and Restoration run Water Shield
+ # for the mana, Enhancement runs Lightning Shield for the damage. Restoration keeps Earth Shield too
+ # — that one goes on the tank, not on you, which is the whole reason it needed a `friend` lookup.
  "SHAMAN": {
   1: ["Lightning Bolt", "Chain Lightning", "Lava Burst", "Flame Shock", "Earth Shock",
-      "Elemental Mastery", "Thunderstorm", "Magma Totem", "Searing Totem", "Heroism", "Bloodlust"],
+      "Elemental Mastery", "Thunderstorm", "Magma Totem", "Searing Totem", "Heroism", "Bloodlust",
+      "Water Shield"],
   2: ["Stormstrike", "Lava Lash", "Lightning Bolt", "Flame Shock", "Earth Shock", "Feral Spirit",
-      "Magma Totem", "Searing Totem", "Heroism", "Bloodlust"],
+      "Magma Totem", "Searing Totem", "Heroism", "Bloodlust", "Lightning Shield"],
   3: ["Healing Wave", "Lesser Healing Wave", "Chain Heal", "Riptide", "Earth Shield",
-      "Lightning Bolt", "Flame Shock", "Heroism", "Bloodlust"],
+      "Lightning Bolt", "Flame Shock", "Heroism", "Bloodlust", "Water Shield"],
  },
  "MAGE": {
   1: ["Arcane Blast", "Arcane Missiles", "Arcane Barrage", "Arcane Explosion", "Presence of Mind",
@@ -210,7 +220,12 @@ STARTER = {
       "Curse of Doom", "Rain of Fire", "Life Tap", "Shadowflame"],
  },
  "DRUID": {
-  1: ["Wrath", "Starfire", "Moonfire", "Insect Swarm", "Starfall", "Typhoon", "Hurricane"],
+  # "Faerie Fire" is the BALANCE one (770) and resolves through the no-cooldown pass, which is the
+  # whole reason it was missing here: it was applied to the shipped Lua by hand instead, leaving the
+  # generator and its output disagreeing about a spell. Tab 2 keeps "Faerie Fire (Feral)" (16857),
+  # a different ability with a different id and a 6s cooldown of its own.
+  1: ["Wrath", "Starfire", "Moonfire", "Insect Swarm", "Starfall", "Typhoon", "Hurricane",
+      "Faerie Fire"],
   2: ["Shred", "Mangle (Cat)", "Rake", "Rip", "Ferocious Bite", "Savage Roar", "Tiger's Fury",
       "Maul", "Lacerate", "Swipe (Bear)", "Berserk", "Faerie Fire (Feral)"],
   3: ["Healing Touch", "Nourish", "Rejuvenation", "Regrowth", "Lifebloom", "Wild Growth",
@@ -228,7 +243,11 @@ STARTER = {
 # So the comparison is BY NAME, with every id mapped back through Spell.dbc. Nothing here is parsed
 # for meaning beyond "id, -- Name" lines inside the two tables, which is the same shape verify.py
 # reads.
-CLASSDATA = r"D:/Project Reforged 3.3.5a/Interface/AddOns/DragonUI_NewEra/modules/cooldownviewer/ClassData.lua"
+# Relative to this script, not an absolute path into one box's install: the file being read is a
+# sibling of the file being WRITTEN (OUT, below), so resolving it any other way lets the generator
+# read one checkout's curation while emitting into another's.
+CLASSDATA = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "..", "..", "modules", "cooldownviewer", "ClassData.lua")
 spells = {int(k): v for k, v in json.load(open("spells.json", encoding="utf-8")).items()}
 vanilla, vanilla_ess = {}, {}
 cur_table = cur_class = None
@@ -440,6 +459,50 @@ appendAll(M.ESSENTIAL_BY_CLASS, ESSENTIAL_ADD)
 appendAll(M.UTILITY_BY_CLASS,   UTILITY_ADD)
 appendAll(M.ESSENTIAL_BY_CLASS, ROTATION_ADD)
 
+-- The same ids again, flattened into a set, because ONE consumer needs to ask the question the other
+-- direction: given a spell, does it have a real cooldown at all?
+--
+-- Flat rather than per-class: an id is unique to one class already, and the lookup happens on a tile
+-- that has long since stopped caring which class list it came from.
+--
+-- Membership is a statement about the SPELL, and every entry here was verified cooldown-less against
+-- Spell.dbc by the same generator that authored the lists. It is not a runtime guess: "have we seen
+-- a real cooldown on this yet" would misfire for every long cooldown the player has not pressed this
+-- session, flashing a 2-minute ability at the end of an unrelated global.
+M.GCD_ONLY_SPELLS = M.GCD_ONLY_SPELLS or {}
+for _, ids in pairs(ROTATION_ADD) do
+  for _, id in ipairs(ids) do M.GCD_ONLY_SPELLS[id] = true end
+end
+
+-- The same statement about two abilities the VANILLA curation in ClassData.lua carries, which this
+-- seed does not append to and therefore never swept up. Both were reported (#52): "`Tremor Totem` is
+-- listed as a Spell to track, but it doesn't have any cooldown on WOTLK" and "`Purge` this is also
+-- listed as a Spell to track but it doesn't have any cooldown". Both are correct —
+-- max(RecoveryTime, CategoryRecoveryTime) is 0 for 370 and 8143 in this client's Spell.dbc.
+--
+-- Tremor Totem's tile is NOT broken, incidentally, and is worth recording: a totem sources its swipe
+-- from the live totem timer (M.FindTotemByName), which is exactly the "it just displays the totem
+-- lifetime" the report describes. That is the feature, not the fault.
+for _, id in ipairs({
+  370,     -- Purge
+  8143,    -- Tremor Totem
+}) do M.GCD_ONLY_SPELLS[id] = true end
+
+-- WHAT READS THIS, which for a long time was nothing at all.
+--
+-- The table used to be introduced as existing so the `available` edge could be reached for a
+-- cooldown-less spell. It never was: nothing in the addon referenced M.GCD_ONLY_SPELLS, and
+-- ConsumeReadyTransition still gates on IsOnRealCooldown, so `available` on Wrath was as dead after
+-- this table shipped as before it. The table was right; the conclusion drawn from it was backwards.
+--
+-- Reaching the edge would mean firing `available` every time the GLOBAL ends — a flash every 1.5
+-- seconds on a filler spell, which is a strobe, not an alert. The honest use of the same fact is the
+-- opposite one: a spell with no cooldown cannot offer the two triggers that need one, so the menu
+-- stops offering them. See M.SpellHasNoCooldown, consumed by SettingsMenu.lua.
+function M.SpellHasNoCooldown(spellID)
+  return (spellID and M.GCD_ONLY_SPELLS[spellID]) and true or false
+end
+
 -- STARTER LAYOUTS, per class and talent tab. Not appended anywhere: this is a lookup the runtime
 -- reads when a starter is applied (M.ApplySpecStarter), listing which of the class's Essential spells
 -- stay ON. Everything else in the list goes to Not Displayed rather than being deleted, so it is one
@@ -458,7 +521,13 @@ M.STARTER_BY_CLASS = STARTER_BY_CLASS
 if M.InvalidateCuratedCache then M.InvalidateCuratedCache() end
 ''' % (ess, uti, rot, sta)
 
-out = r"D:/Project Reforged 3.3.5a/Interface/AddOns/DragonUI_NewEra/modules/cooldownviewer/CdmSeedWotLK.lua"
+# THIS LINE IS WHY THE SEED DRIFTED FROM ITS GENERATOR. It used to name an absolute path into a
+# DIFFERENT checkout of the addon, so running gen_wotlk.py appeared to succeed while writing
+# somewhere nobody was reading — and the only way to change the shipped file was to hand-edit it,
+# which is exactly what happened to the druid Faerie Fire rows. Resolved against this script instead,
+# so the generator can only ever write to the checkout it was run from.
+out = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                   "..", "..", "modules", "cooldownviewer", "CdmSeedWotLK.lua")
 with open(out, "w", encoding="utf-8", newline="\n") as f:
     f.write(header)
 

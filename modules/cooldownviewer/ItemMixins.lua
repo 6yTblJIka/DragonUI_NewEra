@@ -341,6 +341,54 @@ function ItemMixin:SetBuffGlow(on)
   if on then glow:Show() else glow:Hide() end
 end
 
+-- ── Stack count ─────────────────────────────────────────────────────────────────────────────────
+--
+-- The aura viewers have always drawn one; a SPELL tile never did, because a cooldown does not have
+-- stacks. Its aura does. Issue #52: "I'd like to see the stack count when active... Most Shaman WAs
+-- have a way to track the shield stacks because it's very important to maintain their uptime" — and
+-- the shields are spells, not buffs, precisely because they are up all the time and belong on a
+-- tile you press rather than in a list of things that happened to you.
+--
+-- Bottom-right, matching the BuffIcon tile's Applications label.
+--
+-- IN ITS OWN CHILD FRAME, for the reason M.BuildBuffGlow spells out at length: `Cooldown` is a child
+-- frame, a child frame draws above every LAYER of its parent, and so a fontstring created on the
+-- tile at OVERLAY would sit under the sweep and be eaten by it a wedge at a time. Only a sibling
+-- frame with a higher level outranks it. BuffViewers reaches the same arrangement for its own count.
+--
+-- Not parented to CooldownFlash either, which was the first attempt: that frame ships Hidden and is
+-- only shown for the length of the ready burst, so the count would have been invisible except during
+-- a flash — a failure that looks exactly like "stack counts don't work".
+function M.BuildCount(parent)
+  if not parent then return nil end
+  local base = (parent.Cooldown and parent.Cooldown.GetFrameLevel and parent.Cooldown:GetFrameLevel())
+               or (parent.GetFrameLevel and parent:GetFrameLevel()) or 1
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints(parent)
+  f:SetFrameLevel(base + 4)
+  f.Text = f:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+  f.Text:SetPoint("BOTTOMRIGHT", parent.Icon or parent, "BOTTOMRIGHT", -2, 2)
+  f.Text:SetJustifyH("RIGHT")
+  f.Text:Hide()
+  return f
+end
+
+-- 1 is not a stack. A single-application aura showing a "1" is noise on every DoT in the game, and
+-- the client's own buff frames have always suppressed it.
+function ItemMixin:SetAuraCount(count)
+  local fs = self.Count and self.Count.Text
+  if not fs then return end
+  count = tonumber(count) or 0
+  if self._auraCountShown == count then return end
+  self._auraCountShown = count
+  if count > 1 then
+    fs:SetText(count)
+    fs:Show()
+  else
+    fs:Hide()
+  end
+end
+
 -- GCD detection. Retail reads C_Spell.GetSpellCooldown(spellID).isOnGCD; we replicate the manual
 -- probe: query the sentinel "Global Cooldown" spell and compare start+duration.
 local GCD_PROBE_SPELL = 61304
@@ -376,6 +424,19 @@ end
 -- module's legacy field names (.expirationTime / .debuffType / .isHarmful).
 local adaptedPool = {}
 
+local function adaptRow(row, harmful)
+  local e = adaptedPool[row.name]
+  if not e then e = {}; adaptedPool[row.name] = e end
+  e.name           = row.name
+  e.count          = row.count or 0
+  e.duration       = row.duration or 0
+  e.expirationTime = row.expiration or 0
+  e.isHarmful      = harmful or nil
+  e.debuffType     = harmful and row.dispelType or nil
+  e.caster         = row.caster
+  return e
+end
+
 function M.findPlayerAuraDataByName(name)
   if not (name and NE.aura and NE.aura.FindByName) then return nil end
   local row, harmful = NE.aura.FindByName("player", name)
@@ -389,6 +450,227 @@ function M.findPlayerAuraDataByName(name)
   e.isHarmful      = harmful or nil
   e.debuffType     = harmful and row.dispelType or nil
   return e
+end
+
+-- ── The spell -> aura edge ──────────────────────────────────────────────────────────────────────
+--
+-- Everything that asks "is this spell's effect up right now" used to ask it as "is there an aura on
+-- the PLAYER with the SAME NAME as this spell". Two whole families of ability answer no to that
+-- forever, and both were reported:
+--
+--   * the aura is named differently. Bloodsurge turns Slam into `Slam!`; Brain Freeze turns Fireball
+--     into `Fireball!`. One character, and the match never succeeds (issue #57, warrior "Embate").
+--   * the aura is not on the player. Faerie Fire, Moonfire and every DoT land on the TARGET; Earth
+--     Shield lands on a PARTY MEMBER (issues #57 druid Balance, and #52 shaman shields).
+--
+-- CdmSpellAuras.lua carries the edge, generated from the client's own Spell.dbc. This resolves it.
+--
+-- The plain same-name-on-player lookup stays FIRST, and the generated table is deliberately missing
+-- every row it would answer: it is cheaper, it is rank-proof without any table at all, and it is
+-- right for the large majority of tiles. The links are the fallback for the cases it cannot see.
+
+-- Where a `friend` link is looked for.
+--
+-- Earth Shield is the only ability that reaches this, by construction: CdmSpellAuras.lua's FRIEND_OK
+-- refuses a friend link to anything that can be out on several allies at once, because a tile shows
+-- ONE aura and "which of your twenty shields is this" has no answer. So the set below only has to be
+-- good enough to find a shaman's single shield.
+--
+-- Your own party, plus the raid's MAIN TANKS. The party units are where it lands when five-manning;
+-- the tank assignment is where it lands in a raid, which is the whole point of the spell and is
+-- otherwise outside party1-4 entirely. Everything else in a forty-man roster is not swept: that is
+-- forty aura scans a frame to find one buff, and the tanks are where it actually is.
+--
+-- Still a REACHABLE SET, not a complete one. Shield an unflagged raider in another subgroup and the
+-- tile stays dark. Documented rather than papered over.
+--
+-- COST, because this is the one lookup here that is not O(1). Measured in the offline harness
+-- (NE.aura._scans), per frame, over Earth Shield tiles:
+--
+--   solo, nothing out                            2 scans   (the player pass, which happens anyway)
+--   full party, nothing out                      8
+--   full party, shield out, steady state         3
+--   25-man raid, two main tanks, nothing out    10   <- the worst case, and it is the idle one
+--
+-- The count is PER FRAME, not per tile: NE.aura caches one scan per (unit, filter) per frame, so
+-- five shield tiles cost exactly what one does — and a scan is a loop that breaks at the unit's
+-- first empty slot, not a fixed forty. Solo players pay nothing, because UnitExists gates every
+-- party slot before a scan is requested. The roster walk that finds the tanks is event-driven, so a
+-- 25-man roster is 25 GetRaidRosterInfo calls when the roster CHANGES and none in between.
+--
+-- Only a shaman with a shield tile pays any of it. FRIEND_OK is most of the saving: this used to run
+-- for every HoT, Blessing and Power Word: Shield in the game, at 14 scans a frame, to produce an
+-- answer that was wrong anyway. qa/offline/test_boot.lua holds all of these to a budget.
+local FRIEND_UNITS = { "player", "target", "focus", "party1", "party2", "party3", "party4" }
+
+-- A buff you cast on an ally is HELPFUL. Walking seven units' debuff lists as well was half the cost
+-- of this lookup and could never have found anything.
+local FRIEND_FILTER = "HELPFUL"
+
+-- The raid's main tanks, appended to the sweep when there is a raid.
+--
+-- CACHED AND EVENT-DRIVEN, because building it is a walk of the whole roster: GetRaidRosterInfo is
+-- one call per member, so recomputing it inside a 5Hz lookup would cost forty calls a frame to save
+-- forty aura scans. The roster only changes when the roster changes, so it is rebuilt on the two
+-- events that say so and read from a table in between.
+--
+-- 3.3.5a has no UnitGroupRolesAssigned (Cata+). The MAIN TANK assignment from the raid UI is the
+-- role signal this client has, and it is returned as the 10th value of GetRaidRosterInfo.
+local tankUnits, tanksDirty = {}, true
+
+local function rebuildTanks()
+  tanksDirty = false
+  for i = #tankUnits, 1, -1 do tankUnits[i] = nil end
+  local n = (GetNumRaidMembers and GetNumRaidMembers()) or 0
+  if n <= 0 or not GetRaidRosterInfo then return end
+  for i = 1, n do
+    local _, _, _, _, _, _, _, _, _, role = GetRaidRosterInfo(i)
+    -- MAINASSIST included: plenty of raids flag their off-tank that way, and the cost of one extra
+    -- unit is one cached scan.
+    if role == "MAINTANK" or role == "MAINASSIST" then
+      tankUnits[#tankUnits + 1] = "raid" .. i
+    end
+  end
+end
+
+local rosterWatcher = CreateFrame("Frame")
+rosterWatcher:RegisterEvent("RAID_ROSTER_UPDATE")
+rosterWatcher:RegisterEvent("PARTY_MEMBERS_CHANGED")
+rosterWatcher:SetScript("OnEvent", function() tanksDirty = true end)
+
+-- Test seam, and the diagnostic answer to "why is my Earth Shield tile dark".
+function M.FriendTankUnits()
+  if tanksDirty then rebuildTanks() end
+  return tankUnits
+end
+
+-- The localized name of a linked aura, memoised onto the link row.
+--
+-- GetSpellInfo FIRST and the generated `name` only as a fallback. The generated string is enUS and
+-- the player who reported this runs esES, where `Slam!` is `¡Embate!` — a name this addon could
+-- never have derived and must therefore ask the client for. Memoised because a locale cannot change
+-- inside a session, and this is read from a 5Hz ticker.
+local function linkName(link)
+  local n = link._name
+  if n ~= nil then return n or nil end
+  n = (link.id and GetSpellInfo(link.id)) or link.name
+  link._name = n or false
+  return n
+end
+
+-- The link rows for a tile, at whichever rank it happens to hold.
+--
+-- `_baseSpellID` first: that is the id the spell was LISTED under, which is what the generated table
+-- keys rank 1 of. `spellID` is the highest rank the player knows and moves under the tile as they
+-- train. Both are covered, plus every learned rank, so a custom list holding any rank resolves.
+local function auraLinksFor(item)
+  local T = M.SPELL_AURA_LINKS
+  if not (T and item) then return nil end
+  local rows = (item._baseSpellID and T[item._baseSpellID]) or (item.spellID and T[item.spellID])
+  if rows then return rows end
+  local ranks = item._rankCDIDs
+  if ranks then
+    for i = 1, #ranks do
+      if T[ranks[i]] then return T[ranks[i]] end
+    end
+  end
+  return nil
+end
+M.AuraLinksFor = auraLinksFor
+
+-- Does this tile have ANY way of showing an aura? Used by the alert menu to stop offering `Refresh`
+-- on a spell that provably cannot trigger it (Starfire applies nothing at all — issue #57's first
+-- report was an alert assigned to exactly that, waiting for something that could never happen).
+function M.SpellCanShowAura(item)
+  if not item then return false end
+  if auraLinksFor(item) then return true end
+  -- No link table row does NOT mean no aura: the generated table omits every same-name-on-player
+  -- case precisely because the plain lookup already finds it. So "is one up right now" remains the
+  -- only honest answer available for those, and a live sighting is proof enough.
+  return item.spellName ~= nil and M.findPlayerAuraDataByName(item.spellName) ~= nil
+end
+
+-- The aura this tile should be reporting, and the unit it was found on.
+--
+-- Returns (entry, unitToken) or nil. The entry is the same pooled shape findPlayerAuraDataByName
+-- hands back, so every existing consumer reads it unchanged.
+function M.FindSpellAura(item)
+  if not (item and NE.aura and NE.aura.FindByName) then return nil end
+  local now = GetTime()
+
+  -- 1. This spell's own name, on the player.
+  --
+  -- MINE FIRST, then a caster-less aura. The plain byName index answers "an aura of this name is on
+  -- you", which for anything another player can also cast on you — Renew, Fortitude, Power Word:
+  -- Shield — lit the tile for someone else's work. HoTs from two casters coexist as separate auras,
+  -- so a post-hoc caster test on the first match would also have rejected yours while theirs sat two
+  -- slots down; asking the mine index directly is what gets this right.
+  --
+  -- The caster-less fallback is not tidiness: several 3.3.5a proc auras report no caster at all, and
+  -- demanding one would lose exactly the links this resolver was built to add. A nil caster is
+  -- accepted, a DIFFERENT caster is not.
+  local name = item.spellName
+  if name then
+    local row, harmful = NE.aura.FindByName("player", name, true)
+    if not (row and row.duration > 0 and row.expiration > now) then
+      row = nil
+      local any, h2 = NE.aura.FindByName("player", name)
+      if any and any.caster == nil and any.duration > 0 and any.expiration > now then
+        row, harmful = any, h2
+      end
+    end
+    if row then return adaptRow(row, harmful), "player" end
+  end
+
+  -- 2. The generated links.
+  local links = auraLinksFor(item)
+  if not links then return nil end
+  for i = 1, #links do
+    local link = links[i]
+    local name = linkName(link)
+    if name then
+      if link.unit == "friend" then
+        -- mineOnly: a raid with two shamans has two Earth Shields, and only one of them is the
+        -- answer to "is MY Earth Shield out".
+        local function try(unit)
+          if not (unit and UnitExists(unit)) then return nil end
+          local row, harmful = NE.aura.FindByName(unit, name, true, FRIEND_FILTER)
+          if row and row.duration > 0 and row.expiration > now then
+            return adaptRow(row, harmful), unit
+          end
+          return nil
+        end
+        -- The unit it was on last time, first. A shield stays on the same tank for its whole
+        -- duration, so the steady state is one cached scan rather than a sweep per frame; the sweep
+        -- is then only paid on the frame it moves, or while it is not out at all.
+        local aura, unit = try(item._friendUnit)
+        if aura then return aura, unit end
+        for u = 1, #FRIEND_UNITS do
+          aura, unit = try(FRIEND_UNITS[u])
+          if aura then item._friendUnit = unit; return aura, unit end
+        end
+        -- Then the raid's main tanks, who are where a shaman's Earth Shield actually is and who are
+        -- outside party1-4 in every raid where the shaman is not in the tank's subgroup.
+        local tanks = M.FriendTankUnits()
+        for u = 1, #tanks do
+          aura, unit = try(tanks[u])
+          if aura then item._friendUnit = unit; return aura, unit end
+        end
+        item._friendUnit = nil
+      else
+        local unit = link.unit or "player"
+        -- Only the player's own frame is exempt from the caster test. A debuff on the target is
+        -- shared ground — another druid's Moonfire must not light this tile — whereas a buff on
+        -- YOU from a proc is yours by construction, and some 3.3.5a procs report no caster at all,
+        -- so demanding one there would lose the very links this table exists to add.
+        local row, harmful = NE.aura.FindByName(unit, name, unit ~= "player")
+        if row and row.duration > 0 and row.expiration > now then
+          return adaptRow(row, harmful), unit
+        end
+      end
+    end
+  end
+  return nil
 end
 
 -- Live totem lookup (Shaman): a tracked totem spell sources its swipe from the real totem timer.
@@ -455,7 +737,9 @@ function ItemMixin:UpdateShownState()
   if not self.allowHideWhenInactive then self:Show(); return end
   if not self.hideWhenInactive then self:Show(); return end
 
-  local aura = M.findPlayerAuraDataByName(self.spellName)
+  -- Same widened lookup as RefreshCooldown: a tile set to hide when inactive is not inactive while
+  -- its DoT is ticking on the target.
+  local aura = M.FindSpellAura(self)
   if aura and aura.duration > 0 and aura.expirationTime > GetTime() then
     self:Show()
     return
@@ -675,19 +959,35 @@ function ItemMixin:RefreshCooldown()
   -- and the timer can be whichever the player finds useful. Default: the cooldown.
   --
   -- The glow is set from `aura` either way — the SIGNAL is not the setting, only the number is.
-  local aura = M.findPlayerAuraDataByName(self.spellName)
+  --
+  -- M.FindSpellAura, not the bare name-on-player lookup it replaced: a DoT on the target and a proc
+  -- under another name are both "this tile's effect is up", and neither was ever visible here. The
+  -- return is the same pooled shape, so everything below reads unchanged.
+  local aura = M.FindSpellAura(self)
   local auraUp = aura and aura.duration > 0 and aura.expirationTime > GetTime()
   self:SetBuffGlow(auraUp and true or false)
+  self:SetAuraCount(auraUp and aura.count or 0)
 
-  if auraUp and M.BuffShowsAuraTime() then
-    local auraStart = aura.expirationTime - aura.duration
-    setSwipeColor(self.Cooldown, M.COLOR_AURA)
-    if self.Cooldown.SetDrawSwipe then self.Cooldown:SetDrawSwipe(true) end
-    CooldownFrame_Set(self.Cooldown, auraStart, aura.duration, 1)
-    if self.Icon then self.Icon:SetDesaturated(false) end
-    self:ClearFlash()
-    if self.hideWhenInactive then self:Show() end
-    return
+  if auraUp then
+    -- The setting picks between two numbers when there ARE two. When the spell has no real cooldown
+    -- — a DoT, a shield, a shout — there is only ever one, and the tile used to show nothing at all
+    -- rather than show it. So the setting decides, and "no cooldown to compete with" overrides it.
+    local showAuraTime = M.BuffShowsAuraTime()
+    if not showAuraTime then
+      local s, d, en = self:ReadCooldown()
+      showAuraTime = not (s and s > 0 and d and d > M.GCD_MAX and en == 1
+                          and not isCastLockoutCooldown(s, d))
+    end
+    if showAuraTime then
+      local auraStart = aura.expirationTime - aura.duration
+      setSwipeColor(self.Cooldown, M.COLOR_AURA)
+      if self.Cooldown.SetDrawSwipe then self.Cooldown:SetDrawSwipe(true) end
+      CooldownFrame_Set(self.Cooldown, auraStart, aura.duration, 1)
+      if self.Icon then self.Icon:SetDesaturated(false) end
+      self:ClearFlash()
+      if self.hideWhenInactive then self:Show() end
+      return
+    end
   end
 
   -- 1b. Totem precedence (Shaman): source the swipe from the live totem timer; falls through to the

@@ -59,7 +59,10 @@ overrides spell data there, these ids reflect the stock client.
 """
 import os, re, struct, collections, sys
 
-DATA = r"D:/Project Reforged 3.3.5a/Data/enUS"
+# See dbc.py for why this is overridable rather than hardcoded.
+DATA = os.environ.get("CDM_DATA_LOCALE") or next(
+    (p for p in (r"D:/Triumvirate/Data/enUS", r"D:/Project Reforged 3.3.5a/Data/enUS")
+     if os.path.isdir(p)), r"D:/Triumvirate/Data/enUS")
 ORDER = ["locale-enUS.MPQ", "patch-enUS.MPQ", "patch-enUS-2.MPQ", "patch-enUS-3.MPQ"]
 OUT = "../../modules/cooldownviewer/CdmAuraCatalog.lua"
 

@@ -112,6 +112,13 @@ local function isAuraRow(item)
   return (meta and meta.mode == "auras") and true or false
 end
 
+-- Does this row hold a spell with no cooldown at all? Keyed off the LISTED id, like every other
+-- per-spell question here — M.GCD_ONLY_SPELLS is authored against the rank-1 ids the lists carry.
+local function noCooldown(item)
+  if not (item and M.SpellHasNoCooldown) then return false end
+  return M.SpellHasNoCooldown(item.GetSettingsKey and item:GetSettingsKey() or item.spellID)
+end
+
 -- One submenu per sound category, a radio per sound, plus None. Selecting previews the cue —
 -- retail's "Play Sample" — because a sound you cannot hear before committing is not a choice.
 --
@@ -121,7 +128,10 @@ end
 local function addSoundEntries(root, item)
   if not (item.spellID and M.SOUND_DATA and M.SOUND_CATEGORY_ORDER and M.SetReadySoundKit) then return end
 
-  if isAuraRow(item) then
+  -- Both gates land on the same clear-only branch, because both describe a row with no cooldown ->
+  -- ready edge behind it: a tracked buff has no cooldown, and neither does Purge (issue #52) or any
+  -- rotation filler. The sound would store, badge, and never play.
+  if isAuraRow(item) or noCooldown(item) then
     -- Only when something is actually stored — otherwise the row simply has no sound section. This
     -- exists for layouts saved BEFORE the gate, where a kit could be assigned to a buff and then sat
     -- there lighting the badge with nothing behind it and no per-item way to take it off.
@@ -131,7 +141,7 @@ local function addSoundEntries(root, item)
       M.SetReadySoundKit(item.spellID, nil)
       applyAlertBadge(item)
     end):SetTooltip("Clear Ready Sound",
-      "A ready sound plays when a COOLDOWN finishes.|nA tracked buff has none, so this one can|nnever play. Clearing it also clears the badge.")
+      "A ready sound plays when a COOLDOWN finishes.|nThis spell has none, so it can never play.|nClearing it also clears the badge.")
     return
   end
 
@@ -159,21 +169,61 @@ local function addSoundEntries(root, item)
   end
 end
 
--- Does this spell have an aura of its own name up right now? The same lookup the Refresh alert
--- makes at runtime (Alerts.lua's inRefreshWindow): player first, then target.
+-- What this row can say about its own aura, for the Refresh/Active tooltips.
 --
--- A "yes" here is proof Refresh will work. A "no" is NOT proof it will not — the aura may simply be
--- inactive at the moment you opened the menu. So the tooltip states the REQUIREMENT and adds a live
--- sighting when there is one, rather than greying the entry out on a guess. Knowing for certain
--- would mean shipping a generated "applies an aura named after itself" table out of Spell.dbc; that
--- is a real option, but it is a generator pass, not a menu tweak.
-local function auraSeen(name)
-  if not (name and NE.aura and NE.aura.FindByName) then return false end
-  for _, unit in ipairs({ "player", "target" }) do
-    local row = NE.aura.FindByName(unit, name)
-    if row and row.duration and row.duration > 0 then return true end
+-- THE GENERATOR PASS HAPPENED. This comment used to end "knowing for certain would mean shipping a
+-- generated 'applies an aura named after itself' table out of Spell.dbc; that is a real option, but
+-- it is a generator pass, not a menu tweak." CdmSpellAuras.lua is that table, so the menu can now
+-- answer properly instead of hedging.
+--
+--   "linked"  the generated table names an aura for this spell, and where it lands. Certainty.
+--   "live"    an aura is up RIGHT NOW under this spell's own name — proof, whatever the table says.
+--   neither   nothing known. Still not proof of absence: the table deliberately omits every
+--             same-name-on-player case because the plain lookup finds those unaided, so an ability
+--             whose buff simply is not running at this moment lands here. The tooltip says what is
+--             REQUIRED rather than greying the entry out on that.
+local function auraInfo(item)
+  local links = M.AuraLinksFor and M.AuraLinksFor(item)
+  local live = item and item.spellName and M.findPlayerAuraDataByName
+    and M.findPlayerAuraDataByName(item.spellName) ~= nil
+  if not live and item and item.spellName and NE.aura and NE.aura.FindByName then
+    local row = NE.aura.FindByName("target", item.spellName, true)
+    live = (row and row.duration and row.duration > 0) and true or false
   end
-  return false
+  return links, live
+end
+
+-- "on you" / "on your target" / "on the friend you cast it on", from the link rows. The unit is the
+-- half of this players get wrong — an alert that only ever fires while the debuff is on the target
+-- reads as broken until you know that is what it means.
+local function auraWhere(links)
+  if not links then return nil end
+  local seen, out = {}, {}
+  for _, l in ipairs(links) do
+    local where = (l.unit == "target" and "your target") or (l.unit == "friend" and "your ally") or "you"
+    if not seen[where] then seen[where] = true; out[#out + 1] = where end
+  end
+  return table.concat(out, " and ")
+end
+
+-- The closing line of both aura tooltips: what is known, in falling order of certainty.
+local function auraNote(links, live, where)
+  if links then
+    local names = {}
+    for _, l in ipairs(links) do
+      local n = (l.id and GetSpellInfo(l.id)) or l.name
+      if n then names[#names + 1] = n end
+    end
+    -- Only claim it when there is something to name. A link whose aura this client can neither
+    -- resolve nor fall back on would otherwise render "Applies  to you", which is worse than the
+    -- live-sighting line below and much worse than saying nothing certain.
+    if #names > 0 then
+      return ("|n|n|cff40ff40Applies %s to %s, so this will work.|r")
+        :format(table.concat(names, ", "), where or "you")
+    end
+  end
+  if live then return "|n|n|cff40ff40Its aura is active now, so this will work.|r" end
+  return "|n|n|cffffd200No aura of this name is up right now.|r"
 end
 
 -- Event (None / Available / Refresh / Usable), FX style, and — for Refresh — the window %.
@@ -202,12 +252,20 @@ local function addAlertEntries(root, item)
   -- promise "Works for every spell", which is true and was being read on rows that hold no spell.
   -- None stays above it, so a layout that stored `available` on a buff before this gate can still be
   -- set back to None or moved onto Refresh.
-  if not isAuraRow(item) then
+  --
+  -- The second gate is the same idea one step further: a spell with NO cooldown has no cooldown ->
+  -- ready edge either. ConsumeReadyTransition needs IsOnRealCooldown to have been true, and for Wrath
+  -- or Purge it never is — so the entry stored, badged, previewed, and then never fired. Issue #52
+  -- named two of these outright ("`Purge` this is also listed as a Spell to track but it doesn't have
+  -- any cooldown"); every rotation filler is in the same position.
+  if not isAuraRow(item) and not noCooldown(item) then
     alertRoot:CreateRadio("Available", function() return isType("available") end, pick("available"))
       :SetTooltip("Available", "Flashes once, the moment the cooldown finishes.|nWorks for every spell.")
   end
 
   -- Refresh is the one event that genuinely cannot fire for some spells, so it says what it needs.
+  local links, live = auraInfo(item)
+  local where = auraWhere(links)
   local pct = math.floor((AL.GetWindow(item.spellID) or 0.3) * 100 + 0.5)
   local refreshText
   if isAuraRow(item) then
@@ -219,19 +277,29 @@ local function addAlertEntries(root, item)
     refreshText = ("Glows during the last %d%% of this spell's own|nbuff or debuff."):format(pct)
       .. "|n|nA cooldown that applies no aura — Shadowfiend,|nPsychic Scream — can never trigger it."
   end
-  refreshText = refreshText .. (auraSeen(item.spellName)
-    and "|n|n|cff40ff40Its aura is active now, so this will work.|r"
-    or  "|n|n|cffffd200No aura of this name is up right now.|r")
+  refreshText = refreshText .. auraNote(links, live, where)
   alertRoot:CreateRadio("Refresh", function() return isType("refresh") end, pick("refresh"))
     :SetTooltip("Refresh", refreshText)
 
-  -- ACTIVE, on aura rows only. The other three all ask questions about a COOLDOWN, and a proc with
-  -- no castable spell of its own name can answer "yes" to none of them. Offered first among the
-  -- aura-row triggers because for a tracked buff it is the obvious one.
-  if isAuraRow(item) then
+  -- ACTIVE. Was aura-rows-only, on the reasoning that the other three all ask questions about a
+  -- COOLDOWN and a proc can answer none of them. True, and it left out the other half of the same
+  -- gap: "glow for the whole time the buff or debuff is up" is what a SPELL row wants too, and it is
+  -- what issue #57 asked for in as many words — "que las habilidades que proporcionen un buff o
+  -- debuff tengan una alerta brillante el tiempo que estén activas". A DoT tile can now answer it,
+  -- so it is offered wherever there is an aura to be active: every aura row, and every spell row the
+  -- generated links know about (or that has one up right now to prove it).
+  if isAuraRow(item) or (M.SpellCanShowAura and M.SpellCanShowAura(item)) then
+    local activeText
+    if isAuraRow(item) then
+      activeText = "Glows for as long as this buff is on you.|n|nThe one that works for a proc: it"
+        .. " asks whether the|nbuff is up, not whether something is castable|nor off cooldown."
+    else
+      activeText = ("Glows for as long as this spell's effect is|nup on %s."):format(where or "you")
+        .. "|n|nThe one for a DoT or a shield: it asks whether|nthe aura is up, not whether the"
+        .. " cooldown is ready."
+    end
     alertRoot:CreateRadio("Active", function() return isType("active") end, pick("active"))
-      :SetTooltip("Active", "Glows for as long as this buff is on you.|n|nThe one that works for a"
-        .. " proc: it asks whether the|nbuff is up, not whether something is castable|nor off cooldown.")
+      :SetTooltip("Active", activeText .. auraNote(links, live, where))
   end
 
   -- USABLE asks the client whether a spell of this name can be cast. On an aura row that is a real

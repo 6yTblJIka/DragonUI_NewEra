@@ -88,6 +88,11 @@ local function createItem(parent, category)
   -- it can outrank the Cooldown — see M.BuildBuffGlow for why a draw layer could never do it.
   item.BuffGlow = M.BuildBuffGlow(item, spec.size)
 
+  -- Stack count for the tile's aura (shaman shields, Sunder Armor, Lifebloom). Built after the
+  -- flash frame it parents to, so it outranks the swipe — a charge count the sweep eats half of is
+  -- a count nobody can read, which is the same argument the glow above settled.
+  item.Count = M.BuildCount(item)
+
   -- XML KeyValues.
   item.cooldownFont = spec.cooldownFont
   item.includeAsLayoutChildWhenHidden = true
@@ -134,7 +139,12 @@ function BaseViewerMixin:OnLoad()
   self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
   self:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTED", "player")
   -- Aura transitions, for the aura-precedence path in RefreshCooldown.
-  self:RegisterUnitEvent("UNIT_AURA", "player")
+  --
+  -- TARGET as well as player, since the aura a tile reports can now be a debuff the player put on
+  -- it (Moonfire, Faerie Fire, Corruption — issue #57). Filtered engine-side to those two units:
+  -- an unfiltered UNIT_AURA delivers every raid and nameplate unit in the zone, which is the trap
+  -- BuffViewers documents at its own registration.
+  self:RegisterUnitEvent("UNIT_AURA", "player", "target")
   -- Live totem timers (Shaman).
   self:RegisterEvent("PLAYER_TOTEM_UPDATE")
   -- Target change flips spell range/usability -> recolour icons.
@@ -424,6 +434,7 @@ function BaseViewerMixin:RebuildInner()
     -- The glow is driven from RefreshCooldown, which returns early without a spellID — so a recycled
     -- tile would keep the previous spell's gold border the next time it is shown.
     if it.SetBuffGlow then it:SetBuffGlow(false) end
+    if it.SetAuraCount then it:SetAuraCount(0) end
     -- Same for an alert FX, and for the same reason. The 5Hz ticker does clear a retired tile on its
     -- next pass, but "next pass" is up to 200ms of the old spell's pandemic ring on the new one.
     if M.alerts and M.alerts.ClearFX then M.alerts.ClearFX(it) end

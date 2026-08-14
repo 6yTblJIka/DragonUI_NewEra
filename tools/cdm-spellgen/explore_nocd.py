@@ -10,7 +10,10 @@ Not part of the pipeline; run by hand while authoring.
 import os, struct, re, collections, sys
 from mpyq import MPQArchive
 
-DATA = r"D:/Project Reforged 3.3.5a/Data/enUS"
+# See dbc.py for why this is overridable rather than hardcoded.
+DATA = os.environ.get("CDM_DATA_LOCALE") or next(
+    (p for p in (r"D:/Triumvirate/Data/enUS", r"D:/Project Reforged 3.3.5a/Data/enUS")
+     if os.path.isdir(p)), r"D:/Triumvirate/Data/enUS")
 
 
 def grab(n):

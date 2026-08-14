@@ -868,6 +868,7 @@ local FILES = {
   "modules/cooldownviewer/ClassData.lua",
   "modules/cooldownviewer/CdmSeedWotLK.lua",
   "modules/cooldownviewer/CdmAuraCatalog.lua",
+  "modules/cooldownviewer/CdmSpellAuras.lua",
   "modules/cooldownviewer/CooldownViewer.lua",
   "modules/cooldownviewer/Equip.lua",
   "modules/cooldownviewer/ItemMixins.lua",
@@ -5320,6 +5321,248 @@ do
   local okDiag, errDiag = pcall(SlashCmdList["NECDM"])
   assertf(okDiag, "/necdm runs without erroring" .. (okDiag and "" or (": " .. tostring(errDiag))))
   assertf(M._widgetProbe ~= nil, "…and leaves its one throwaway Cooldown probe frame cached")
+end
+
+-- ── The spell -> aura edge (issues #57, #52) ────────────────────────────────────────────────────
+--
+-- Everything here failed before CdmSpellAuras.lua existed, and each case is one of the reports:
+-- an aura under a different name (warrior Slam -> `Slam!`), an aura on the target rather than the
+-- player (druid Balance DoTs), an aura on a party member (shaman Earth Shield), and somebody else's
+-- debuff of the same name on your target lighting your tile.
+print("\n=== SPELL -> AURA LINKS ===")
+do
+  local realExists = UnitExists
+  UnitExists = function(u) return u == "player" or u == "target" or u == "party1" end
+
+  -- NE.aura caches one scan per unit per FRAME, so every rewrite of BUFFS/DEBUFFS below has to be
+  -- followed by a clock tick or the resolver reads the previous test's snapshot. `look` is that
+  -- pairing, and forgetting it is exactly how the first draft of this block "passed" on party1 —
+  -- the only unit nothing had scanned yet — while failing on player.
+  local T
+  local function look(item)
+    nextFrame()
+    T = GetTime()
+    return M.FindSpellAura(item)
+  end
+
+  assertf(type(M.SPELL_AURA_LINKS) == "table", "the generated link table loaded")
+
+  -- Slam (1464) -> Slam! (46916). The generated row is what makes this reachable at all: Slam's own
+  -- Spell.dbc record carries no aura and no trigger, because the link lives on the Bloodsurge talent.
+  local slam = M.SPELL_AURA_LINKS[1464]
+  assertf(slam and slam[1] and slam[1].id == 46916 and slam[1].unit == "player",
+          "Slam links to the Slam! proc on the player")
+  -- Every rank, like AlertData: a custom list may hold any of them.
+  assertf(M.SPELL_AURA_LINKS[47475] ~= nil, "…at the top rank too, not just rank 1")
+  -- Faerie Fire is its own aura, but on the TARGET — which is why a same-name lookup on the player
+  -- could never see it.
+  local ff = M.SPELL_AURA_LINKS[770]
+  assertf(ff and ff[1].unit == "target", "Faerie Fire links to its debuff on the target")
+  local es = M.SPELL_AURA_LINKS[974]
+  assertf(es and es[1].unit == "friend", "Earth Shield links to its buff on a friend")
+  -- FRIEND_OK: a tile shows ONE aura, so an ability you keep on twenty allies at once gets no friend
+  -- link at all. A Discipline priest's Power Word: Shield would otherwise have reported whichever
+  -- shield the sweep reached first, held it until it expired, and said nothing about whose it was.
+  assertf(M.SPELL_AURA_LINKS[17] == nil, "Power Word: Shield gets NO friend link (many targets)")
+  for _, id in ipairs({ 774, 33763, 139, 61295, 1126 }) do   -- Rejuv, Lifebloom, Renew, Riptide, MotW
+    assertf(M.SPELL_AURA_LINKS[id] == nil, "…nor does " .. tostring(GetSpellInfo(id) or id))
+  end
+  -- The two false positives the generator's rules exist to exclude.
+  assertf(M.SPELL_AURA_LINKS[22812] == nil,
+          "Barkskin does NOT link to Dazed (a proc of the aura, not an effect of the cast)")
+  local blind = M.SPELL_AURA_LINKS[2094]
+  assertf(blind and #blind == 1, "Blind links only to its own debuff, not to the unrelated `Blind!`")
+
+  -- A tile is just a table as far as the resolver is concerned.
+  local function tile(base, name) return { _baseSpellID = base, spellID = base, spellName = name } end
+
+  -- 1. Different name, on the player.
+  DEBUFFS.player, DEBUFFS.target, BUFFS.target = {}, {}, {}
+  BUFFS.player = { { name = "Slam!", icon = "x", count = 0, duration = 5,
+                     expiration = GetTime() + 5, caster = "player", spellID = 46916 } }
+  local aura, unit = look(tile(1464, "Slam"))
+  assertf(aura and aura.name == "Slam!" and unit == "player",
+          "a proc under another name resolves — the warrior report from #57")
+
+  -- 2. On the target, and only when it is MINE.
+  BUFFS.player = {}
+  DEBUFFS.target = { { name = "Moonfire", icon = "x", count = 0, duration = 12,
+                       expiration = GetTime() + 12, caster = "party1", spellID = 8921 } }
+  aura = look(tile(8921, "Moonfire"))
+  assertf(aura == nil, "another druid's Moonfire on your target does NOT light your tile")
+  DEBUFFS.target[1].caster = "player"
+  DEBUFFS.target[1].expiration = GetTime() + 12
+  aura, unit = look(tile(8921, "Moonfire"))
+  assertf(aura and unit == "target", "…and your own does")
+
+  -- 3. On a party member — Earth Shield, the case #52 called "a bit trickier".
+  DEBUFFS.target = {}
+  BUFFS.party1 = { { name = "Earth Shield", icon = "x", count = 6, duration = 600,
+                     expiration = GetTime() + 600, caster = "player", spellID = 974 } }
+  aura, unit = look(tile(974, "Earth Shield"))
+  assertf(aura and unit == "party1", "Earth Shield resolves on the ally carrying it")
+  assertf(aura and aura.count == 6, "…and carries its charge count, which is the whole ask in #52")
+  BUFFS.party1 = nil
+
+  -- 3b. Earth Shield on a raid main tank outside the party. GetRaidRosterInfo's 10th return is the
+  --     MAINTANK assignment — 3.3.5a has no UnitGroupRolesAssigned — and it is the only way to find
+  --     the one raider a shaman actually shields.
+  BUFFS.party1 = nil
+  local realRaidN, realRoster = GetNumRaidMembers, GetRaidRosterInfo
+  GetNumRaidMembers = function() return 25 end
+  GetRaidRosterInfo = function(i)
+    return "Raider" .. i, nil, nil, nil, nil, nil, nil, nil, nil, (i == 14) and "MAINTANK" or nil
+  end
+  fireEvent("RAID_ROSTER_UPDATE")
+  assertf(#M.FriendTankUnits() == 1 and M.FriendTankUnits()[1] == "raid14",
+          "the main tank is found in the roster")
+  local realExists2 = UnitExists
+  UnitExists = function(u) return u == "player" or u == "raid14" end
+  BUFFS.raid14 = { { name = "Earth Shield", icon = "x", count = 9, duration = 600,
+                     expiration = GetTime() + 600, caster = "player", spellID = 974 } }
+  aura, unit = look(tile(974, "Earth Shield"))
+  assertf(aura and unit == "raid14", "…and Earth Shield on them resolves, outside party1-4")
+  BUFFS.raid14 = nil
+  GetNumRaidMembers, GetRaidRosterInfo = realRaidN, realRoster
+  fireEvent("RAID_ROSTER_UPDATE")
+  UnitExists = realExists2
+
+  -- 4. The plain same-name-on-player path still wins first, with no link row involved at all.
+  BUFFS.player = { { name = "Lightning Shield", icon = "x", count = 3, duration = 600,
+                     expiration = GetTime() + 600, caster = "player", spellID = 324 } }
+  aura, unit = look(tile(324, "Lightning Shield"))
+  assertf(aura and unit == "player" and aura.count == 3,
+          "a same-name self-buff needs no link row, and reports its charges")
+  assertf(M.SPELL_AURA_LINKS[324] == nil, "…which is why the generator omits it")
+
+  -- 4b. …but only when it is YOURS. Another priest's Renew on you is not your Renew tile lighting up.
+  BUFFS.player = { { name = "Renew", icon = "x", count = 0, duration = 15,
+                     expiration = GetTime() + 15, caster = "party3", spellID = 139 } }
+  assertf(look(tile(139, "Renew")) == nil, "another player's buff of the same name is rejected")
+  BUFFS.player[1].caster = "player"
+  BUFFS.player[1].expiration = GetTime() + 15
+  assertf(look(tile(139, "Renew")) ~= nil, "…and your own is not")
+  -- A proc that reports NO caster is still accepted: several 3.3.5a auras do exactly that, and
+  -- demanding a caster would lose the links this resolver exists to add.
+  BUFFS.player = { { name = "Slam!", icon = "x", count = 0, duration = 5,
+                     expiration = GetTime() + 5, caster = nil, spellID = 46916 } }
+  assertf(look(tile(1464, "Slam")) ~= nil, "a caster-less proc aura is still accepted")
+
+  -- 5. Nothing at all. Starfire applies no aura, which is what made #57's first report an alert
+  --    waiting on an event that could never arrive.
+  BUFFS.player = {}
+  assertf(look(tile(2912, "Starfire")) == nil, "Starfire resolves to no aura")
+  assertf(M.SpellCanShowAura(tile(2912, "Starfire")) == false,
+          "…so the menu can say so instead of offering Refresh on a promise")
+  assertf(T ~= nil, "the block advanced the clock, so none of the above read a stale snapshot")
+
+  -- The count label itself, on a real tile from a real viewer. Built in its own child frame so the
+  -- cooldown sweep cannot eat it, and NOT on CooldownFlash, which ships hidden.
+  local ess = M.viewers and M.viewers.essential
+  local tileItem = ess and ess.items and ess.items[1]
+  if tileItem then
+    assertf(tileItem.Count ~= nil and tileItem.Count.Text ~= nil, "a spell tile has a count label")
+    assertf(tileItem.Count:IsShown(), "…whose host frame is shown, unlike CooldownFlash")
+    tileItem:SetAuraCount(3)
+    assertf(tileItem.Count.Text:IsShown(), "…which appears at 3 charges")
+    tileItem:SetAuraCount(1)
+    assertf(not tileItem.Count.Text:IsShown(), "…and not at 1, which is not a stack")
+    tileItem:SetAuraCount(0)
+  end
+
+  UnitExists = realExists
+  BUFFS.player, DEBUFFS.player, BUFFS.target, DEBUFFS.target = {}, {}, {}, {}
+end
+
+-- A BUDGET, not a benchmark. The friend-unit lookup is the only non-O(1) path in the resolver, so
+-- what is worth guarding is that it stays PER FRAME rather than per tile, and that the two caches
+-- carrying it — NE.aura's per-frame snapshot and the item's sticky `_friendUnit` — keep working.
+-- A regression shows up here rather than as a frame-rate report from a player in a raid.
+--
+-- EARTH SHIELD tiles, because after FRIEND_OK it is the only ability that reaches this path at all.
+-- The six HoTs this used to measure no longer sweep anything, which is most of the saving: a healer
+-- pays nothing now, and only a shaman with a shield tile pays even the numbers below.
+print("\n=== FRIEND-LOOKUP SCAN BUDGET ===")
+do
+  local realExists = UnitExists
+  local RANKS = { 974, 32593, 32594, 49283, 49284 }
+  local tiles = {}
+  for i, id in ipairs(RANKS) do
+    tiles[i] = { _baseSpellID = id, spellID = id, spellName = "Earth Shield" }
+  end
+
+  local function costOf(units, frames)
+    UnitExists = function(u) return units[u] and true or false end
+    local before, after
+    for _ = 1, (frames or 1) do
+      nextFrame()
+      before = NE.aura._scans
+      for _, t in ipairs(tiles) do M.FindSpellAura(t) end
+      after = NE.aura._scans
+    end
+    UnitExists = realExists
+    return after - before
+  end
+
+  local SOLO  = { player = true }
+  local PARTY = { player = true, target = true, focus = true,
+                  party1 = true, party2 = true, party3 = true, party4 = true }
+
+  BUFFS.player, DEBUFFS.player = {}, {}
+  local solo = costOf(SOLO)
+  assertf(solo <= 2, "solo costs only the player pass that happens anyway (" .. solo .. " scans)")
+
+  local idle = costOf(PARTY)
+  assertf(idle <= 8, "a full party with nothing out stays inside budget (" .. idle .. " scans)")
+  assertf(idle < #tiles * 7,
+          "…and is bounded PER FRAME, not per tile — six tiles do not cost six sweeps")
+
+  BUFFS.party2 = { { name = "Earth Shield", icon = "x", count = 9, duration = 600,
+                     expiration = GetTime() + 600, caster = "player", spellID = 974 } }
+  local steady = costOf(PARTY, 3)
+  assertf(steady <= 3,
+          "…and once found, the sticky unit collapses it to one scan (" .. steady .. ")")
+  BUFFS.party2 = nil
+
+  -- The raid case, where the main-tank units join the sweep. The roster walk that finds them is
+  -- event-driven and cached, so it must NOT show up in the per-frame count however many raiders
+  -- there are — a 25-man roster is 25 GetRaidRosterInfo calls, and paying that at 5Hz to save aura
+  -- scans would be a poor trade made silently.
+  local realRaidN, realRoster = GetNumRaidMembers, GetRaidRosterInfo
+  local rosterCalls = 0
+  GetNumRaidMembers = function() return 25 end
+  GetRaidRosterInfo = function(i)
+    rosterCalls = rosterCalls + 1
+    return "Raider" .. i, nil, nil, nil, nil, nil, nil, nil, nil,
+           (i == 14 or i == 7) and "MAINTANK" or nil
+  end
+  fireEvent("RAID_ROSTER_UPDATE")
+  local RAID = { player = true, target = true, focus = true, party1 = true, party2 = true,
+                 party3 = true, party4 = true, raid7 = true, raid14 = true }
+  rosterCalls = 0
+  local raid = costOf(RAID, 3)
+  assertf(raid <= 10, "a 25-man raid with two tanks stays inside budget (" .. raid .. " scans)")
+  assertf(rosterCalls <= 25,
+          "…and the roster is walked once, not once per frame (" .. rosterCalls .. " calls)")
+  GetNumRaidMembers, GetRaidRosterInfo = realRaidN, realRoster
+  fireEvent("RAID_ROSTER_UPDATE")
+  UnitExists = realExists
+end
+
+print("\n=== NO-COOLDOWN SPELLS ===")
+do
+  assertf(M.SpellHasNoCooldown(370), "Purge is marked as having no cooldown (#52)")
+  assertf(M.SpellHasNoCooldown(8143), "…and so is Tremor Totem")
+  assertf(M.SpellHasNoCooldown(5176), "…and the rotation fillers already were")
+  assertf(not M.SpellHasNoCooldown(48505), "…while Starfall, which has one, is not")
+  -- Both shields entered Essential via the rotation bucket, so they are addable as SPELLS — which is
+  -- what #52 asked for over tracking them as buffs.
+  local shaman = M.ESSENTIAL_BY_CLASS and M.ESSENTIAL_BY_CLASS.SHAMAN or {}
+  local haveLS, haveWS = false, false
+  for _, id in ipairs(shaman) do
+    if id == 324 then haveLS = true elseif id == 52127 then haveWS = true end
+  end
+  assertf(haveLS and haveWS, "Lightning Shield and Water Shield are trackable as spells")
 end
 
 print("\n=== UNIT-EVENT FILTER ===")
