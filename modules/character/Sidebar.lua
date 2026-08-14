@@ -32,7 +32,7 @@
 --   * pcall every stat getter inside the render/tooltip loops.
 
 local NE = DragonUI_NewEra
-local L = NE:GetLocale()
+local L = NE.L
 NE.charpanel = NE.charpanel or {}
 local CP = NE.charpanel
 

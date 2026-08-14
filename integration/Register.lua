@@ -12,6 +12,7 @@
 -- addon had its own settings UI, here we proxy into DragonUI's unified UX.
 
 local NE = DragonUI_NewEra
+local L = NE.L
 if not NE then return end
 
 -- ----------------------------------------------------------------------------
@@ -315,8 +316,8 @@ local function attachEditorSettings(anchor, spec)
         if not NE.IsFrameEditorActive() then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(spec.label or spec.name, 1, 1, 1)
-        GameTooltip:AddLine("Drag to move.", 0.8, 0.8, 0.8)
-        GameTooltip:AddLine("Click for this frame's settings.", 0.4, 1, 0.4)
+        GameTooltip:AddLine(L["Drag to move."], 0.8, 0.8, 0.8)
+        GameTooltip:AddLine(L["Click for this frame's settings."], 0.4, 1, 0.4)
         GameTooltip:Show()
     end)
     anchor:SetScript("OnLeave", function() GameTooltip:Hide() end)

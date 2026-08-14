@@ -20,6 +20,7 @@
 -- changes (defer to PLAYER_REGEN_ENABLED); only // comments (no /* */).
 
 local NE = DragonUI_NewEra
+local L = NE.L
 NE.spellbook = NE.spellbook or {}
 local SB = NE.spellbook
 
@@ -577,9 +578,9 @@ SB.Boot = boot
 if NE.modules and NE.modules.Register then
   NE.modules.Register(MODULE, {
     default  = true,
-    label    = "Spellbook",
+    label    = SPELLBOOK or L["Spellbook"],
     category = "Windows",
-    desc     = "The modern Dragonflight spellbook window. Disable to keep the stock Blizzard spellbook.",
+    desc     = L["The modern Dragonflight spellbook window. Disable to keep the stock Blizzard spellbook."],
     events   = {
       "PLAYER_LOGIN", "SPELLS_CHANGED", "LEARNED_SPELL_IN_TAB", "ACTIONBAR_SLOT_CHANGED",
       "PET_BAR_UPDATE", "UNIT_PET", "PLAYER_LEVEL_UP", "PLAYER_REGEN_ENABLED", "UPDATE_BINDINGS",

@@ -4,6 +4,7 @@
 -- strip toggles the view on/off; Behavior.lua keeps it refreshed from live glyph/spec events.
 
 local NE = DragonUI_NewEra
+local L = NE.L
 local T  = NE.talents or {}
 NE.talents = T
 
@@ -167,7 +168,7 @@ end
 
 if not StaticPopupDialogs["NE_GLYPH_REMOVE_CONFIRM"] then
   StaticPopupDialogs["NE_GLYPH_REMOVE_CONFIRM"] = {
-    text = "Remove this glyph?",
+    text = L["Remove this glyph?"],
     button1 = ACCEPT,
     button2 = CANCEL,
     OnAccept = function(self, data)
@@ -676,7 +677,7 @@ local function ensureGlyphOptionsMenu(anchor)
     if level ~= 1 then return end
 
     local info = UIDropDownMenu_CreateInfo()
-    info.text = "Show glyph names"
+    info.text = L["Show glyph names"]
     info.checked = glyphLabelNamesEnabled()
     info.keepShownOnClick = true
     info.isNotRadio = true
@@ -687,7 +688,7 @@ local function ensureGlyphOptionsMenu(anchor)
     UIDropDownMenu_AddButton(info, level)
 
     local infoEffects = UIDropDownMenu_CreateInfo()
-    infoEffects.text = "Show glyph effects"
+    infoEffects.text = L["Show glyph effects"]
     infoEffects.checked = glyphShowEffectsEnabled()
     infoEffects.keepShownOnClick = true
     infoEffects.isNotRadio = true
@@ -734,8 +735,8 @@ local function buildGlyphCog(parent)
   end)
   cog:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-    GameTooltip:SetText("Glyph options", 1, 1, 1)
-    GameTooltip:AddLine("Toggle slot name labels and the active-effects list.", 0.85, 0.85, 0.85, true)
+    GameTooltip:SetText(L["Glyph options"], 1, 1, 1)
+    GameTooltip:AddLine(L["Toggle slot name labels and the active-effects list."], 0.85, 0.85, 0.85, true)
     GameTooltip:Show()
   end)
   cog:SetScript("OnLeave", function()
@@ -763,7 +764,7 @@ local function layoutRoot()
     if root.title.SetTextScale then root.title:SetTextScale(1.1) end
     root.title:SetJustifyH("CENTER")
     root.title:SetPoint("TOP", root, "TOP", 0, -28)
-    root.title:SetText("GLYPHS")
+    root.title:SetText(GLYPHS or L["GLYPHS"])
     root.title:SetTextColor(1, 1, 1)
     buildGlyphCog(root)
   end
@@ -805,7 +806,7 @@ local function layoutRoot()
     lf.title = lf.textLayer:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
     if _G.SystemFont_Shadow_Large2 then lf.title:SetFontObject(_G.SystemFont_Shadow_Large2) end
     if lf.title.SetTextScale then lf.title:SetTextScale(0.72) end -- Matches left side spec header scaling
-    lf.title:SetText("ACTIVE EFFECTS")
+    lf.title:SetText(L["ACTIVE EFFECTS"])
     lf.title:SetPoint("TOPLEFT", lf, "TOPLEFT", 40, -66)
     lf.title:SetTextColor(1, 1, 1)
 
@@ -1382,10 +1383,10 @@ function T.GlyphsRefresh()
     if hasAny then
       root.listFrame.title:SetText("")
       root.listFrame.title:Hide()
-      addSection("MAJOR GLYPHS", majors)
-      addSection("MINOR GLYPHS", minors)
+      addSection(L["MAJOR GLYPHS"], majors)
+      addSection(L["MINOR GLYPHS"], minors)
     else
-      root.listFrame.title:SetText("NO ACTIVE EFFECTS")
+      root.listFrame.title:SetText(L["NO ACTIVE EFFECTS"])
       root.listFrame.title:Show()
     end
 

@@ -5,6 +5,7 @@
 -- position round-trip reads and writes — is not guaranteed ready while our files are parsing.
 
 local NE = DragonUI_NewEra
+local L = NE.L
 if not NE or NE.disabled then return end
 
 local M = NE.levelup
@@ -129,7 +130,7 @@ login:SetScript("OnEvent", function(self)
   if NE.RegisterHUDFrame then
     NE.RegisterHUDFrame({
       name         = "NE_LevelUpDisplay",
-      label        = "Level Up Display",
+      label        = L["Level Up Display"],
       frame        = banner,
       key          = "levelup",
       defaultPoint = M.DEFAULT_POINT,
@@ -144,16 +145,16 @@ login:SetScript("OnEvent", function(self)
       order = 45,
       build = function(scroll, C)
         if C.AddSpacer then C:AddSpacer(scroll) end
-        C:AddHeading(scroll, "Level Up Display")
+        C:AddHeading(scroll, L["Level Up Display"])
         C:AddDescription(scroll,
-          "Retail's level-up banner. What it announces is read from |cffffcc55this server|r — "
+          L["Retail's level-up banner. What it announces is read from |cffffcc55this server|r — "
           .. "abilities and their levels come from your class trainer's own list, battlegrounds "
           .. "and dungeons from the client's brackets. Visit a trainer once to fill it in; "
-          .. "|cffffcc55/nelevelup coverage|r shows what it knows.")
+          .. "|cffffcc55/nelevelup coverage|r shows what it knows."])
         C:AddToggle(scroll, {
-          label   = "Enable Level Up Display",
-          desc    = "On by default. Turn off to stop the banner appearing on level-up; the harvest "
-                    .. "keeps running either way, so turning it back on costs nothing.",
+          label   = L["Enable Level Up Display"],
+          desc    = L["On by default. Turn off to stop the banner appearing on level-up; the harvest "
+                    .. "keeps running either way, so turning it back on costs nothing."],
           getFunc = function() return M.IsEnabled() end,
           setFunc = function(v)
             M.SetEnabled(v)
@@ -162,11 +163,11 @@ login:SetScript("OnEvent", function(self)
         })
 
         C:AddToggle(scroll, {
-          label   = "Play the level-up sound",
-          desc    = "|cffffcc55Off by default.|r The game already plays its own fanfare when you "
+          label   = L["Play the level-up sound"],
+          desc    = L["|cffffcc55Off by default.|r The game already plays its own fanfare when you "
                     .. "level, so this only adds a second copy on top of it. Turn it on if you "
                     .. "want /nelevelup previews to make a sound, since those fire no game sound "
-                    .. "of their own.",
+                    .. "of their own."],
           getFunc = function() return M.IsSoundEnabled() end,
           setFunc = function(v) M.SetSoundEnabled(v) end,
         })

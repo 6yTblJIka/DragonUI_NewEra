@@ -21,6 +21,7 @@
 
 local NE = DragonUI_NewEra
 local M  = NE.cooldownviewer
+local L = NE.L
 
 local CDS = NE.cooldownviewersettings
 local Adapter = CDS.adapter
@@ -78,7 +79,8 @@ function CDS._itemTooltipExtra(item, tooltip)
   end
   local kit = M.GetReadySoundKit and M.GetReadySoundKit(item.spellID)
   if kit then
-    tooltip:AddLine("Ready sound: " .. (M.GetSoundKitName(kit) or tostring(kit)), 0.4, 0.8, 1)
+    tooltip:AddLine(string.format(L["Ready sound: %s"],
+      M.GetSoundKitName(kit) or tostring(kit)), 0.4, 0.8, 1)
   end
 end
 
@@ -89,7 +91,7 @@ end
 -- branch is here rather than hidden inside Assign, where a caller could not tell which happened.
 local function addMoveEntries(root, item, class)
   for _, target in ipairs(Adapter.GetValidTargets(item._catID)) do
-    root:CreateButton("Move to " .. Adapter.Label(target), function()
+    root:CreateButton(string.format(L["Move to %s"], Adapter.Label(target)), function()
       if item.token then
         Adapter.AssignEquip(item.token, item._catID, target)
       else
@@ -137,18 +139,18 @@ local function addSoundEntries(root, item)
     -- there lighting the badge with nothing behind it and no per-item way to take it off.
     if M.GetReadySoundKit(item.spellID) == nil then return end
     root:CreateDivider()
-    root:CreateButton("Clear Ready Sound", function()
+    root:CreateButton(L["Clear Ready Sound"], function()
       M.SetReadySoundKit(item.spellID, nil)
       applyAlertBadge(item)
-    end):SetTooltip("Clear Ready Sound",
-      "A ready sound plays when a COOLDOWN finishes.|nThis spell has none, so it can never play.|nClearing it also clears the badge.")
+    end):SetTooltip(L["Clear Ready Sound"],
+      L["A ready sound plays when a COOLDOWN finishes.|nThis spell has none, so it can never play.|nClearing it also clears the badge."])
     return
   end
 
   root:CreateDivider()
-  local soundRoot = root:CreateButton("Ready Sound")
+  local soundRoot = root:CreateButton(L["Ready Sound"])
 
-  soundRoot:CreateRadio("None",
+  soundRoot:CreateRadio(NONE or L["None"],
     function() return M.GetReadySoundKit(item.spellID) == nil end,
     function()
       M.SetReadySoundKit(item.spellID, nil)
@@ -218,12 +220,12 @@ local function auraNote(links, live, where)
     -- resolve nor fall back on would otherwise render "Applies  to you", which is worse than the
     -- live-sighting line below and much worse than saying nothing certain.
     if #names > 0 then
-      return ("|n|n|cff40ff40Applies %s to %s, so this will work.|r")
-        :format(table.concat(names, ", "), where or "you")
+      return L["|n|n|cff40ff40Applies %s to %s, so this will work.|r"]
+        :format(table.concat(names, ", "), where or L["you"])
     end
   end
-  if live then return "|n|n|cff40ff40Its aura is active now, so this will work.|r" end
-  return "|n|n|cffffd200No aura of this name is up right now.|r"
+  if live then return L["|n|n|cff40ff40Its aura is active now, so this will work.|r"] end
+  return L["|n|n|cffffd200No aura of this name is up right now.|r"]
 end
 
 -- Event (None / Available / Refresh / Usable), FX style, and — for Refresh — the window %.
@@ -233,7 +235,7 @@ local function addAlertEntries(root, item)
   local AL = M.alerts
   if not (item.spellID and AL and AL.SetType) then return end
   root:CreateDivider()
-  local alertRoot = root:CreateButton("Alert")
+  local alertRoot = root:CreateButton(L["Alert"])
 
   local function isType(t) return AL.GetType(item.spellID) == t end
   -- Preview in the alert type's OWN colour. Each type has a distinct tint, so previewing everything
@@ -246,7 +248,7 @@ local function addAlertEntries(root, item)
     end
   end
 
-  alertRoot:CreateRadio("None", function() return AL.GetType(item.spellID) == nil end, pick(nil))
+  alertRoot:CreateRadio(NONE or L["None"], function() return AL.GetType(item.spellID) == nil end, pick(nil))
 
   -- Available is the cooldown -> ready edge, so it is a SPELL trigger only. Its own tooltip used to
   -- promise "Works for every spell", which is true and was being read on rows that hold no spell.
@@ -259,8 +261,8 @@ local function addAlertEntries(root, item)
   -- named two of these outright ("`Purge` this is also listed as a Spell to track but it doesn't have
   -- any cooldown"); every rotation filler is in the same position.
   if not isAuraRow(item) and not noCooldown(item) then
-    alertRoot:CreateRadio("Available", function() return isType("available") end, pick("available"))
-      :SetTooltip("Available", "Flashes once, the moment the cooldown finishes.|nWorks for every spell.")
+    alertRoot:CreateRadio(L["Available"], function() return isType("available") end, pick("available"))
+      :SetTooltip(L["Available"], L["Flashes once, the moment the cooldown finishes.|nWorks for every spell."])
   end
 
   -- Refresh is the one event that genuinely cannot fire for some spells, so it says what it needs.
@@ -272,14 +274,14 @@ local function addAlertEntries(root, item)
     -- The caveat below is about a COOLDOWN that applies no aura, which cannot be the case here: the
     -- row is the aura. This is the one trigger a tracked buff is built for, and saying so is the
     -- point — it is also the one that was silently doing nothing until the ticker learned to look.
-    refreshText = ("Glows during the last %d%% of this buff's|nremaining time."):format(pct)
+    refreshText = L["Glows during the last %d%% of this buff's|nremaining time."]:format(pct)
   else
-    refreshText = ("Glows during the last %d%% of this spell's own|nbuff or debuff."):format(pct)
+    refreshText = L["Glows during the last %d%% of this spell's own|nbuff or debuff."]:format(pct)
       .. "|n|nA cooldown that applies no aura — Shadowfiend,|nPsychic Scream — can never trigger it."
   end
   refreshText = refreshText .. auraNote(links, live, where)
-  alertRoot:CreateRadio("Refresh", function() return isType("refresh") end, pick("refresh"))
-    :SetTooltip("Refresh", refreshText)
+  alertRoot:CreateRadio(L["Refresh"], function() return isType("refresh") end, pick("refresh"))
+    :SetTooltip(L["Refresh"], refreshText)
 
   -- ACTIVE. Was aura-rows-only, on the reasoning that the other three all ask questions about a
   -- COOLDOWN and a proc can answer none of them. True, and it left out the other half of the same
@@ -291,15 +293,15 @@ local function addAlertEntries(root, item)
   if isAuraRow(item) or (M.SpellCanShowAura and M.SpellCanShowAura(item)) then
     local activeText
     if isAuraRow(item) then
-      activeText = "Glows for as long as this buff is on you.|n|nThe one that works for a proc: it"
-        .. " asks whether the|nbuff is up, not whether something is castable|nor off cooldown."
+      activeText = L["Glows for as long as this buff is on you.|n|nThe one that works for a proc: it"
+        .. " asks whether the|nbuff is up, not whether something is castable|nor off cooldown."]
     else
-      activeText = ("Glows for as long as this spell's effect is|nup on %s."):format(where or "you")
-        .. "|n|nThe one for a DoT or a shield: it asks whether|nthe aura is up, not whether the"
-        .. " cooldown is ready."
+      activeText = L["Glows for as long as this spell's effect is|nup on %s."]:format(where or L["you"])
+        .. L["|n|nThe one for a DoT or a shield: it asks whether|nthe aura is up, not whether the"
+        .. " cooldown is ready."]
     end
-    alertRoot:CreateRadio("Active", function() return isType("active") end, pick("active"))
-      :SetTooltip("Active", activeText .. auraNote(links, live, where))
+    alertRoot:CreateRadio(L["Active"], function() return isType("active") end, pick("active"))
+      :SetTooltip(L["Active"], activeText .. auraNote(links, live, where))
   end
 
   -- USABLE asks the client whether a spell of this name can be cast. On an aura row that is a real
@@ -312,23 +314,23 @@ local function addAlertEntries(root, item)
   -- would hide the entry from anyone who opened the menu out of mana.
   local usableCastable = (not isAuraRow(item)) or (item.spellName and GetSpellInfo(item.spellName) ~= nil)
   if usableCastable then
-    local usableText = "Glows for as long as the spell is off cooldown|nand affordable."
+    local usableText = L["Glows for as long as the spell is off cooldown|nand affordable."]
     local threshold = M.alertdata and M.alertdata.ExecuteThreshold
       and M.alertdata.ExecuteThreshold(item.spellID, item._rankCDIDs)
     if threshold then
-      usableText = usableText .. ("|n|nThis one also waits for a target below %d%% health."):format(threshold * 100)
+      usableText = usableText .. L["|n|nThis one also waits for a target below %d%% health."]:format(threshold * 100)
     end
     if isAuraRow(item) then
-      usableText = usableText .. "|n|nOn a buff row this is about RE-CASTING it,|nnot about the buff being up — that is Active."
+      usableText = usableText .. L["|n|nOn a buff row this is about RE-CASTING it,|nnot about the buff being up — that is Active."]
     end
-    alertRoot:CreateRadio("Usable", function() return isType("usable") end, pick("usable"))
-      :SetTooltip("Usable", usableText)
+    alertRoot:CreateRadio(L["Usable"], function() return isType("usable") end, pick("usable"))
+      :SetTooltip(L["Usable"], usableText)
   end
 
   alertRoot:CreateDivider()
 
   -- Generated from AL.FX, not from upstream's hardcoded pair. See the header.
-  local fxSub = alertRoot:CreateButton("FX Style")
+  local fxSub = alertRoot:CreateButton(L["FX Style"])
   for _, fx in ipairs(AL.FX or {}) do
     fxSub:CreateRadio(fx.name,
       function() return AL.GetFX(item.spellID) == fx.id end,
@@ -338,7 +340,7 @@ local function addAlertEntries(root, item)
       end)
   end
 
-  local winSub = alertRoot:CreateButton("Refresh Window")
+  local winSub = alertRoot:CreateButton(L["Refresh Window"])
   for _, pct in ipairs(REFRESH_WINDOWS) do
     winSub:CreateRadio(pct .. "%",
       function() return math.abs((AL.GetWindow(item.spellID) * 100) - pct) < 0.5 end,
@@ -358,7 +360,7 @@ function CDS.ItemMenuGenerator(item, class)
     -- trinket is discovered, so it leaves by being unequipped and never by a menu.
     if not item.token and Adapter.IsRemovable and Adapter.IsRemovable(item.spellID, item._catID, class) then
       root:CreateDivider()
-      root:CreateButton("|cffff5555Remove|r", function()
+      root:CreateButton("|cffff5555" .. (REMOVE or L["Remove"]) .. "|r", function()
         Adapter.Remove(item.spellID, item._catID, class)
         CDS.RefreshLayout()
       end)
@@ -381,7 +383,7 @@ end
 -- ── The settings cog ────────────────────────────────────────────────────────────────────────────
 
 function CDS.SettingsMenuGenerator(_, root)
-  root:CreateCheckbox("Show Unlearned",
+  root:CreateCheckbox(L["Show Unlearned"],
     function() return M.GetShowUnlearned and M.GetShowUnlearned() end,
     function()
       M.SetShowUnlearned(not M.GetShowUnlearned())
@@ -389,8 +391,8 @@ function CDS.SettingsMenuGenerator(_, root)
     end)
 
   root:CreateDivider()
-  root:CreateButton("Reset Spell Lists", function() StaticPopup_Show("NE_CDM_RESET_TRACKING") end)
-  root:CreateButton("Clear All Alerts",  function() StaticPopup_Show("NE_CDM_RESET_ALERTS") end)
+  root:CreateButton(L["Reset Spell Lists"], function() StaticPopup_Show("NE_CDM_RESET_TRACKING") end)
+  root:CreateButton(L["Clear All Alerts"],  function() StaticPopup_Show("NE_CDM_RESET_ALERTS") end)
 end
 
 -- Both resets are destructive and irreversible (there is no undo store until 4b-5), so both confirm.
@@ -398,7 +400,7 @@ StaticPopupDialogs = StaticPopupDialogs or {}
 StaticPopupDialogs["NE_CDM_RESET_TRACKING"] = {
   -- Names the scope in the confirm too. This is the last thing read before an irreversible action,
   -- and it used to say nothing about WHOSE lists — while the code behind it cleared every class.
-  text = "Reset this class's Cooldown Manager spell and buff lists to their defaults?\n\nOther classes, alerts, sounds and frame positions are not affected.",
+  text = L["Reset this class's Cooldown Manager spell and buff lists to their defaults?\n\nOther classes, alerts, sounds and frame positions are not affected."],
   button1 = YES or "Yes",
   button2 = NO or "No",
   OnAccept = function()
@@ -408,7 +410,7 @@ StaticPopupDialogs["NE_CDM_RESET_TRACKING"] = {
   timeout = 0, whileDead = 1, hideOnEscape = 1,
 }
 StaticPopupDialogs["NE_CDM_RESET_ALERTS"] = {
-  text = "Clear every configured alert and ready sound?\n\nSpell lists and frame positions are not affected.",
+  text = L["Clear every configured alert and ready sound?\n\nSpell lists and frame positions are not affected."],
   button1 = YES or "Yes",
   button2 = NO or "No",
   OnAccept = function()

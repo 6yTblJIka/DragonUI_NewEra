@@ -36,6 +36,7 @@
 
 local NE = DragonUI_NewEra
 local M  = NE.cooldownviewer
+local L = NE.L
 
 NE.cooldownviewersettings = NE.cooldownviewersettings or {}
 local CDS = NE.cooldownviewersettings
@@ -104,11 +105,11 @@ CDS.PositionViewer = positionViewer   -- test seam
 -- frame it changes. Rendering them here as well is the exact duplication this file's header rules out.
 
 local function buildViewerLinks(col)
-  col:AddSection("Viewer layout", true)
-  col:AddText("Each viewer's own settings — size, spacing, orientation, visibility, what its icons "
+  col:AddSection(L["Viewer layout"], true)
+  col:AddText(L["Each viewer's own settings — size, spacing, orientation, visibility, what its icons "
     .. "show — live on the frame, in edit mode, where you can see what you are changing. These open "
     .. "edit mode with that viewer selected and its settings already up. Closes this window; not "
-    .. "available in combat.")
+    .. "available in combat."])
 
   for _, spec in ipairs(M.VIEWER_SPECS or {}) do
     col:AddButton({
@@ -130,9 +131,9 @@ local function build(parent)
 
   local c = Kit.New(parent, PAGE_W)
 
-  c:AddText("Everything the Cooldown Manager can be told to do that is not about one viewer's layout. "
+  c:AddText(L["Everything the Cooldown Manager can be told to do that is not about one viewer's layout. "
     .. "Layout and position both live on the frame itself, in edit mode (/dui edit) — click a viewer "
-    .. "there for its own settings, or use the buttons just below to go straight to one.",
+    .. "there for its own settings, or use the buttons just below to go straight to one."],
     { font = "GameFontHighlightSmall" })
 
   buildViewerLinks(c)
@@ -140,79 +141,79 @@ local function build(parent)
   -- ── Buffed spells. Retail tints the swipe gold while a spell's own buff is on you; that setter is
   -- WoD+, so ours haloes the icon instead (PORT_PLAN §H.2 8c) — which then frees the timer to show
   -- whichever number is more useful, rather than being retail's only way to say "buffed".
-  c:AddSection("Buffed spells", false)
-  c:AddText("A spell can be on cooldown and buffing you at the same time. The glow says which icons "
-    .. "are buffed; the timer says how long.")
+  c:AddSection(L["Buffed spells"], false)
+  c:AddText(L["A spell can be on cooldown and buffing you at the same time. The glow says which icons "
+    .. "are buffed; the timer says how long."])
   c:AddCheckbox({
-    label = "Glow while buffed",
-    desc  = "Halo the icon gold while the spell's buff (or, for a shaman, its totem) is up.",
+    label = L["Glow while buffed"],
+    desc  = L["Halo the icon gold while the spell's buff (or, for a shaman, its totem) is up."],
     get   = function() return M.IsBuffGlowEnabled() end,
     set   = function(v) M.SetBuffGlowEnabled(v) end,
   })
   c:AddCheckbox({
-    label = "Show the buff's time, not the cooldown",
-    desc  = "Retail's behaviour: while buffed, the icon counts down the BUFF. Off, it counts down the "
+    label = L["Show the buff's time, not the cooldown"],
+    desc  = L["Retail's behaviour: while buffed, the icon counts down the BUFF. Off, it counts down the "
             .. "spell's cooldown and the glow alone marks it as buffed — which is clearer when the "
-            .. "two differ, as on Prayer of Mending.",
+            .. "two differ, as on Prayer of Mending."],
     get   = function() return M.BuffShowsAuraTime() end,
     set   = function(v) M.SetBuffShowsAuraTime(v) end,
   })
 
   -- ── Icon fit. Retail masks its icons, which both insets and rounds them; §C2 records that
   -- MaskTexture has no polyfill on this client, so the inset is reproducible and the rounding is not.
-  c:AddSection("Icon fit", false)
-  c:AddText("The frame is a soft shadow that falls on the icon's outer edge, so it only shows where "
+  c:AddSection(L["Icon fit"], false)
+  c:AddText(L["The frame is a soft shadow that falls on the icon's outer edge, so it only shows where "
     .. "there is icon underneath it. Strength draws it more than once to deepen it — that is also "
     .. "what makes its rounded corners read, since the icons themselves cannot be rounded here. "
-    .. "Inset shrinks the icon, which slides the shadow off it, so raise that one sparingly.")
+    .. "Inset shrinks the icon, which slides the shadow off it, so raise that one sparingly."])
   c:AddSlider({
-    label = "Frame strength", min = 1, max = M.FRAME_STRENGTH_MAX, step = 1,
+    label = L["Frame strength"], min = 1, max = M.FRAME_STRENGTH_MAX, step = 1,
     get = function() return M.GetFrameStrength() end,
     set = function(v) M.SetFrameStrength(v) end,
   })
   c:AddSlider({
-    label = "Icon inset", min = 0, max = M.ICON_INSET_EXTRA_MAX, step = 1, format = pct,
+    label = L["Icon inset"], min = 0, max = M.ICON_INSET_EXTRA_MAX, step = 1, format = pct,
     get = function() return M.GetIconInsetExtra() end,
     set = function(v) M.SetIconInsetExtra(v) end,
   })
 
   -- ── Per-spec layout. Dual talent specialisation means one character genuinely wants two layouts.
-  c:AddSection("Talent specs", false)
-  c:AddText("Which spells and buffs you track is remembered separately for each talent spec, so a "
+  c:AddSection(L["Talent specs"], false)
+  c:AddText(L["Which spells and buffs you track is remembered separately for each talent spec, so a "
     .. "Discipline layout and a Holy one do not overwrite each other. Where each viewer sits is "
     .. "always remembered per character; the appearance settings are shared unless you say otherwise "
-    .. "below.")
+    .. "below."])
   c:AddCheckbox({
-    label = "Separate layout per spec",
-    desc  = "Off, both specs share one set of lists. Turning it on copies the layout you have now "
-            .. "into the spec you are in.",
+    label = L["Separate layout per spec"],
+    desc  = L["Off, both specs share one set of lists. Turning it on copies the layout you have now "
+            .. "into the spec you are in."],
     get   = function() return M.IsPerSpecLayout() end,
     set   = function(v) M.SetPerSpecLayout(v) end,
   })
   c:AddCheckbox({
-    label = "Separate appearance per character",
+    label = L["Separate appearance per character"],
     -- Says what happens on BOTH edges, because the reversibility is the reason it is safe to try:
     -- a character that has changed nothing keeps reading the shared values, so nothing moves when
     -- this is ticked, and unticking it simply stops consulting the per-character values rather than
     -- discarding them.
-    desc  = "Off, orientation, icons per row, size, padding and opacity are one setup for every "
+    desc  = L["Off, orientation, icons per row, size, padding and opacity are one setup for every "
             .. "character. On, each character can differ — until you change something here it still "
             .. "follows the shared setup, so nothing moves when you tick this, and unticking it "
-            .. "gives the shared setup back without losing what you changed.",
+            .. "gives the shared setup back without losing what you changed."],
     get   = function() return M.IsPerCharacterFrames() end,
     set   = function(v) M.SetPerCharacterFrames(v) end,
   })
   c:AddCheckbox({
-    label = "Layouts include appearance",
+    label = L["Layouts include appearance"],
     -- Governs APPLYING, not saving. A share string always carries appearance, so this is the
     -- recipient's decision rather than the author's — and it is off by default because an imported
     -- layout that silently resizes and reorients four viewers is how "load a layout" stops being an
     -- action anyone trusts.
-    desc  = "Off, loading or importing a layout changes only what you track — lists, tracked buffs, "
+    desc  = L["Off, loading or importing a layout changes only what you track — lists, tracked buffs, "
             .. "trinkets, alerts and sounds. On, it also applies the orientation, icons per row, "
             .. "size, padding and opacity the layout was saved with.|n|nLayouts always SAVE "
             .. "appearance either way, so this only decides what happens when one is applied. Revert "
-            .. "always puts appearance back, whatever this says.",
+            .. "always puts appearance back, whatever this says."],
     get   = function() return M.LayoutsIncludeAppearance() end,
     set   = function(v) M.SetLayoutsIncludeAppearance(v) end,
   })
@@ -220,22 +221,22 @@ local function build(parent)
   -- ── Buff tracking. The buff viewers have no curated list: any player buff shorter than the
   -- auto-track window shows automatically, which is what makes trinket, potion and proc buffs work
   -- without enumerating them in advance.
-  c:AddSection("Buff tracking", false)
-  c:AddText("Buffs you have not seen before are recorded and listed under Not Displayed on the "
+  c:AddSection(L["Buff tracking"], false)
+  c:AddText(L["Buffs you have not seen before are recorded and listed under Not Displayed on the "
     .. "Tracked Buffs tab, where you can assign the ones you want. Nothing appears on screen until "
-    .. "you do.")
+    .. "you do."])
   c:AddCheckbox({
-    label = ("Auto-track buffs under %ds"):format(M.BUFF_TRACK_MAX_DURATION or 120),
-    desc  = "Show every short buff the moment it lands, without assigning it first. Convenient on a "
+    label = L["Auto-track buffs under %ds"]:format(M.BUFF_TRACK_MAX_DURATION or 120),
+    desc  = L["Show every short buff the moment it lands, without assigning it first. Convenient on a "
             .. "character you are still setting up; in a raid it fills the viewers with other "
-            .. "people's cooldowns, food and flasks.",
+            .. "people's cooldowns, food and flasks."],
     get   = function() return M.IsAutoTrackBuffs() end,
     set   = function(v) M.SetAutoTrackBuffs(v) end,
     onChanged = function() if M.RefreshActiveViewer then M.RefreshActiveViewer() end end,
   })
   c:AddDropdown({
-    label = "Show them as", values = TRACK_DEST, width = 140,
-    desc  = "Which of the two buff viewers auto-tracked buffs land in.",
+    label = L["Show them as"], values = TRACK_DEST, width = 140,
+    desc  = L["Which of the two buff viewers auto-tracked buffs land in."],
     get   = function() return M.AutoTrackDest() end,
     set   = function(v) M.SetAutoTrackDest(v) end,
     onChanged = function() if M.RefreshActiveViewer then M.RefreshActiveViewer() end end,
@@ -246,23 +247,23 @@ local function build(parent)
   -- state to fall out of sync. The cog is at hand while working the lists; a player looking for a
   -- reset looks under Settings. What the §G.10 decision removes is a second view of the same VALUES in
   -- a second window — not a second way to press a button.
-  c:AddSection("Reset", false)
-  c:AddText("Both of these are immediate and cannot be undone from here — Revert only covers layout "
-    .. "changes.")
+  c:AddSection(RESET or L["Reset"], false)
+  c:AddText(L["Both of these are immediate and cannot be undone from here — Revert only covers layout "
+    .. "changes."])
   c:AddButton({
-    label = "Reset spell and buff lists",
+    label = L["Reset spell and buff lists"],
     -- Says CLASS, not "character". The store is one shared DragonUI profile keyed by class, so this
     -- is the honest scope: another class is untouched, and another character of the SAME class reads
     -- the same lists and will see them reset too. Claiming "per-character" is what the old copy did,
     -- while the code behind it reset every class at once.
-    desc  = "Restore the curated defaults and the auto-track window for THIS CLASS, clearing its "
+    desc  = L["Restore the curated defaults and the auto-track window for THIS CLASS, clearing its "
             .. "spell lists, aura assignments and trinket placement. Other classes, alerts, sounds "
-            .. "and positions are not affected.",
+            .. "and positions are not affected."],
     onClick = function() StaticPopup_Show("NE_CDM_RESET_TRACKING") end,
   })
   c:AddButton({
-    label = "Clear all alerts and sounds",
-    desc  = "Remove every per-spell alert and ready sound. Spell lists and positions are not affected.",
+    label = L["Clear all alerts and sounds"],
+    desc  = L["Remove every per-spell alert and ready sound. Spell lists and positions are not affected."],
     onClick = function() StaticPopup_Show("NE_CDM_RESET_ALERTS") end,
   })
   c:EndSection()

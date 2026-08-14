@@ -28,6 +28,7 @@
 
 local NE = DragonUI_NewEra
 local M  = NE.cooldownviewer
+local L = NE.L
 
 -- Geometry transcribed from retail's EditModeSystemSettingsDialog, via NewEra's own transcription of
 -- it (ReferenceAddons/NewEra/EditMode/SettingsPopup.lua): 343×32 rows spaced 2, a 100px label column,
@@ -47,11 +48,12 @@ local FOOTER_H  = 15 + BTN_H + 10               -- button row, divider above it
 local SIDE_GAP  = 12         -- clearance between the dialog and the frame it edits
 
 -- Same value/label pairs, in the same order, as the /cdm Settings tab.
-local ORIENTATION = { { "horizontal", "Horizontal" }, { "vertical", "Vertical" } }
-local DIRECTION   = { { "right", "Right" }, { "left", "Left" } }
-local VISIBILITY  = { { "always", "Always" }, { "incombat", "In Combat" }, { "hidden", "Hidden" } }
-local BAR_CONTENT = { { "iconAndName", "Icon and Name" }, { "iconOnly", "Icon Only" },
-                      { "nameOnly", "Name Only" } }
+-- Left element of each pair is the stored value and must stay English; only the right one is shown.
+local ORIENTATION = { { "horizontal", L["Horizontal"] }, { "vertical", L["Vertical"] } }
+local DIRECTION   = { { "right", L["Right"] }, { "left", L["Left"] } }
+local VISIBILITY  = { { "always", L["Always"] }, { "incombat", L["In Combat"] }, { "hidden", L["Hidden"] } }
+local BAR_CONTENT = { { "iconAndName", L["Icon and Name"] }, { "iconOnly", L["Icon Only"] },
+                      { "nameOnly", L["Name Only"] } }
 
 local function pct(v) return tostring(v) .. "%" end
 local function px(v)  return tostring(v) .. "px" end
@@ -208,9 +210,12 @@ function M.ShowConfirmReset(category)
   local c = ensureConfirm(panel)
   local spec = specFor(category)
   c._category = category
-  c.Text:SetText("Reset " .. ((spec and spec.label) or category) ..
-    " to its default layout?\n\nThis viewer's position, size, orientation and visibility all go back " ..
-    "to stock. Nothing else is affected, and it cannot be undone.")
+  -- One format string rather than three concatenated fragments: the viewer name does not sit in
+  -- the same place in every language, and a locale cannot move it if the sentence is spliced here.
+  c.Text:SetText(string.format(
+    L["Reset %s to its default layout?\n\nThis viewer's position, size, orientation and "
+   .. "visibility all go back to stock. Nothing else is affected, and it cannot be undone."],
+    (spec and spec.label) or category))
   -- Sized to the wrapped text. The floor covers the offline harness, whose FontString cannot measure.
   local textH = math.max(60, (c.Text.GetStringHeight and c.Text:GetStringHeight() or 0) + 4)
   c:SetHeight(20 + textH + 18 + BTN_H + 16)
@@ -274,9 +279,9 @@ local function buildPage(category)
   local function getter(key) return function() return get(key) end end
 
   col:AddCheckbox({
-    label = "Enabled",
-    desc  = "Show this viewer at all. The editor handle stays either way, so this is reversible from "
-            .. "right here.",
+    label = L["Enabled"],
+    desc  = L["Show this viewer at all. The editor handle stays either way, so this is reversible from "
+            .. "right here."],
     get   = function() return M.IsCategoryEnabled(category) end,
     set   = function(v)
       M.SetCategoryEnabled(category, v)
@@ -285,36 +290,36 @@ local function buildPage(category)
   })
 
   col:AddDropdown({
-    label = "Orientation", values = ORIENTATION,
+    label = L["Orientation"], values = ORIENTATION,
     get = getter("orientation"), set = set("orientation"),
   })
   col:AddCompactSlider({
-    label = "Icon Limit", min = 1, max = 20, step = 1,
-    desc  = "How many icons before the layout wraps. Vertical orientation reads this as icons per "
-            .. "column.",
+    label = L["Icon Limit"], min = 1, max = 20, step = 1,
+    desc  = L["How many icons before the layout wraps. Vertical orientation reads this as icons per "
+            .. "column."],
     get = getter("iconLimit"), set = set("iconLimit"),
   })
   col:AddDropdown({
-    label = "Icon Direction", values = DIRECTION,
+    label = L["Icon Direction"], values = DIRECTION,
     get = getter("iconDirection"), set = set("iconDirection"),
   })
   col:AddCompactSlider({
-    label = "Icon Size", min = 50, max = 200, step = 10, format = pct,
+    label = L["Icon Size"], min = 50, max = 200, step = 10, format = pct,
     get = getter("iconSize"), set = set("iconSize"),
   })
   col:AddCompactSlider({
-    label = "Icon Padding", min = 0, max = 14, step = 1, format = px,
-    desc  = "Gap between icons. Retail offsets this by -4, so the low end overlaps slightly — that is "
-            .. "the stock look, not a bug.",
+    label = L["Icon Padding"], min = 0, max = 14, step = 1, format = px,
+    desc  = L["Gap between icons. Retail offsets this by -4, so the low end overlaps slightly — that is "
+            .. "the stock look, not a bug."],
     get = getter("iconPadding"), set = set("iconPadding"),
   })
   col:AddCompactSlider({
-    label = "Opacity", min = 50, max = 100, step = 1, format = pct,
+    label = L["Opacity"], min = 50, max = 100, step = 1, format = pct,
     get = getter("opacity"), set = set("opacity"),
   })
   col:AddDropdown({
-    label = "Visibility", values = VISIBILITY,
-    desc  = "When this viewer is on screen at all. Hidden still leaves the editor handle here.",
+    label = L["Visibility"], values = VISIBILITY,
+    desc  = L["When this viewer is on screen at all. Hidden still leaves the editor handle here."],
     get = getter("visibleSetting"), set = set("visibleSetting"),
   })
 
@@ -323,22 +328,22 @@ local function buildPage(category)
   -- control for the same reason, and a row that silently does nothing is worse than no row.
   if get("allowHideWhenInactive") then
     col:AddCheckbox({
-      label = "Hide When Inactive",
-      desc  = "Show a slot only while its aura is active.",
+      label = L["Hide When Inactive"],
+      desc  = L["Show a slot only while its aura is active."],
       get   = function() return get("hideWhenInactive") and true or false end,
       set   = set("hideWhenInactive"),
     })
   end
 
   col:AddCheckbox({
-    label = "Show Timer",
-    desc  = "Draw the countdown number on each icon.",
+    label = L["Show Timer"],
+    desc  = L["Draw the countdown number on each icon."],
     get   = function() return get("showTimer") and true or false end,
     set   = set("showTimer"),
   })
   col:AddCheckbox({
-    label = "Show Tooltips",
-    desc  = "Show a tooltip when hovering an icon.",
+    label = L["Show Tooltips"],
+    desc  = L["Show a tooltip when hovering an icon."],
     get   = function() return get("showTooltips") and true or false end,
     set   = set("showTooltips"),
   })
@@ -346,11 +351,11 @@ local function buildPage(category)
   -- Bar-only, exactly as retail exposes them (the BuffBar system alone).
   if spec and spec.bar then
     col:AddDropdown({
-      label = "Bar Content", values = BAR_CONTENT,
+      label = L["Bar Content"], values = BAR_CONTENT,
       get = getter("barContent"), set = set("barContent"),
     })
     col:AddCompactSlider({
-      label = "Bar Width", min = 50, max = 200, step = 5, format = pct,
+      label = L["Bar Width"], min = 50, max = 200, step = 5, format = pct,
       get = getter("barWidthScale"), set = set("barWidthScale"),
     })
   end
@@ -358,10 +363,10 @@ local function buildPage(category)
   -- Retail's AddExtraButtons puts a system's own extra actions at the END of the options stack,
   -- above the Revert/Reset region — which is where NewEra's dialog carries this one too.
   col:AddButton({
-    label = "Cooldown Manager Settings",
+    label = L["Cooldown Manager Settings"],
     width = ROW_W,
-    desc  = "Closes edit mode and opens the Cooldown Manager window, which carries the settings that "
-            .. "are not per-viewer: alerts, ready sounds, buff tracking, icon fit and the resets.",
+    desc  = L["Closes edit mode and opens the Cooldown Manager window, which carries the settings that "
+            .. "are not per-viewer: alerts, ready sounds, buff tracking, icon fit and the resets."],
     onClick = function()
       -- Leave the editor first: it covers the screen, and DragonUI saves every frame's position on
       -- the way out, so nothing is lost by going this way.

@@ -15,4 +15,9 @@ CLAUDE.md
 /tools/cdm-spellgen/resolved.json
 /tools/cdm-spellgen/resolved_any.json
 /tools/cdm-spellgen/listing.txt
-/tools/cdm-spellgen/listing_nocd.txt/tools/cdm-spellgen/__pycache__
+/tools/cdm-spellgen/listing_nocd.txt
+
+# Python bytecode. The cdm-spellgen entry below used to be spliced onto the line above it with no
+# newline between them, so neither it nor listing_nocd.txt was ever actually matched.
+__pycache__/
+*.pyc

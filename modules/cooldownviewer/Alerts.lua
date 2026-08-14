@@ -71,6 +71,7 @@
 local NE = DragonUI_NewEra
 NE.cooldownviewer = NE.cooldownviewer or {}
 local M = NE.cooldownviewer
+local L = NE.L
 M.alerts = M.alerts or {}
 local AL = M.alerts
 
@@ -81,10 +82,10 @@ local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 -- addon does not have. We define our own over the LibCustomGlow renderers, keeping 1 = ants as the
 -- default so a stored upstream-shaped value still lands on the intended look.
 AL.FX = {
-  { id = 1, name = "Marching Ants" },
-  { id = 2, name = "Button Glow" },
-  { id = 3, name = "Sparkles" },
-  { id = 4, name = "Pandemic Border" },
+  { id = 1, name = L["Marching Ants"] },
+  { id = 2, name = L["Button Glow"] },
+  { id = 3, name = L["Sparkles"] },
+  { id = 4, name = L["Pandemic Border"] },
 }
 
 local DEFAULT_FX     = 1

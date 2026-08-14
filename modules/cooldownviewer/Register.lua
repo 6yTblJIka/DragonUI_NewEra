@@ -18,18 +18,19 @@
 
 local NE = DragonUI_NewEra
 local M  = NE.cooldownviewer
+local L = NE.L
 
 -- All four retail viewers. essential/utility read spell cooldowns from the curated class lists;
 -- buffIcon/buffBar read live auras (Phase 3) and need no class data.
 local VIEWERS = {
-  { category = "essential", id = "CooldownViewerEssential", label = "Essential Cooldowns",
-    desc = "Offensive burst and damage cooldowns.", order = 40 },
-  { category = "utility",   id = "CooldownViewerUtility",   label = "Utility Cooldowns",
-    desc = "Defensives, interrupts, CC and escapes.", order = 41 },
-  { category = "buffIcon",  id = "CooldownViewerBuffIcon",  label = "Buff Icons",
-    desc = "Short-duration buffs and procs, as icons.", order = 42, aura = true },
-  { category = "buffBar",   id = "CooldownViewerBuffBar",   label = "Buff Bars",
-    desc = "Short-duration buffs and procs, as depleting bars.", order = 43,
+  { category = "essential", id = "CooldownViewerEssential", label = L["Essential Cooldowns"],
+    desc = L["Offensive burst and damage cooldowns."], order = 40 },
+  { category = "utility",   id = "CooldownViewerUtility",   label = L["Utility Cooldowns"],
+    desc = L["Defensives, interrupts, CC and escapes."], order = 41 },
+  { category = "buffIcon",  id = "CooldownViewerBuffIcon",  label = L["Buff Icons"],
+    desc = L["Short-duration buffs and procs, as icons."], order = 42, aura = true },
+  { category = "buffBar",   id = "CooldownViewerBuffBar",   label = L["Buff Bars"],
+    desc = L["Short-duration buffs and procs, as depleting bars."], order = 43,
     aura = true, bar = true },
 }
 M.VIEWER_SPECS = VIEWERS
@@ -338,33 +339,33 @@ NE.RegisterOptionSection({
   order = 40,
   build = function(scroll, C)
     if C.AddSpacer then C:AddSpacer(scroll) end
-    C:AddHeading(scroll, "Cooldown Manager")
+    C:AddHeading(scroll, L["Cooldown Manager"])
     C:AddDescription(scroll,
-      "Retail's Cooldown Manager, driven from curated per-class cooldown lists. |cffffcc55Off by "
+      L["Retail's Cooldown Manager, driven from curated per-class cooldown lists. |cffffcc55Off by "
       .. "default|r — it adds four viewers to the middle of your screen, so it waits to be asked. Every "
       .. "setting — which spells and buffs are tracked, each viewer's layout, size and visibility, alerts "
       .. "and ready sounds — lives in the Cooldown Manager window itself (/cdm). Drag the viewers with "
-      .. "DragonUI's editor mode to reposition them, and right-click one there for its own layout settings.")
+      .. "DragonUI's editor mode to reposition them, and right-click one there for its own layout settings."])
 
     C:AddToggle(scroll, {
-      label   = "Enable Cooldown Manager",
-      desc    = "Off by default. Turn on to show the four viewers; turn off to hide them again. Takes "
+      label   = L["Enable Cooldown Manager"],
+      desc    = L["Off by default. Turn on to show the four viewers; turn off to hide them again. Takes "
                 .. "effect immediately either way, and nothing is forgotten — this switch stores one flag "
-                .. "and touches nothing else, so your setup comes back exactly as you left it.",
+                .. "and touches nothing else, so your setup comes back exactly as you left it."],
       getFunc = function() return M.IsEnabled() end,
       setFunc = function(v) M.SetEnabled(v) end,
     })
 
     if C.AddButton then
       C:AddButton(scroll, {
-        label    = "Open Cooldown Manager",
+        label    = L["Open Cooldown Manager"],
         -- SPELLS, not Settings (owner's steer). This is the front door: the first thing anyone wants
         -- after turning the module on is to see and change what it tracks, which is the Spells tab.
         -- Settings is where you go once you already know what is in the viewers, and the tabs are right
         -- there. (The link on the edit-mode dialog still opens on Settings — that one exists to reach
         -- the non-per-viewer settings by name, so it means it.)
-        desc     = "Opens the Cooldown Manager window (/cdm) on its Spells tab. Needs the module on — "
-                   .. "the window configures the viewers, so it goes away with them.",
+        desc     = L["Opens the Cooldown Manager window (/cdm) on its Spells tab. Needs the module on — "
+                   .. "the window configures the viewers, so it goes away with them."],
         callback = function()
           if M.OpenSettingsPanel then M.OpenSettingsPanel("spells") end
         end,

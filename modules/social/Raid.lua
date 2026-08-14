@@ -7,6 +7,7 @@
 -- SO.SetupRaid(f); exposes SO.RefreshRaid().
 
 local NE = DragonUI_NewEra
+local L = NE.L
 if not NE then return end
 
 NE.social = NE.social or {}
@@ -83,11 +84,11 @@ local function openRaidSlotMenu(slot)
 
   local name = slot._name
   local menu = { { text = name, isTitle = true, notCheckable = true } }
-  menu[#menu + 1] = { text = "Promote to Raid Leader", notCheckable = true, func = function()
+  menu[#menu + 1] = { text = L["Promote to Raid Leader"], notCheckable = true, func = function()
       if PromoteToLeader then PromoteToLeader(raidTarget(slot, name), true) end
       SO.RefreshRaid()
     end }
-  menu[#menu + 1] = { text = "Promote to Assistant", notCheckable = true, func = function()
+  menu[#menu + 1] = { text = L["Promote to Assistant"], notCheckable = true, func = function()
       if PromoteToAssistant then PromoteToAssistant(raidTarget(slot, name), true) end
       SO.RefreshRaid()
     end }
@@ -236,12 +237,12 @@ local function buildRaidInfoFrame(f, panel)
   -- RAID_INFO is the exception — it's a real 3.3.5a string ("Raid Info").
   local hName = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   hName:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -30)
-  hName:SetText("Instance")
+  hName:SetText(L["Instance"])
   hName:SetTextColor(1, 0.82, 0)
 
   local hReset = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   hReset:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -34, -30)
-  hReset:SetText("Resets In")
+  hReset:SetText(L["Resets In"])
   hReset:SetTextColor(1, 0.82, 0)
 
   -- Dark recessed list well, same treatment as the tab panels themselves.
@@ -300,9 +301,9 @@ local function buildRaidInfoFrame(f, panel)
       if not (self._entry and GameTooltip) then return end
       GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
       GameTooltip:SetText(instanceLabel(self._entry), 1, 0.82, 0)
-      if self._entry.id then GameTooltip:AddLine("ID: " .. tostring(self._entry.id), 1, 1, 1) end
+      if self._entry.id then GameTooltip:AddLine(L["ID: %s"]:format(tostring(self._entry.id)), 1, 1, 1) end
       GameTooltip:AddLine(formatReset(self._entry.reset), 1, 1, 1)
-      if self._entry.extended then GameTooltip:AddLine("Extended", 0.25, 1, 0.25) end
+      if self._entry.extended then GameTooltip:AddLine(L["Extended"], 0.25, 1, 0.25) end
       GameTooltip:Show()
     end)
     row:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -323,7 +324,7 @@ local function buildRaidInfoFrame(f, panel)
 
   local empty = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
   empty:SetPoint("TOP", content, "TOP", 0, -12)
-  empty:SetText("You are not saved to any instances.")
+  empty:SetText(L["You are not saved to any instances."])
   empty:Hide()
   frame.Empty = empty
 
@@ -331,7 +332,7 @@ local function buildRaidInfoFrame(f, panel)
     local ext = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     ext:SetSize(140, 22)
     ext:SetPoint("BOTTOM", frame, "BOTTOM", 0, 12)
-    ext:SetText("Extend")
+    ext:SetText(L["Extend"])
     ext:Disable()
     ext:SetScript("OnClick", function()
       local e = frame._selectedEntry
@@ -393,10 +394,10 @@ function SO.RefreshSavedInstances()
   if frame.Extend then
     if selectedEntry then
       frame.Extend:Enable()
-      frame.Extend:SetText(selectedEntry.extended and "Cancel Extend" or "Extend")
+      frame.Extend:SetText(selectedEntry.extended and L["Cancel Extend"] or L["Extend"])
     else
       frame.Extend:Disable()
-      frame.Extend:SetText("Extend")
+      frame.Extend:SetText(L["Extend"])
     end
   end
 end

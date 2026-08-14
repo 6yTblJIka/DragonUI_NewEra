@@ -28,6 +28,7 @@
 -- vertical drop + horizontal run; see drawEdge.
 
 local NE = DragonUI_NewEra
+local L = NE.L
 local T = NE.talents or {}
 
 -- Triumvirate-only realm gate. Triumvirate ships a custom native dual-spec-unlock UI (gold cost +
@@ -393,7 +394,7 @@ local function buildBottomBar(f)
   local activate = CreateFrame("Button", "NE_TalentActivateButton", f, "UIPanelButtonTemplate")
   activate:SetSize(160, 26)
   activate:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -((T.FRAME.CHROME_R or 0) + 24), (T.FRAME.CHROME_B or 0) + 27)
-  activate:SetText("Activate")
+  activate:SetText(L["Activate"])
   activate:SetScript("OnClick", function()
     if InCombatLockdown and InCombatLockdown() then return end
 
@@ -702,20 +703,20 @@ function T.Populate()
 
         if isLocked then
           if playerMoney < unlockCost then
-            f.activate:SetText("Locked")
+            f.activate:SetText(L["Locked"])
             f.activate:Disable()
             if f.activate.SetAlpha then f.activate:SetAlpha(0.25) end
             local btnText = f.activate:GetFontString()
             if btnText then btnText:SetTextColor(0.4, 0.4, 0.4) end
           else
-            f.activate:SetText("Unlock Spec")
+            f.activate:SetText(L["Unlock Spec"])
             f.activate:Enable()
             if f.activate.SetAlpha then f.activate:SetAlpha(1.0) end
             local btnText = f.activate:GetFontString()
             if btnText then btnText:SetTextColor(1, 0.82, 0) end
           end
         else
-          f.activate:SetText("Activate")
+          f.activate:SetText(L["Activate"])
           f.activate:Enable()
           if f.activate.SetAlpha then f.activate:SetAlpha(1.0) end
           local btnText = f.activate:GetFontString()
@@ -724,7 +725,7 @@ function T.Populate()
         -- ---------------------------------------------------------------------------------
       else
         -- Non-Triumvirate realms: plain Activate, no gold-unlock system to check against.
-        f.activate:SetText("Activate")
+        f.activate:SetText(L["Activate"])
         f.activate:Enable()
         if f.activate.SetAlpha then f.activate:SetAlpha(1.0) end
         local btnText = f.activate:GetFontString()

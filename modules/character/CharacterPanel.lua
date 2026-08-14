@@ -25,6 +25,7 @@
 -- COMBAT, guarded by InCombatLockdown + NE.FrameUtil.AfterCombat.
 
 local NE = DragonUI_NewEra
+local L = NE.L
 NE.charpanel = NE.charpanel or {}
 local CP = NE.charpanel
 
@@ -733,8 +734,8 @@ if NE.modules and NE.modules.Register then
     default = false,  -- Default OFF: DragonUI now ships its own character window, so ours would be a
                       -- second replacement fighting for the same frame. Players opt in from the
                       -- "Windows" section of the options tab (integration/Options.lua).
-    label   = "Character Panel",
-    desc    = "The modern Dragonflight character window. Off by default because DragonUI ships its own.",
+    label   = L["Character Panel"],
+    desc    = L["The modern Dragonflight character window. Off by default because DragonUI ships its own."],
     events  = { "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD" },
     onBoot  = function() boot() end,
   }
@@ -748,8 +749,8 @@ end
 -- Each handshake is independently guarded (NE.dragon.* may be absent on a standalone load).
 -- ----------------------------------------------------------------------------
 local function registerWithDragon()
-  local title = "Character Panel"
-  local desc  = "A modern Dragonflight character window (custom frame; the Blizzard frame is hidden)."
+  local title = L["Character Panel"]
+  local desc  = L["A modern Dragonflight character window (custom frame; the Blizzard frame is hidden)."]
 
   local moduleTable = {
     ne_id   = MODULE,

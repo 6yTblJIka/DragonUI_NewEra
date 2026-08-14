@@ -15,7 +15,7 @@
 -- tab plays the stock tab SFX. The strip mirrors InsetRight's visibility via OnShow/OnHide hooks.
 
 local NE = DragonUI_NewEra
-local L = NE:GetLocale()
+local L = NE.L
 NE.charpanel = NE.charpanel or {}
 local CP = NE.charpanel
 

@@ -24,6 +24,7 @@
 -- if the whole PvP API is gone the pane shows an unranked hint and logs — NEVER errors.
 
 local NE = DragonUI_NewEra
+local L = NE.L
 NE.charpanel = NE.charpanel or {}
 local CP = NE.charpanel
 
@@ -153,7 +154,7 @@ local function buildRankBlock(parent)
   r.hint:SetPoint("RIGHT", r, "RIGHT", -12, 0)
   r.hint:SetJustifyH("LEFT")
   r.hint:SetWordWrap(true)
-  r.hint:SetText("Earn honorable kills in battlegrounds and world PvP to gain rank.")
+  r.hint:SetText(L["Earn honorable kills in battlegrounds and world PvP to gain rank."])
   r.hint:Hide()
   return r
 end

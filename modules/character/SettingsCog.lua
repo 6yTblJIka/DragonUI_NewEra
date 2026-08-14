@@ -20,7 +20,7 @@ NE.charpanel = NE.charpanel or {}
 local CP = NE.charpanel
 
 local MODULE = "character"
-local L = NE.L or setmetatable({}, { __index = function(_, k) return k end })
+local L = NE.L
 
 local function log(msg) if CP._log then CP._log(msg) elseif NE.Log then NE.Log("CHARPANEL", msg) end end
 

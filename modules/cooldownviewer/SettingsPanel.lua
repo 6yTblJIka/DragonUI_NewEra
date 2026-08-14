@@ -31,6 +31,7 @@
 
 local NE = DragonUI_NewEra
 local M  = NE.cooldownviewer
+local L = NE.L
 
 NE.cooldownviewersettings = NE.cooldownviewersettings or {}
 local CDS = NE.cooldownviewersettings
@@ -135,7 +136,7 @@ local function build()
   -- retextures the streaks and sets the title styling. Same path every standalone window here uses.
   local PC = NE.panelchrome
   if PC and PC.Apply then
-    PC.Apply(f, { layout = "PortraitFrameTemplate", title = "Cooldown Manager", noPortrait = true })
+    PC.Apply(f, { layout = "PortraitFrameTemplate", title = L["Cooldown Manager"], noPortrait = true })
   end
 
   -- THE BODY: plain, full-brightness UI-Background-Rock — the same stone every other from-scratch
@@ -278,7 +279,7 @@ local function build()
   end)
   cog:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Options")
+    GameTooltip:SetText(GAMEOPTIONS_MENU or L["Options"])
     GameTooltip:Show()
   end)
   cog:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -330,8 +331,8 @@ local function build()
   end)
   f.layoutButton:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Layouts")
-    GameTooltip:AddLine("Save, load, import and export the whole|nCooldown Manager setup for this class.",
+    GameTooltip:SetText(L["Layouts"])
+    GameTooltip:AddLine(L["Save, load, import and export the whole|nCooldown Manager setup for this class."],
       1, 1, 1)
     GameTooltip:Show()
   end)
@@ -342,7 +343,7 @@ local function build()
   f.revertButton = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   f.revertButton:SetSize(90, 22)
   f.revertButton:SetPoint("LEFT", f.layoutButton, "RIGHT", 6, 0)
-  f.revertButton:SetText("Revert")
+  f.revertButton:SetText(L["Revert"])
   f.revertButton:SetScript("OnClick", function()
     if CDS.Revert then CDS.Revert() end
   end)
@@ -353,13 +354,13 @@ local function build()
   f.revertButton:SetMotionScriptsWhileDisabled(true)
   f.revertButton:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Revert")
-    GameTooltip:AddLine("Undoes the last layout change — applying a layout,|nimporting one, or the "
-      .. "starter reset.|n|nOne step, and only for this session.", 1, 1, 1)
+    GameTooltip:SetText(L["Revert"])
+    GameTooltip:AddLine(L["Undoes the last layout change — applying a layout,|nimporting one, or the "
+      .. "starter reset.|n|nOne step, and only for this session."], 1, 1, 1)
     if not (CDS.CanRevert and CDS.CanRevert()) then
       GameTooltip:AddLine(" ")
-      GameTooltip:AddLine("Nothing to undo. It covers LAYOUTS, not the settings|non these tabs — a "
-        .. "viewer's own size and position revert|nfrom its edit-mode panel instead.", 1, 0.3, 0.3)
+      GameTooltip:AddLine(L["Nothing to undo. It covers LAYOUTS, not the settings|non these tabs — a "
+        .. "viewer's own size and position revert|nfrom its edit-mode panel instead."], 1, 0.3, 0.3)
     end
     GameTooltip:Show()
   end)
@@ -472,8 +473,8 @@ function CDS.RefreshLayout() end
 local function windowAvailable()
   if M.IsEnabled() then return true end
   if DEFAULT_CHAT_FRAME then
-    DEFAULT_CHAT_FRAME:AddMessage("|cff1784d1Cooldown Manager|r is turned off. Enable it in DragonUI's "
-      .. "options, under New Era > Cooldown Manager.")
+    DEFAULT_CHAT_FRAME:AddMessage("|cff1784d1Cooldown Manager|r "
+      .. L["is turned off. Enable it in DragonUI's options, under New Era > Cooldown Manager."])
   end
   return false
 end

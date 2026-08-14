@@ -11,9 +11,11 @@
 
 local NE = DragonUI_NewEra
 if not NE then return end
+local L = NE.L
 
 local OPTIONS_ADDON = "DragonUI_Options"
 local TAB_KEY       = "newera"
+-- Product name, deliberately not localized: it's how the addon is listed everywhere else.
 local TAB_TITLE     = "New Era"
 local TAB_ORDER     = 16
 
@@ -51,8 +53,8 @@ local function builder(scroll)
 
     C:AddHeading(scroll, TAB_TITLE)
     C:AddDescription(scroll,
-        "NewEra panels ported onto DragonUI. Toggle a panel below to enable or disable it. "
-        .. "Panels appear here as their modules load.")
+        L["NewEra panels ported onto DragonUI. Toggle a panel below to enable or disable it. "
+        .. "Panels appear here as their modules load."])
     if C.AddSpacer then C:AddSpacer(scroll) end
 
     -- (Per-window enable toggles live in the "Windows" section below; we intentionally do NOT also
@@ -63,9 +65,9 @@ local function builder(scroll)
     -- a disabled module simply isn't booted on the next /reload (the Blizzard default frame is used).
     -- ----------------------------------------------------------------------------
     if NE.modules and NE.modules.IsEnabled then
-        C:AddHeading(scroll, "Windows")
+        C:AddHeading(scroll, L["Windows"])
         C:AddDescription(scroll,
-            "Use DragonUI's window in place of the Blizzard default. Changes take effect after a /reload.")
+            L["Use DragonUI's window in place of the Blizzard default. Changes take effect after a /reload."])
         -- The per-window "Retail bags" restyle toggle stays hidden (the combined bag replaces it), but
         -- the combined bag itself IS toggleable so players can turn our bag UI off entirely and fall
         -- back to the stock Blizzard bags. To also re-expose the per-window restyle, add a row:
@@ -74,22 +76,22 @@ local function builder(scroll)
         -- opt-in rather than a second replacement over the top. (Collections went further — DragonUI
         -- ships that one too, so our window was removed outright and has no row here.)
         local WINDOWS = {
-            { id = "character",   label = "Character panel",
-              desc = "Our Dragonflight character window. OFF by default — DragonUI ships its own. Reload (/reload) to apply." },
-            { id = "Spellbook",   label = "Spellbook" },
-            { id = "Talents",     label = "Talents" },
-            { id = "Professions", label = "Professions" },
-            { id = "AuctionHouse", label = "Auction House" },
-            { id = "Social",      label = "Social (Friends/Who/Guild/Chat/Raid)" },
-            { id = "LFG",         label = "Looking For Group (Dungeon/Raid Finder)" },
-            { id = "combinedbag", label = "Combined bag (all-in-one)",
-              desc = "Our all-in-one bag window. Turn OFF to use the stock Blizzard bags instead. Reload (/reload) to apply." },
+            { id = "character",   label = L["Character panel"],
+              desc = L["Our Dragonflight character window. OFF by default — DragonUI ships its own. Reload (/reload) to apply."] },
+            { id = "Spellbook",   label = SPELLBOOK or L["Spellbook"] },
+            { id = "Talents",     label = TALENTS or L["Talents"] },
+            { id = "Professions", label = L["Professions"] },
+            { id = "AuctionHouse", label = L["Auction House"] },
+            { id = "Social",      label = L["Social (Friends/Who/Guild/Chat/Raid)"] },
+            { id = "LFG",         label = L["Looking For Group (Dungeon/Raid Finder)"] },
+            { id = "combinedbag", label = L["Combined bag (all-in-one)"],
+              desc = L["Our all-in-one bag window. Turn OFF to use the stock Blizzard bags instead. Reload (/reload) to apply."] },
         }
         for _, w in ipairs(WINDOWS) do
             local id = w.id
             C:AddToggle(scroll, {
                 label   = w.label,
-                desc    = w.desc or "Reload (/reload) to apply.",
+                desc    = w.desc or L["Reload (/reload) to apply."],
                 getFunc = function() return NE.modules.IsEnabled(id) and true or false end,
                 setFunc = function(v)
                     if NE.modules.SetEnabled then pcall(NE.modules.SetEnabled, id, v) end
@@ -103,8 +105,8 @@ local function builder(scroll)
     -- wires into DragonUI's own ModuleRegistry as "ne_EncounterJournal", like every other DragonUI
     -- module) -- add it here explicitly so it's visible on this tab too.
     C:AddToggle(scroll, {
-        label   = "Adventure Guide (Encounter Journal)",
-        desc    = "Boss and loot browser. Requires a /reload to take effect (the micro button doesn't re-check this live).",
+        label   = L["Adventure Guide (Encounter Journal)"],
+        desc    = L["Boss and loot browser. Requires a /reload to take effect (the micro button doesn't re-check this live)."],
         getFunc = function()
             local modules = dragon.db.profile.modules
             local m = modules and modules["ne_EncounterJournal"]
@@ -125,38 +127,38 @@ local function builder(scroll)
     -- Backed by NE.scale (NE.db.scale[window]); changes apply IMMEDIATELY to the live frame.
     -- ----------------------------------------------------------------------------
     if C.AddSpacer then C:AddSpacer(scroll) end
-    C:AddHeading(scroll, "Window Scaling")
+    C:AddHeading(scroll, L["Window Scaling"])
     local S = NE.scale
     if not S then
         -- core/Scale.lua isn't loaded — surface it instead of silently showing nothing.
         C:AddDescription(scroll,
-            "Scaling controls are unavailable: the 'core\\Scale.lua' file isn't loaded. Make sure your "
-            .. "installed DragonUI_NewEra includes core/Scale.lua AND its line in the .toc, then /reload.")
+            L["Scaling controls are unavailable: the 'core\\Scale.lua' file isn't loaded. Make sure your "
+            .. "installed DragonUI_NewEra includes core/Scale.lua AND its line in the .toc, then /reload."])
     elseif not (C.AddDropdown and C.AddSlider) then
-        C:AddDescription(scroll, "Scaling controls need a newer DragonUI options panel (AddSlider/AddDropdown).")
+        C:AddDescription(scroll, L["Scaling controls need a newer DragonUI options panel (AddSlider/AddDropdown)."])
     else
         C:AddDescription(scroll,
-            "Each window's size: \"Use UI scale\" follows the game's UI Scale slider, \"No scaling\" "
+            L["Each window's size: \"Use UI scale\" follows the game's UI Scale slider, \"No scaling\" "
             .. "stays pixel-perfect, \"Custom\" uses its slider. The custom slider is greyed out and "
-            .. "locked unless that window's mode is set to Custom.")
+            .. "locked unless that window's mode is set to Custom."])
         local AceGUI = LibStub and LibStub("AceGUI-3.0")
-        local MODES = { ui = "Use UI scale", none = "No scaling", custom = "Custom" }
+        local MODES = { ui = L["Use UI scale"], none = L["No scaling"], custom = L["Custom"] }
         -- Keys are core/Scale.lua's window keys; every one of these frames registers itself with
         -- NE.scale.SetFrame(key, frame) as it builds, so a change here lands on the live window.
         -- A window that hasn't been opened yet this session simply has no frame registered — the
         -- setting still persists and applies on its first build.
         local WINDOWS = {
-            { key = "character",       label = "Character" },
-            { key = "spellbook",       label = "Spellbook" },
-            { key = "talents",         label = "Talents" },
-            { key = "professions",     label = "Professions" },
-            { key = "social",          label = "Social" },
-            { key = "guild",           label = "Guild" },
-            { key = "lfg",             label = "Looking For Group" },
-            { key = "auctionhouse",    label = "Auction House" },
-            { key = "cooldownmanager", label = "Cooldown Manager" },
-            { key = "encounterjournal", label = "Adventure Guide" },
-            { key = "combinedbag",     label = "Combined Bag" },
+            { key = "character",       label = CHARACTER or L["Character"] },
+            { key = "spellbook",       label = SPELLBOOK or L["Spellbook"] },
+            { key = "talents",         label = TALENTS or L["Talents"] },
+            { key = "professions",     label = L["Professions"] },
+            { key = "social",          label = L["Social"] },
+            { key = "guild",           label = GUILD or L["Guild"] },
+            { key = "lfg",             label = L["Looking For Group"] },
+            { key = "auctionhouse",    label = L["Auction House"] },
+            { key = "cooldownmanager", label = L["Cooldown Manager"] },
+            { key = "encounterjournal", label = L["Adventure Guide"] },
+            { key = "combinedbag",     label = L["Combined Bag"] },
         }
 
         -- One window's stacked controls: a centered column header, a mode dropdown, and a custom-scale
@@ -170,7 +172,7 @@ local function builder(scroll)
             end
             local slider
             C:AddDropdown(parent, {
-                label   = "Scale mode",
+                label   = L["Scale mode"],
                 values  = MODES,
                 getFunc = function() local m = S.Get(key); return m end,
                 setFunc = function(v)
@@ -179,7 +181,7 @@ local function builder(scroll)
                 end,
             })
             slider = C:AddSlider(parent, {
-                label    = "Custom scale",
+                label    = L["Custom scale"],
                 min      = S.MIN or 0.5, max = S.MAX or 1.5, step = 0.05,
                 getFunc  = function() local _, c = S.Get(key); return c end,
                 setFunc  = function(v) S.SetCustom(key, v) end,

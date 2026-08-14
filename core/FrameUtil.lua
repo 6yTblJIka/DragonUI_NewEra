@@ -10,6 +10,7 @@
 -- both NE.FrameUtil (NewEra's internal name) and NE.frameutil (the contract name).
 
 local NE = DragonUI_NewEra
+local L = NE.L
 
 NE.FrameUtil = NE.FrameUtil or {}
 NE.frameutil = NE.FrameUtil   -- DOWNPORT: §2 contract exposes NE.frameutil.*; alias to the same table
@@ -525,7 +526,7 @@ function NE.FrameUtil.CopyBox(opts)
   local selectAll = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   selectAll:SetSize(90, 20)
   selectAll:SetPoint("BOTTOMLEFT", 12, 10)
-  selectAll:SetText("Select All")
+  selectAll:SetText(L["Select All"])
   selectAll:SetScript("OnClick", function() edit:SetFocus(); edit:HighlightText() end)
 
   f.edit = edit

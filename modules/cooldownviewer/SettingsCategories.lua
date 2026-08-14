@@ -15,6 +15,7 @@
 
 local NE = DragonUI_NewEra
 local M  = NE.cooldownviewer
+local L = NE.L
 
 local CDS = NE.cooldownviewersettings
 local Adapter = CDS.adapter
@@ -135,23 +136,25 @@ local function itemOnEnter(self)
     -- For an aura the gate is a talent, not a level, so say which one. "Not yet learned" on a proc
     -- you cannot ever learn without respeccing tells the player nothing they can act on.
     if self._aura and self._aura.talent then
-      GameTooltip:AddLine("Requires the " .. self._aura.talent .. " talent", 1, 0.3, 0.3)
+      -- Formatted, not concatenated: the talent name does not sit between those two words in
+      -- every language.
+      GameTooltip:AddLine(string.format(L["Requires the %s talent"], self._aura.talent), 1, 0.3, 0.3)
     else
-      GameTooltip:AddLine("Not yet learned", 1, 0.3, 0.3)
+      GameTooltip:AddLine(L["Not yet learned"], 1, 0.3, 0.3)
     end
   end
   if self._aura then
     if self._aura.dur then
-      GameTooltip:AddLine(("Lasts %s sec"):format(tostring(self._aura.dur)), 0.7, 0.7, 0.7)
+      GameTooltip:AddLine(L["Lasts %s sec"]:format(tostring(self._aura.dur)), 0.7, 0.7, 0.7)
     end
     if self._aura.auto then
-      GameTooltip:AddLine("Tracked automatically. Drag it into a section to pin it there.",
+      GameTooltip:AddLine(L["Tracked automatically. Drag it into a section to pin it there."],
         0.6, 0.8, 1)
     end
   end
   if self.token then
-    GameTooltip:AddLine(self._equipHidden and "Not displayed on any viewer"
-      or "Drag onto Essential or Utility to track it.", 0.6, 0.8, 1)
+    GameTooltip:AddLine(self._equipHidden and L["Not displayed on any viewer"]
+      or L["Drag onto Essential or Utility to track it."], 0.6, 0.8, 1)
   end
   -- What the corner badge means for this tile. Provided by SettingsMenu (4b-3).
   if CDS._itemTooltipExtra then CDS._itemTooltipExtra(self, GameTooltip) end
@@ -308,7 +311,7 @@ local function makeCategory(parent, kind)
   -- unbounded string would run past the panel's right edge instead of wrapping.
   c.empty:SetWidth(CAT_W - 30)
   c.empty:SetJustifyH("LEFT")
-  c.empty:SetText("(empty)")
+  c.empty:SetText(L["(empty)"])
   c.empty:Hide()
 
   function c:Relayout()

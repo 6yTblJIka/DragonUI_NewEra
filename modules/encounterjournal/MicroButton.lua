@@ -31,6 +31,7 @@
 -- on addon.RefreshMicromenu / RefreshMicromenuSystem / RefreshMicromenuVehicle).
 
 local NE = DragonUI_NewEra
+local L = NE.L
 if not NE then return end
 NE.ej = NE.ej or {}
 
@@ -134,7 +135,7 @@ local function create()
   end)
   b:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-    GameTooltip:SetText("Adventure Guide")
+    GameTooltip:SetText(ADVENTURE_JOURNAL or L["Adventure Guide"])
     GameTooltip:Show()
   end)
   b:SetScript("OnLeave", function() GameTooltip:Hide() end)

@@ -9,6 +9,7 @@
 -- (T.LO_ImportString) and routes a mismatch through a confirm dialog before saving.
 
 local NE = DragonUI_NewEra
+local L = NE.L
 local T = NE.talents or {}
 NE.talents = T
 
@@ -22,7 +23,7 @@ local function refresh() if T.LO_RefreshPanel then T.LO_RefreshPanel() end end
 local function msg(s) DEFAULT_CHAT_FRAME:AddMessage("|cff66ccffLoadouts|r: " .. tostring(s)) end
 
 StaticPopupDialogs["NE_TALENT_LO_SAVE"] = {
-  text = "Name this loadout (saves your current spec):",
+  text = L["Name this loadout (saves your current spec):"],
   button1 = SAVE or "Save", button2 = CANCEL or "Cancel",
   hasEditBox = 1, maxLetters = 40, timeout = 0, whileDead = 1, hideOnEscape = 1,
   OnAccept = function(self)
@@ -36,7 +37,7 @@ StaticPopupDialogs["NE_TALENT_LO_SAVE"] = {
 }
 
 StaticPopupDialogs["NE_TALENT_LO_RENAME"] = {
-  text = "Rename loadout:",
+  text = L["Rename loadout:"],
   button1 = OKAY or "OK", button2 = CANCEL or "Cancel",
   hasEditBox = 1, maxLetters = 40, timeout = 0, whileDead = 1, hideOnEscape = 1,
   OnShow = function(self) (self.editBox or self.EditBox):SetText(T._loSelected or "") end,
@@ -51,14 +52,14 @@ StaticPopupDialogs["NE_TALENT_LO_RENAME"] = {
 }
 
 StaticPopupDialogs["NE_TALENT_LO_DELETE"] = {
-  text = "Delete loadout '%s'?",
+  text = L["Delete loadout '%s'?"],
   button1 = DELETE or "Delete", button2 = CANCEL or "Cancel",
   timeout = 0, whileDead = 1, hideOnEscape = 1, showAlert = 1,
   OnAccept = function() if T._loSelected then T.LO_Delete(T._loSelected); T._loSelected = nil; refresh() end end,
 }
 
 StaticPopupDialogs["NE_TALENT_LO_EXPORT"] = {
-  text = "Copy this build string (Ctrl+C). Talented & the WoWhead/wotlkdb calculators import it too:",
+  text = L["Copy this build string (Ctrl+C). Talented & the WoWhead/wotlkdb calculators import it too:"],
   button1 = CLOSE or "Close",
   hasEditBox = 1, editBoxWidth = 260, timeout = 0, whileDead = 1, hideOnEscape = 1,
   OnShow = function(self)
@@ -70,7 +71,7 @@ StaticPopupDialogs["NE_TALENT_LO_EXPORT"] = {
 }
 
 StaticPopupDialogs["NE_TALENT_LO_IMPORT"] = {
-  text = "Paste a talent string or calculator URL (Talented / WoWhead / wotlkdb):",
+  text = L["Paste a talent string or calculator URL (Talented / WoWhead / wotlkdb):"],
   button1 = OKAY or "OK", button2 = CANCEL or "Cancel",
   hasEditBox = 1, editBoxWidth = 260, maxLetters = 400, timeout = 0, whileDead = 1, hideOnEscape = 1,
   OnAccept = function(self) if T.LO_ImportFromText then T.LO_ImportFromText((self.editBox or self.EditBox):GetText()) end end,
@@ -78,14 +79,14 @@ StaticPopupDialogs["NE_TALENT_LO_IMPORT"] = {
 }
 
 StaticPopupDialogs["NE_TALENT_LO_IMPORT_WARN"] = {
-  text = "%s\n\nImport anyway?",
+  text = L["%s\n\nImport anyway?"],
   button1 = YES or "Yes", button2 = NO or "No",
   timeout = 0, whileDead = 1, hideOnEscape = 1, showAlert = 1,
   OnAccept = function() StaticPopup_Show("NE_TALENT_LO_IMPORT_NAME") end,
 }
 
 StaticPopupDialogs["NE_TALENT_LO_IMPORT_NAME"] = {
-  text = "Name this imported loadout:",
+  text = L["Name this imported loadout:"],
   button1 = SAVE or "Save", button2 = CANCEL or "Cancel",
   hasEditBox = 1, maxLetters = 40, timeout = 0, whileDead = 1, hideOnEscape = 1,
   OnAccept = function(self)
@@ -133,12 +134,13 @@ local function loadBuild(name)
   if not ok and conflicts and #conflicts > 0 then
     local lines = {}
     for i = 1, math.min(#conflicts, 6) do
-      local c = conflicts[i]; lines[#lines + 1] = ("  %s: have %d, build wants %d"):format(c.name, c.have or 0, c.want or 0)
+      local c = conflicts[i]
+      lines[#lines + 1] = L["  %s: have %d, build wants %d"]:format(c.name, c.have or 0, c.want or 0)
     end
     StaticPopupDialogs["NE_TALENT_LO_CONFLICT"].text =
-      "This loadout has fewer points in some talents than you've already spent, so it needs a respec first:\n"
+      L["This loadout has fewer points in some talents than you've already spent, so it needs a respec first:\n"]
       .. table.concat(lines, "\n")
-      .. "\n\nReset at a class trainer, then load again. (The rest has been staged — click Apply to learn it.)"
+      .. L["\n\nReset at a class trainer, then load again. (The rest has been staged — click Apply to learn it.)"]
     StaticPopup_Show("NE_TALENT_LO_CONFLICT")
   else
     msg("staged '" .. name .. "' — review the highlighted talents and click Apply to learn.")
@@ -174,18 +176,18 @@ local function buildPanel()
 
   local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("TOP", 0, -14)
-  title:SetText("Loadouts")
+  title:SetText(L["Loadouts"])
 
   local close = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
   close:SetPoint("TOPRIGHT", -4, -4)
 
   -- Top actions: Save current, Import.
   local save = styleButton(CreateFrame("Button", nil, panel, "UIPanelButtonTemplate"))
-  save:SetSize(150, 24); save:SetPoint("TOPLEFT", 16, -44); save:SetText("Save current spec…")
+  save:SetSize(150, 24); save:SetPoint("TOPLEFT", 16, -44); save:SetText(L["Save current spec…"])
   save:SetScript("OnClick", function() StaticPopup_Show("NE_TALENT_LO_SAVE") end)
 
   local import = styleButton(CreateFrame("Button", nil, panel, "UIPanelButtonTemplate"))
-  import:SetSize(150, 24); import:SetPoint("TOPRIGHT", -16, -44); import:SetText("Import…")
+  import:SetSize(150, 24); import:SetPoint("TOPRIGHT", -16, -44); import:SetText(L["Import…"])
   import:SetScript("OnClick", function() StaticPopup_Show("NE_TALENT_LO_IMPORT") end)
 
   -- Saved-build list (FauxScrollFrame — must be NAMED on 3.3.5a).
@@ -254,7 +256,7 @@ local function buildPanel()
   cb:SetSize(24, 24)
   local cbText = cb:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   cbText:SetPoint("LEFT", cb, "RIGHT", 2, 0)
-  cbText:SetText("Server uses custom talents")
+  cbText:SetText(L["Server uses custom talents"])
   cb:SetChecked(T.LO_IsCustomServer())
   cb:SetScript("OnClick", function(self) T.LO_SetCustomServer(self:GetChecked() and true or false) end)
   panel.cb = cb
@@ -263,7 +265,7 @@ local function buildPanel()
   hint:SetPoint("BOTTOMLEFT", 16, 16)
   hint:SetPoint("BOTTOMRIGHT", -16, 16)
   hint:SetJustifyH("LEFT")
-  hint:SetText("Tags exported builds with this realm so imports onto other layouts warn first.")
+  hint:SetText(L["Tags exported builds with this realm so imports onto other layouts warn first."])
 
   return panel
 end
@@ -316,7 +318,7 @@ local function ensureBarButton()
   local b = CreateFrame("Button", "NE_TalentLoadoutsButton", f, "UIPanelButtonTemplate")
   b:SetSize(120, 26)
   b:SetPoint("BOTTOM", f, "BOTTOM", 0, ((T.FRAME and T.FRAME.CHROME_B) or 0) + 27)
-  b:SetText("Loadouts")
+  b:SetText(L["Loadouts"])
   b:SetScript("OnClick", function() T.LO_TogglePanel() end)
   f._loBtn = b
 end

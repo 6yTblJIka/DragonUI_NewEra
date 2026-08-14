@@ -21,6 +21,7 @@
 -- the default talent key opens it.
 
 local NE = DragonUI_NewEra
+local L = NE.L
 local T = NE.talents or {}
 NE.talents = T
 
@@ -860,9 +861,9 @@ end
 if NE.modules and NE.modules.Register then
   NE.modules.Register("Talents", {
     default  = true,
-    label    = "Talents Panel",
+    label    = L["Talents Panel"],
     category = "Windows",
-    desc     = "The modern talents window. Turn off to use the standard Blizzard talent window.",
+    desc     = L["The modern talents window. Turn off to use the standard Blizzard talent window."],
     events   = { "PLAYER_LOGIN", "ADDON_LOADED", "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED" },
     onBoot   = function(event, arg1) boot(event, arg1) end,
   })

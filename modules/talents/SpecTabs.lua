@@ -10,6 +10,7 @@
 -- at 16 chars. Tabs only appear when GetNumTalentGroups() >= 2 (Dual Talent Specialization learned).
 
 local NE = DragonUI_NewEra
+local L = NE.L
 local T  = NE.talents or {}
 NE.talents = T
 
@@ -55,7 +56,7 @@ local function specName(group) return customName(group) or defaultName(group) en
 
 -- ---- rename dialog (opened by the cog) ------------------------------------------------------------
 StaticPopupDialogs["NE_TALENT_RENAME_SPEC"] = {
-  text = "Rename this specialization (letters only, max " .. MAX_NAME .. "):",
+  text = L["Rename this specialization (letters only, max %d):"]:format(MAX_NAME),
   button1 = ACCEPT or "Accept", button2 = CANCEL or "Cancel",
   hasEditBox = 1, maxLetters = MAX_NAME,
   OnShow = function(self)
@@ -221,7 +222,7 @@ local function buildCog()
   end)
   cog:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Rename specialization", 1, 1, 1)
+    GameTooltip:SetText(L["Rename specialization"], 1, 1, 1)
     GameTooltip:Show()
   end)
   cog:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -260,7 +261,8 @@ function T.RefreshSpecTabs()
     local tab = buildTab(1)
     local txt = _G[TAB_NAMES[1] .. "Text"]
     if needTalentsTab then
-      if txt then txt:SetText("Talents") elseif tab.SetText then tab:SetText("Talents") end
+      local talentsLabel = TALENTS or L["Talents"]
+      if txt then txt:SetText(talentsLabel) elseif tab.SetText then tab:SetText(talentsLabel) end
       tab:Show()
       tabsToSize[#tabsToSize + 1] = TAB_NAMES[1]
     else
@@ -278,7 +280,8 @@ function T.RefreshSpecTabs()
   if petAvail then
     local ptab = buildPetTab()
     local ptxt = _G[PET_TAB_NAME .. "Text"]
-    if ptxt then ptxt:SetText("Pet") elseif ptab.SetText then ptab:SetText("Pet") end
+    local petLabel = PET or L["Pet"]
+    if ptxt then ptxt:SetText(petLabel) elseif ptab.SetText then ptab:SetText(petLabel) end
     ptab:Show()
     tabsToSize[#tabsToSize + 1] = PET_TAB_NAME
   else
@@ -290,7 +293,8 @@ function T.RefreshSpecTabs()
   if hasGlyph then
     local gtab = buildGlyphTab()
     local gtxt = _G[GLYPH_TAB_NAME .. "Text"]
-    if gtxt then gtxt:SetText("Glyphs") elseif gtab.SetText then gtab:SetText("Glyphs") end
+    local glyphLabel = GLYPHS or L["Glyphs"]
+    if gtxt then gtxt:SetText(glyphLabel) elseif gtab.SetText then gtab:SetText(glyphLabel) end
     gtab:Show()
     tabsToSize[#tabsToSize + 1] = GLYPH_TAB_NAME
   else

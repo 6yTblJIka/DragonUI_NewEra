@@ -29,7 +29,7 @@
 --   C.ResetOutput()
 
 local NE = DragonUI_NewEra
-local L = NE:GetLocale()
+local L = NE.L
 NE.profcraft = NE.profcraft or {}
 local C = NE.profcraft
 
@@ -109,11 +109,8 @@ local function infoFromName(name)
   if not name or name == "" then return nil end
   local lname = _G.strlower and _G.strlower(name) or name:lower()
 
-
-  L = L or (NE.GetLocale and NE:GetLocale())
-
   for engKey, info in pairs(PROF_MAP) do
-    local locName = (L and L[engKey]) or engKey
+    local locName = L[engKey] or engKey
     local locLower = _G.strlower and _G.strlower(locName) or locName:lower()
     local engLower = _G.strlower and _G.strlower(engKey) or engKey:lower()
 
@@ -1082,7 +1079,7 @@ function C.buildCreateControls(f)
   if isAuctionatorLoaded() then
     local scanAH = CreateFrame("Button", "NE_ProfessionsCraftingScanAH", f, "UIPanelButtonTemplate")
     scanAH:SetSize(100, 22)
-    scanAH:SetText("Scan AH")
+    scanAH:SetText(L["Scan AH"])
     scanAH:SetPoint("RIGHT", createAll, "LEFT", -8, 0)
     scanAH:Disable()
     scanAH:SetScript("OnClick", function(self)
@@ -1096,20 +1093,20 @@ function C.buildCreateControls(f)
       local started, reason = startAuctionatorScan(r)
       if UIErrorsFrame and UIErrorsFrame.AddMessage then
         if started then
-          UIErrorsFrame:AddMessage("Auctionator scan started for recipe reagents.", 0.2, 1.0, 0.2, 1)
+          UIErrorsFrame:AddMessage(L["Auctionator scan started for recipe reagents."], 0.2, 1.0, 0.2, 1)
         elseif reason == "AH_CLOSED" then
-          UIErrorsFrame:AddMessage("Open the Auction House first to run Auctionator scans.", 1.0, 0.2, 0.2, 1)
+          UIErrorsFrame:AddMessage(L["Open the Auction House first to run Auctionator scans."], 1.0, 0.2, 0.2, 1)
         else
-          UIErrorsFrame:AddMessage("Auctionator API not available for reagent scans.", 1.0, 0.2, 0.2, 1)
+          UIErrorsFrame:AddMessage(L["Auctionator API not available for reagent scans."], 1.0, 0.2, 0.2, 1)
         end
       end
     end)
     scanAH:SetScript("OnEnter", function(self)
       GameTooltip:SetOwner(self, "ANCHOR_TOP")
       GameTooltip:ClearLines()
-      GameTooltip:AddLine("Scan AH", 1, 1, 1)
-      GameTooltip:AddLine("Searches Auctionator for the selected recipe and its reagents.", 0.85, 0.85, 0.85, true)
-      GameTooltip:AddLine("Requires the Auction House window to be open.", 0.85, 0.85, 0.85, true)
+      GameTooltip:AddLine(L["Scan AH"], 1, 1, 1)
+      GameTooltip:AddLine(L["Searches Auctionator for the selected recipe and its reagents."], 0.85, 0.85, 0.85, true)
+      GameTooltip:AddLine(L["Requires the Auction House window to be open."], 0.85, 0.85, 0.85, true)
       GameTooltip:Show()
     end)
     scanAH:SetScript("OnLeave", function()
@@ -1627,7 +1624,7 @@ function C.UpdateRequires(r)
   end
 
   if #names > 0 then
-    req:SetText("Requires: " .. table.concat(names, ", "))
+    req:SetText(L["Requires: %s"]:format(table.concat(names, ", ")))
     if anyMissing then req:SetTextColor(1, 0.3, 0.3) else req:SetTextColor(0.82, 0.82, 0.82) end
     req:Show()
   else

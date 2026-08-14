@@ -10,6 +10,7 @@
 -- Built from Window.lua via SO.SetupFriends(f); exposes SO.RefreshFriends() / SO.RefreshIgnore().
 
 local NE = DragonUI_NewEra
+local L = NE.L
 if not NE then return end
 
 NE.social = NE.social or {}
@@ -160,9 +161,9 @@ local function openStatusMenu(anchor)
     statusMenuFrame = CreateFrame("Frame", "NE_SocialStatusMenu", UIParent, "UIDropDownMenuTemplate")
   end
   local menu = {
-    { text = "Available", notCheckable = true, func = function() setOwnStatus("AVAILABLE") end },
-    { text = "Away",      notCheckable = true, func = function() setOwnStatus("AFK") end },
-    { text = "Busy",      notCheckable = true, func = function() setOwnStatus("DND") end },
+    { text = L["Available"], notCheckable = true, func = function() setOwnStatus("AVAILABLE") end },
+    { text = L["Away"],      notCheckable = true, func = function() setOwnStatus("AFK") end },
+    { text = L["Busy"],      notCheckable = true, func = function() setOwnStatus("DND") end },
   }
   EasyMenu(menu, statusMenuFrame, anchor, 0, 0, "MENU")
 end
@@ -198,11 +199,11 @@ function SO.RefreshOwnStatus()
   local isAFK = UnitIsAFK and UnitIsAFK("player")
   local isDND = UnitIsDND and UnitIsDND("player")
   if isDND then
-    btn.icon:SetTexture(STATUS_DND); btn.label:SetText("Busy")
+    btn.icon:SetTexture(STATUS_DND); btn.label:SetText(L["Busy"])
   elseif isAFK then
-    btn.icon:SetTexture(STATUS_AFK); btn.label:SetText("Away")
+    btn.icon:SetTexture(STATUS_AFK); btn.label:SetText(L["Away"])
   else
-    btn.icon:SetTexture(STATUS_ONLINE); btn.label:SetText("Available")
+    btn.icon:SetTexture(STATUS_ONLINE); btn.label:SetText(L["Available"])
   end
 end
 
@@ -237,7 +238,7 @@ end
 -- onto the same raw global, which looks index-suggestive but is just a shim mislabel.)
 -- ---------------------------------------------------------------------------
 StaticPopupDialogs["NE_SET_FRIEND_NOTE"] = {
-  text = "Enter a note for %s:",
+  text = L["Enter a note for %s:"],
   button1 = ACCEPT or "Accept",
   button2 = CANCEL or "Cancel",
   hasEditBox = true,
@@ -272,7 +273,7 @@ local function openFriendMenu(idx)
         if name and InviteUnit then InviteUnit(name) end
       end }
   end
-  menu[#menu + 1] = { text = "Set Note", notCheckable = true, func = function()
+  menu[#menu + 1] = { text = L["Set Note"], notCheckable = true, func = function()
       if name then StaticPopup_Show("NE_SET_FRIEND_NOTE", name, nil, { name = name, note = note }) end
     end }
   menu[#menu + 1] = { text = IGNORE or "Ignore", notCheckable = true, func = function()

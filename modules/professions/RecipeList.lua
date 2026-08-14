@@ -21,7 +21,7 @@
 
 
 local NE = DragonUI_NewEra
-local L = NE:GetLocale()
+local L = NE.L
 NE.profcraft = NE.profcraft or {}
 local C = NE.profcraft
 

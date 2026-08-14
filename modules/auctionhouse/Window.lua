@@ -3,6 +3,7 @@
 
 local NE = DragonUI_NewEra
 if not NE then return end
+local L = NE.L
 
 NE.ah = NE.ah or {}
 local AH = NE.ah
@@ -732,7 +733,7 @@ local function onLogin()
     NE.RegisterPanel({
       id = MODULE,
       title = AUCTION_HOUSE or "Auction House",
-      desc = "Modern visual shell for Buy/Sell/Auctions with optional Auctionator tab embedding.",
+      desc = L["Modern visual shell for Buy/Sell/Auctions with optional Auctionator tab embedding."],
       frame = AH.frame,
       openFn = AH.Show,
       closeFn = AH.Hide,

@@ -23,7 +23,7 @@
 --   * host = CP.frame.InsetRight, not _G.CharacterFrame.InsetRight.
 
 local NE = DragonUI_NewEra
-local L = NE:GetLocale()
+local L = NE.L
 NE.charpanel = NE.charpanel or {}
 local CP = NE.charpanel
 local M  = NE.equipsets
@@ -691,7 +691,7 @@ local function equipByName(msg)
     chat:AddMessage('|cffffcc55DragonUI|r Usage: /dnequip "Set Name"')
     return
   end
-  if not M then chat:AddMessage("|cffff5555DragonUI|r Equipment manager not ready."); return end
+  if not M then chat:AddMessage("|cffff5555DragonUI|r " .. L["Equipment manager not ready."]); return end
 
   local target = name:lower()
   local found, names = nil, {}

@@ -10,6 +10,7 @@
 -- GUILD_ROSTER_UPDATE, and when the ROSTER tab is selected).
 
 local NE = DragonUI_NewEra
+local L = NE.L
 if not NE then return end
 
 NE.guild = NE.guild or {}
@@ -347,7 +348,7 @@ local function openRosterMenu(idx)
     -- Not GUILD_PROMOTE: on this client that global reads "Promote to Guildmaster", which is not what
     -- GuildPromote() does — it moves the member up ONE rank. Promoting to guild master is a separate
     -- action (GuildSetLeader) that this module does not offer.
-    menu[#menu + 1] = { text = "Promote", notCheckable = true,
+    menu[#menu + 1] = { text = L["Promote"], notCheckable = true,
       func = function() if GuildPromote then GuildPromote(name) end; G.RefreshRoster() end }
   end
   if CanGuildDemote and CanGuildDemote() then

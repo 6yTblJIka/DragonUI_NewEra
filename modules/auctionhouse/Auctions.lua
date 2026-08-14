@@ -11,6 +11,7 @@
 
 local NE = DragonUI_NewEra
 if not NE then return end
+local L = NE.L
 
 NE.ah = NE.ah or {}
 local AH = NE.ah
@@ -479,7 +480,7 @@ function AH.BuildAuctionsPane(parent)
 
   local empty = right:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   empty:SetPoint("CENTER", right, "CENTER", 0, 44)
-  empty:SetText("You have no auctions.")
+  empty:SetText(L["You have no auctions."])
   empty:SetTextColor(1, 0.82, 0)
   pane.EmptyText = empty
 

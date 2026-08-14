@@ -38,6 +38,7 @@
 
 local NE = DragonUI_NewEra
 local M  = NE.cooldownviewer
+local L = NE.L
 
 local CDS = NE.cooldownviewersettings
 
@@ -526,7 +527,7 @@ end
 StaticPopupDialogs = StaticPopupDialogs or {}
 
 StaticPopupDialogs["NE_CDM_LAYOUT_NAME"] = {
-  text = "Name this layout:",
+  text = L["Name this layout:"],
   button1 = SAVE or "Save", button2 = CANCEL or "Cancel",
   hasEditBox = 1, timeout = 0, whileDead = 1, hideOnEscape = 1,
   OnShow = function(self)
@@ -548,8 +549,8 @@ function CDS.PromptName(preset, cb)
 end
 
 StaticPopupDialogs["NE_CDM_LAYOUT_IMPORT"] = {
-  text = "Paste a Cooldown Manager layout string:",
-  button1 = "Import", button2 = CANCEL or "Cancel",
+  text = L["Paste a Cooldown Manager layout string:"],
+  button1 = L["Import"], button2 = CANCEL or "Cancel",
   hasEditBox = 1, editBoxWidth = 260, timeout = 0, whileDead = 1, hideOnEscape = 1,
   OnShow = function(self)
     local e = popupEditBox(self)
@@ -566,7 +567,7 @@ StaticPopupDialogs["NE_CDM_LAYOUT_IMPORT"] = {
 }
 
 StaticPopupDialogs["NE_CDM_LAYOUT_EXPORT"] = {
-  text = "Cooldown Manager layout string (Ctrl+C to copy):",
+  text = L["Cooldown Manager layout string (Ctrl+C to copy):"],
   button1 = OKAY or "Close",
   hasEditBox = 1, editBoxWidth = 260, timeout = 0, whileDead = 1, hideOnEscape = 1,
   OnShow = function(self)
@@ -580,7 +581,7 @@ StaticPopupDialogs["NE_CDM_LAYOUT_EXPORT"] = {
 }
 
 StaticPopupDialogs["NE_CDM_LAYOUT_DELETE"] = {
-  text = "Delete the layout \"%s\"?",
+  text = L["Delete the layout \"%s\"?"],
   button1 = YES or "Yes", button2 = NO or "No",
   timeout = 0, whileDead = 1, hideOnEscape = 1,
   OnAccept = function(self) Presets.Delete(self.data and self.data.name) end,
@@ -588,9 +589,9 @@ StaticPopupDialogs["NE_CDM_LAYOUT_DELETE"] = {
 
 -- Starter confirms, and Revert does not: one is destructive, the other IS the undo.
 StaticPopupDialogs["NE_CDM_LAYOUT_STARTER"] = {
-  text = "Reset to the starter layout?\n\nThis reverts every Cooldown Manager edit — spells, tracked "
+  text = L["Reset to the starter layout?\n\nThis reverts every Cooldown Manager edit — spells, tracked "
        .. "auras, trinket placement, alerts and sounds — to their defaults, and clears your "
-       .. "saved-layout selection.\n\nFrame positions are not affected.",
+       .. "saved-layout selection.\n\nFrame positions are not affected."],
   button1 = YES or "Yes", button2 = NO or "No",
   timeout = 0, whileDead = 1, hideOnEscape = 1,
   OnAccept = function() Presets.UseStarter() end,
@@ -600,9 +601,9 @@ StaticPopupDialogs["NE_CDM_LAYOUT_STARTER"] = {
 -- Narrower in what it says, because it is narrower in what it does — tracked auras, trinkets, alerts
 -- and sounds are all left alone, and the off-spec spells are turned off rather than removed.
 StaticPopupDialogs["NE_CDM_LAYOUT_SPEC_STARTER"] = {
-  text = "Load the %s starter layout?\n\nEssential is set to that spec's spells. Everything else for "
+  text = L["Load the %s starter layout?\n\nEssential is set to that spec's spells. Everything else for "
        .. "your class moves to Not Displayed — nothing is deleted, and you can drag any of it back.\n\n"
-       .. "Tracked auras, trinkets, alerts and frame positions are not affected.",
+       .. "Tracked auras, trinkets, alerts and frame positions are not affected."],
   button1 = YES or "Yes", button2 = NO or "No",
   timeout = 0, whileDead = 1, hideOnEscape = 1,
   OnAccept = function(self) Presets.UseSpecStarter(self.data and self.data.tab) end,
@@ -625,17 +626,17 @@ function CDS.BuildLayoutMenu(_, root)
     root:CreateDivider()
   end
 
-  root:CreateButton("New Layout", function()
+  root:CreateButton(L["New Layout"], function()
     CDS.PromptName("", function(n) Presets.SaveAs(n) end)
   end)
   if cur then
-    root:CreateButton("Copy", function()
+    root:CreateButton(COPY or L["Copy"], function()
       CDS.PromptName(cur .. " Copy", function(n) Presets.SaveAs(n) end)
     end)
-    root:CreateButton("Rename", function()
+    root:CreateButton(L["Rename"], function()
       CDS.PromptName(cur, function(n) Presets.Rename(cur, n) end)
     end)
-    root:CreateButton("|cffff5555Delete|r", function()
+    root:CreateButton("|cffff5555" .. (DELETE or L["Delete"]) .. "|r", function()
       StaticPopup_Show("NE_CDM_LAYOUT_DELETE", cur, nil, { name = cur })
     end)
   end
@@ -653,23 +654,23 @@ function CDS.BuildLayoutMenu(_, root)
     local sub = root:CreateButton("Starter Layout")
     for tab = 1, #names do
       local label = names[tab]
-      if tab == detected then label = label .. "  |cff44ff44(your spec)|r" end
+      if tab == detected then label = label .. "  |cff44ff44" .. L["(your spec)"] .. "|r" end
       sub:CreateButton(label, function()
         StaticPopup_Show("NE_CDM_LAYOUT_SPEC_STARTER", names[tab], nil, { tab = tab })
       end)
     end
     sub:CreateDivider()
-    sub:CreateButton("Everything (no spec)", function() StaticPopup_Show("NE_CDM_LAYOUT_STARTER") end)
-      :SetTooltip("Everything", "The full curated list for your class, both specs' spells|nincluded. "
-        .. "This is what the Cooldown Manager shipped with|nbefore per-spec starters.")
+    sub:CreateButton(L["Everything (no spec)"], function() StaticPopup_Show("NE_CDM_LAYOUT_STARTER") end)
+      :SetTooltip(L["Everything"], L["The full curated list for your class, both specs' spells|nincluded. "
+        .. "This is what the Cooldown Manager shipped with|nbefore per-spec starters."])
   else
-    root:CreateButton("Use Starter Layout", function() StaticPopup_Show("NE_CDM_LAYOUT_STARTER") end)
+    root:CreateButton(L["Use Starter Layout"], function() StaticPopup_Show("NE_CDM_LAYOUT_STARTER") end)
   end
 
-  root:CreateButton("Import Layout", function() StaticPopup_Show("NE_CDM_LAYOUT_IMPORT") end)
-  root:CreateButton("Export Layout", function() Presets.Export(cur) end)
-    :SetTooltip("Export Layout", "Opens a share string you can copy with Ctrl+C.|nIt covers this "
-      .. "class's spell lists, tracked auras,|ntrinket placement, alerts and sounds.")
+  root:CreateButton(L["Import Layout"], function() StaticPopup_Show("NE_CDM_LAYOUT_IMPORT") end)
+  root:CreateButton(L["Export Layout"], function() Presets.Export(cur) end)
+    :SetTooltip(L["Export Layout"], L["Opens a share string you can copy with Ctrl+C.|nIt covers this "
+      .. "class's spell lists, tracked auras,|ntrinket placement, alerts and sounds."])
 end
 
 function CDS.ToggleLayoutMenu(anchor)

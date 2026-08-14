@@ -30,6 +30,7 @@
 -- Layout transcribed from retail Cata Blizzard_EncounterJournal.xml:1307-1610 (12.0.5.67451).
 
 local NE = DragonUI_NewEra
+local L = NE.L
 if not NE then return end
 
 NE.ej = NE.ej or {}
@@ -587,7 +588,7 @@ local function buildInfoPanel(enc)
   ma.unavailable:SetWidth(300)
   ma.unavailable:SetJustifyH("CENTER")
   ma.unavailable:SetJustifyV("MIDDLE")
-  ma.unavailable:SetText("Model will load once seen within this session due to client limitations.")
+  ma.unavailable:SetText(L["Model will load once seen within this session due to client limitations."])
   ma.unavailable:Hide()
 
   -- Drag-to-rotate. DOWNPORT: 3.3.5a's generic Model_OnMouseDown/_OnUpdate handlers don't
@@ -1532,13 +1533,13 @@ local function refreshView()
       local cr = selBoss.creatures and selBoss.creatures[1]
       NE.ej.NormalizeModel(ma, cr and cr.display, selInst and selInst.tier)
     else
-      c.text:SetText("(no model)"); c.text:Show()
+      c.text:SetText(L["(no model)"]); c.text:Show()
     end
   else                        -- tab 1 = lore description + ability sections
     if (selBoss.sections and #selBoss.sections > 0) or (selBoss.desc and selBoss.desc ~= "") then
       renderSections(selBoss); c.sectionScroll:Show()
     else
-      c.text:SetText("(No abilities recorded for this encounter.)"); c.text:Show()
+      c.text:SetText(L["(No abilities recorded for this encounter.)"]); c.text:Show()
     end
   end
 end

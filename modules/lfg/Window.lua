@@ -22,6 +22,8 @@ local NE = DragonUI_NewEra
 if not NE then return end
 
 NE.lfg = NE.lfg or {}
+-- `L` is this module's own table here, so the locale seam takes a different name.
+local LOC = NE.L
 local L = NE.lfg
 
 local FRAME_NAME = "NE_GroupFinderFrame"
@@ -701,7 +703,7 @@ eventFrame:SetScript("OnEvent", function()
     NE.RegisterPanel({
       id = MODULE,
       title = LFG_TITLE or "Looking for Group",
-      desc = "Unified retail-style Group Finder over the Dungeon Finder + Raid Browser.",
+      desc = LOC["Unified retail-style Group Finder over the Dungeon Finder + Raid Browser."],
       frame = L.frame,
       openFn = function() L.Show() end,
       closeFn = L.Hide,

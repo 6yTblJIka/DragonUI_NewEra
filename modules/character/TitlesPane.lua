@@ -10,7 +10,7 @@
 -- with it), windowed to the visible row count, with wheel scrolling and a flush-right custom scrollbar.
 
 local NE = DragonUI_NewEra
-local L = NE:GetLocale()
+local L = NE.L
 NE.charpanel = NE.charpanel or {}
 local CP = NE.charpanel
 

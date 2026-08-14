@@ -848,6 +848,12 @@ DragonUI = {
 DragonUI_NewEra = { dragon = DragonUI, db = {} }
 local NE = DragonUI_NewEra
 function NE.Log(tag, msg) print("  [LOG " .. tag .. "] " .. msg) end
+-- This harness stands in for bootstrap.lua rather than running it, so it has to supply what
+-- bootstrap defines. NE.L is part of that contract: modules bind `local L = NE.L` at file scope,
+-- and a nil here is an index error the moment one builds a label. The real seam resolves through
+-- AceLocale (see bootstrap.lua); English keys are the right answer for a boot test, which asserts
+-- structure rather than wording.
+NE.L = setmetatable({}, { __index = function(_, k) return k end })
 NE.tex = { localFiles = {}, atlases = {},
   SetAtlas = function() return false end,
   GetAtlasRect = function() return nil end,

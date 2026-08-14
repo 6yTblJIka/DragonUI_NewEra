@@ -3,6 +3,7 @@
 
 local NE = DragonUI_NewEra
 if not NE then return end
+local L = NE.L
 
 NE.ah = NE.ah or {}
 local AH = NE.ah
@@ -64,7 +65,7 @@ end
 -- Aggregate browse row click drills into a per-item detail page (all individual auctions of that
 -- item); the detail page's Bid/Buyout buttons act on the selected listing via these two confirms.
 StaticPopupDialogs["NE_AH_BROWSE_BID"] = {
-  text = "Place a bid of %s?",
+  text = L["Place a bid of %s?"],
   button1 = YES or "Yes",
   button2 = NO or "No",
   OnAccept = function(_, data)
@@ -80,7 +81,7 @@ StaticPopupDialogs["NE_AH_BROWSE_BID"] = {
   showAlert = 1,
 }
 StaticPopupDialogs["NE_AH_BROWSE_BUYOUT"] = {
-  text = "Buy out this auction for %s?",
+  text = L["Buy out this auction for %s?"],
   button1 = YES or "Yes",
   button2 = NO or "No",
   OnAccept = function(_, data)
@@ -801,7 +802,7 @@ function AH.BuildBrowsePane(parent)
     -- "Lvl" (the stock AH's own name for the required-level column) rather than a spelled-out
     -- "Req. Level": the same column has to fit the much tighter item-detail header strip below, and
     -- one label across both views beats a wide one here and an abbreviation there.
-    { text = "Lvl", x = -126, w = 64, just = "RIGHT", right = true, key = "level" },
+    { text = L["Lvl"], x = -126, w = 64, just = "RIGHT", right = true, key = "level" },
     { text = AUCTION_HOUSE_BROWSE_HEADER_QUANTITY or "Available", x = -38, w = 72, just = "RIGHT", right = true, key = "qty" },
   }
 
@@ -871,7 +872,7 @@ function AH.BuildBrowsePane(parent)
 
   local empty = list:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   empty:SetPoint("CENTER", list, "CENTER", 0, 44)
-  empty:SetText("Choose search criteria and press \"Search\"")
+  empty:SetText(L["Choose search criteria and press \"Search\""])
   empty:SetTextColor(1, 0.82, 0)
   pane.EmptyText = empty
 
@@ -1029,7 +1030,7 @@ function AH.BuildBrowsePane(parent)
 
   local pageLabel = pane:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   pageLabel:SetPoint("LEFT", pageNext, "RIGHT", 8, 0)
-  pageLabel:SetText("Page 1 of 1")
+  pageLabel:SetText(L["Page 1 of 1"])
 
   local function totalDisplayPages()
     return math.max(1, math.ceil(#displayRows / ITEMS_PER_PAGE))
@@ -1042,7 +1043,7 @@ function AH.BuildBrowsePane(parent)
     -- Prev/Next stay disabled mid-scan: displayRows is still growing a page at a time, so the page
     -- count it implies right now is not the final one.
     if scanning then
-      pageLabel:SetText(string.format("Scanning page %d of %d...",
+      pageLabel:SetText(string.format(L["Scanning page %d of %d..."],
         math.min(scanPage + 1, scanPages), scanPages))
       pagePrev:Disable()
       pageNext:Disable()
@@ -1050,14 +1051,18 @@ function AH.BuildBrowsePane(parent)
     end
 
     if totalItems <= 0 then
-      pageLabel:SetText("Page 1 of 1")
+      pageLabel:SetText(L["Page 1 of 1"])
     else
       local first = currentPage * ITEMS_PER_PAGE + 1
       local last = math.min(first + ITEMS_PER_PAGE - 1, totalItems)
-      pageLabel:SetText(string.format("Page %d of %d  (items %d-%d of %d, from %d auction%s%s)",
-        currentPage + 1, totalPages, first, last, totalItems,
-        listTotal, listTotal == 1 and "" or "s",
-        scanTruncated and " -- partial scan" or ""))
+      -- Singular and plural are two whole sentences rather than a stem plus a spliced-on "s":
+      -- plural formation is language-specific, and a bare "s" is not something a locale can
+      -- translate away. Same reason the partial-scan note is its own key, not an inline literal.
+      local partial = scanTruncated and L[" -- partial scan"] or ""
+      pageLabel:SetText(string.format(
+        listTotal == 1 and L["Page %d of %d  (items %d-%d of %d, from %d auction)%s"]
+                        or L["Page %d of %d  (items %d-%d of %d, from %d auctions)%s"],
+        currentPage + 1, totalPages, first, last, totalItems, listTotal, partial))
     end
 
     if currentPage <= 0 then pagePrev:Disable() else pagePrev:Enable() end
@@ -1303,11 +1308,11 @@ function AH.BuildBrowsePane(parent)
     else
       empty:Show()
       if scanning then
-        empty:SetText("Searching...")
+        empty:SetText(L["Searching..."])
       elseif listTotal > 0 then
-        empty:SetText("Loading results...")
+        empty:SetText(L["Loading results..."])
       else
-        empty:SetText("No results. Adjust filters and search again.")
+        empty:SetText(L["No results. Adjust filters and search again."])
       end
     end
 
@@ -1631,7 +1636,7 @@ function AH.BuildBrowsePane(parent)
     setBrowseResultsShown(true)
     searchBox:SetText("")
     searchBox:ClearFocus()
-    empty:SetText("Choose search criteria and press \"Search\"")
+    empty:SetText(L["Choose search criteria and press \"Search\""])
     refreshResults()
     updatePageControls()
   end
@@ -1819,7 +1824,7 @@ function AH.BuildBrowsePane(parent)
   detailPerItemCheck:SetChecked(true)
   local detailPerItemLabel = detail:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   detailPerItemLabel:SetPoint("LEFT", detailPerItemCheck, "RIGHT", 2, 0)
-  detailPerItemLabel:SetText("Sort Per Item")
+  detailPerItemLabel:SetText(L["Sort Per Item"])
   detailPerItemCheck:SetScript("OnClick", function(self)
     detailPerItem = self:GetChecked() and true or false
     -- Re-read + re-sort the page the client already holds -- no fresh server query needed.
@@ -1970,10 +1975,10 @@ function AH.BuildBrowsePane(parent)
   -- Time Left's right anchor is -38 (rows are inset -30 from detailList, their text another -8),
   -- not the -80 it previously used, which floated the label 42px clear of its own column.
   local detailCols = {
-    { text = "Per Item",                                               x = 6,   w = 92, just = "RIGHT" },
+    { text = L["Per Item"],                                               x = 6,   w = 92, just = "RIGHT" },
     { text = AUCTION_HOUSE_HEADER_BUYOUT or BUYOUT or "Buyout",        x = 104, w = 92, just = "RIGHT" },
     { text = AUCTION_HOUSE_HEADER_CURRENT_BID or BID or "Current Bid", x = 202, w = 92, just = "RIGHT" },
-    { text = "Lvl",                                                    x = 300, w = 36, just = "RIGHT" },
+    { text = L["Lvl"],                                                    x = 300, w = 36, just = "RIGHT" },
     { text = AUCTION_HOUSE_HEADER_QUANTITY or "Quantity",              x = 344, w = 82, just = "LEFT" },
     { text = AUCTION_HOUSE_HEADER_SELLER or "Seller",                  x = 430, w = 76, just = "LEFT" },
     { text = AUCTION_HOUSE_HEADER_TIME_LEFT or "Time Left",            x = -38, w = 62, just = "RIGHT", right = true },
@@ -2325,7 +2330,7 @@ function AH.BuildBrowsePane(parent)
       detailEmpty:Hide()
     else
       detailEmpty:Show()
-      detailEmpty:SetText("No listings.")
+      detailEmpty:SetText(L["No listings."])
     end
     -- Total AUCTIONS, not visible rows -- condensing collapses identical listings into one row,
     -- but this readout should keep meaning "how many listings exist".
@@ -2457,14 +2462,14 @@ function AH.BuildBrowsePane(parent)
       detailRing:Hide()
     end
     detailCount:SetText("")
-    detailEmpty:SetText("Searching...")
+    detailEmpty:SetText(L["Searching..."])
     detailEmpty:Show()
     updateDetailActions()
     setBrowseResultsShown(false)
     detail:Show()
 
     if not (CanSendAuctionQuery and CanSendAuctionQuery("list")) then
-      detailEmpty:SetText("Auction query is throttled. Try again in a moment.")
+      detailEmpty:SetText(L["Auction query is throttled. Try again in a moment."])
       return
     end
     -- Re-query scoped to this exact item name. THIS server's QueryAuctionItems signature (per its

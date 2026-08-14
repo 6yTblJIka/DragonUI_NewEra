@@ -17,6 +17,7 @@
 -- G.SetupRoster / G.SetupInfo / G.SetupChat, guarded so load order can't crash.
 
 local NE = DragonUI_NewEra
+local L = NE.L
 if not NE then return end
 
 NE.guild = NE.guild or {}
@@ -1154,7 +1155,8 @@ local function buildControls(f)
     if not gc then
       -- Don't fail silently a second time: if a custom client stripped the frame, say so.
       if DEFAULT_CHAT_FRAME then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff7f3fDragonUI:|r GuildControlPopupFrame is missing on this client.")
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff7f3fDragonUI:|r "
+          .. L["GuildControlPopupFrame is missing on this client."])
       end
       return
     end
@@ -1332,7 +1334,7 @@ eventFrame:SetScript("OnEvent", function()
     NE.RegisterPanel({
       id = MODULE,
       title = GUILD or "Guild",
-      desc = "Modern Communities-style guild window (Roster / Info / Chat).",
+      desc = L["Modern Communities-style guild window (Roster / Info / Chat)."],
       frame = G.frame,
       openFn = G.Show,
       closeFn = G.Hide,

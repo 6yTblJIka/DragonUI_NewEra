@@ -25,7 +25,7 @@
 --   C.UpdateRank()    update skill bar (defined in Crafting.lua)
 
 local NE = DragonUI_NewEra
-local L = NE:GetLocale()
+local L = NE.L
 NE.profcraft = NE.profcraft or {}
 local C = NE.profcraft
 
@@ -769,7 +769,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         NE.RegisterPanel({
           id      = MODULE,
           title   = _G.TRADE_SKILLS or "Professions",
-          desc    = "Retail-style crafting window for all professions.",
+          desc    = L["Retail-style crafting window for all professions."],
           frame   = C.frame,
           openFn  = C.Show,
           closeFn = C.Hide,

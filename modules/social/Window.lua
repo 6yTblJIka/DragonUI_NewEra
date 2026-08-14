@@ -10,6 +10,7 @@
 -- content wires in Friends.lua (Friends/Ignore) and Who.lua via SO.SetupFriends / SO.SetupWho.
 
 local NE = DragonUI_NewEra
+local L = NE.L
 if not NE then return end
 
 NE.social = NE.social or {}
@@ -384,7 +385,7 @@ eventFrame:SetScript("OnEvent", function(_, event)
       NE.RegisterPanel({
         id = MODULE,
         title = SOCIALS or FRIENDS or "Social",
-        desc = "Modern friends window (Friends / Ignore / Who) with a Guild tab.",
+        desc = L["Modern friends window (Friends / Ignore / Who) with a Guild tab."],
         frame = SO.frame,
         openFn = SO.Show,
         closeFn = SO.Hide,

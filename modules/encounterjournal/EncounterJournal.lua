@@ -26,6 +26,7 @@
 --                     ExpansionDropdown TOPRIGHT(-24,-10), ScrollBox 748x367 TOPLEFT(14,-50)
 
 local NE = DragonUI_NewEra
+local L = NE.L
 if not NE then return end
 
 NE.ej = NE.ej or {}
@@ -89,13 +90,15 @@ local EJ_PHASE = {
 }
 local EJ_CONTINENT_OPTS = {
   { key="all",      label = ALL or "All" },
-  { key="EK",       label = "Eastern Kingdoms" },
-  { key="Kalimdor", label = "Kalimdor" },
+  { key="EK",       label = L["Eastern Kingdoms"] },
+  { key="Kalimdor", label = L["Kalimdor"] },
 }
 local EJ_PHASE_OPTS = {
   { key="all", label = ALL or "All" },
-  { key=1, label="Phase 1" }, { key=3, label="Phase 3" }, { key=4, label="Phase 4" },
-  { key=5, label="Phase 5" }, { key=6, label="Phase 6" },
+  -- Formatted from one key so a locale translates "Phase" once rather than six times.
+  { key=1, label=L["Phase %d"]:format(1) }, { key=3, label=L["Phase %d"]:format(3) },
+  { key=4, label=L["Phase %d"]:format(4) }, { key=5, label=L["Phase %d"]:format(5) },
+  { key=6, label=L["Phase %d"]:format(6) },
 }
 
 -- Expansion-tier grouping (the NE.flavor=="tbc" path — LIVE here). Each instance carries
@@ -676,7 +679,7 @@ eventFrame:SetScript("OnEvent", function(_, event)
       NE.RegisterPanel({
         id = MODULE,
         title = ADVENTURE_JOURNAL or "Adventure Guide",
-        desc = "The Adventure Guide: bosses, abilities, and loot for Classic and Burning Crusade dungeons and raids (/aguide).",
+        desc = L["The Adventure Guide: bosses, abilities, and loot for Classic and Burning Crusade dungeons and raids (/aguide)."],
         frame = frame,          -- nil until first open (lazy build); mover skipped silently
         -- No openFn: RegisterPanel wires this into both NE.modules' onBoot dispatcher AND
         -- DragonUI's ModuleRegistry Enable/Refresh hooks, either of which can end up calling
