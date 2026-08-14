@@ -238,8 +238,7 @@ local function buildControlBar(model, opts)
   -- Bar container. Width = 2 + 5*(32-6) = 132. Hover-reveal; alpha 0.5 default (per retail).
   -- Unnamed: nothing here looks the frame up by its old hardcoded global name, and a fixed literal
   -- name would collide (CreateFrame errors reusing an existing global) the moment this helper is
-  -- called for a SECOND model — which the Collections window now does (Mounts + Pet Journal each
-  -- get their own model/control bar).
+  -- called for a SECOND model.
   local bar = CreateFrame("Frame", nil, model)
   bar:SetSize(2 + 5 * (BTN_SIZE + BTN_HPADDING), BTN_SIZE)
   bar:SetPoint("TOP", model, "TOP", 0, -4)

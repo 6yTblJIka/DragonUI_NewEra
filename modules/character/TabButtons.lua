@@ -82,8 +82,8 @@ local function resizeTab(tab)
 end
 
 -- Pet tab shows only when the player has a controllable pet UI (Blizzard PetTab_Update rule -
--- Hunter/Warlock/DK/Mage water elemental). Mounts & non-combat companions moved OUT of the Character
--- panel into the standalone Collections window (modules/collections/*), so the Pet tab no longer
+-- Hunter/Warlock/DK/Mage water elemental). Mounts & non-combat companions are no longer shown by
+-- this addon at all (DragonUI ships its own Collections window), so the Pet tab no longer
 -- needs to appear for petless classes just to browse them - gating on HasPetUI() alone again avoids
 -- showing an empty "you have no pet" pane to Shamans/Priests/etc.
 local function petTabShown()

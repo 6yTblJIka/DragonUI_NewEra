@@ -4,7 +4,7 @@
 -- this addon is a free-floating DIALOG/HIGH frame that hard-codes its own default anchor at build
 -- time, and several of them picked the SAME spot: AuctionHouse / Social / Guild / LFG all default to
 -- UIParent LEFT+16 or TOPLEFT 16,-116, Spellbook and Professions both to TOP 0,-55, and Character /
--- Collections / EncounterJournal all sit near CENTER. Open two of a pair and they land fully
+-- EncounterJournal both sit near CENTER. Open two of a pair and they land fully
 -- overlapped (github issue #49: the Friends list rendered inside the Auction House). Until now the
 -- only de-collision was a hard-coded PAIR — Social pushed Guild to its right and Guild anchored
 -- itself to Social's right — which the Auction House was never part of. This replaces that pact.
@@ -88,7 +88,6 @@ M.DEFAULTS = {
   NE_GroupFinderFrame         = { pushable = 2 },
   -- The CENTER cluster. Registered for the two-windows-open case only; each still opens at its own
   -- tuned centre when it is alone on screen (see the HOME WHEN ALONE rule above).
-  NE_CollectionsFrame         = { pushable = 3, posKey = "collections" },
   NE_EncounterJournal         = { pushable = 3 },
   DragonUI_NewEra_Character   = { pushable = 4, posKey = "character" },
   -- Spellbook + Talents share retail's PlayerSpells slot (rightmost). The Spellbook is the one

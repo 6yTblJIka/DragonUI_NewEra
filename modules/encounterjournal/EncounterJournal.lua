@@ -430,7 +430,7 @@ local function buildInstanceSelect(f)
 
   -- Dungeons / Raids bottom tabs — DF metal reskin via the shared NE.tabs walker (core/Tabs.lua),
   -- the same CharacterFrameTabButtonTemplate + ReskinClassicTab pattern used by the character panel,
-  -- Collections, Social, Spellbook, Talents and Auction House. Art/height/level are driven manually
+  -- Social, Spellbook, Talents and Auction House. Art/height/level are driven manually
   -- (setTabArt below) rather than PanelTemplates_SelectTab, matching those modules.
   local TAB_H_INACTIVE, TAB_H_ACTIVE = 36, 42
 

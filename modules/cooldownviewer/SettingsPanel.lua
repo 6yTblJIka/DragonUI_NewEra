@@ -132,7 +132,7 @@ local function build()
   end)
 
   -- Shared modern chrome: hides the classic ButtonFrameTemplate border, applies our nineslice,
-  -- retextures the streaks and sets the title styling. Same path modules/collections/Window.lua uses.
+  -- retextures the streaks and sets the title styling. Same path every standalone window here uses.
   local PC = NE.panelchrome
   if PC and PC.Apply then
     PC.Apply(f, { layout = "PortraitFrameTemplate", title = "Cooldown Manager", noPortrait = true })
@@ -140,17 +140,15 @@ local function build()
 
   -- THE BODY: plain, full-brightness UI-Background-Rock — the same stone every other from-scratch
   -- standalone window in this addon shows (Guild, LFG, Professions, AuctionHouse, Social,
-  -- Collections, Encounter Journal).
+  -- Encounter Journal).
   --
   -- PC.ApplyModernChrome tints its own f.Bg to 0.32 grey. That tint is a DOWNPORT fix for a
   -- different frame's first-paint colour flash, and on a window this size it reads as a dark wash
-  -- rather than stone. Collections strips it for exactly this reason (modules/collections/Window.lua
-  -- "bgTint"); this window is the last one that still wore it.
+  -- rather than stone; this window is the last one that still wore it.
   if f.Bg and f.Bg.SetVertexColor then f.Bg:SetVertexColor(1, 1, 1) end
 
   -- The INSET is the recessed content area, and it reads near-black over the body stone — the same
-  -- fill and the same colour as every other inset in this addon (Collections' buildInset, LFG's
-  -- category rail).
+  -- fill and the same colour as every other inset in this addon (LFG's category rail).
   --
   -- THE SUBLEVEL IS THE POINT. This window's previous Inset fill was created at BACKGROUND subLevel
   -- -5 while PanelChrome's f.Bg sits at subLevel 0 and spans the entire frame, so it drew UNDERNEATH

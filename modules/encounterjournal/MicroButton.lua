@@ -218,21 +218,6 @@ local function reposition()
       setPointThroughNoop(b, "BOTTOMRIGHT", prev, "BOTTOMLEFT", -localGap, 0)
       prev = b
     end
-
-    -- modules/collections/MicroButton.lua inserts its OWN button immediately left of PVP (its
-    -- loads earlier in the .toc, so its hooksecurefunc runs first -- but it only READS PVP's
-    -- position, never writes it, so running first doesn't help it: this loop still runs after and
-    -- would otherwise blindly re-anchor LFD one slot left of PVP every refresh, landing exactly on
-    -- top of Collections' button every time, not just on the first tick). Once we've just
-    -- positioned PVP, splice the Collections button into the chain as the new `prev` (when it
-    -- exists and is showing) so LFD anchors off IT instead -- leaving the slot Collections claimed
-    -- actually empty for it, regardless of module load order or which one's hook fires last.
-    if name == "PVPMicroButton" then
-      local collectionsBtn = _G.NE_CollectionsMicroButton
-      if collectionsBtn and collectionsBtn:IsShown() then
-        prev = collectionsBtn
-      end
-    end
   end
 end
 NE.ej.RefreshMicroButton = reposition

@@ -117,7 +117,7 @@ end
 -- chrome.Apply lays the shared grey-stone rock (FDID 374155) into f.Bg and PC.ApplyModernChrome
 -- tints it to PC.BODY_TINT (0.32) — a DOWNPORT fix for a first-paint colour flash on a different
 -- frame. Full brightness is what every other from-scratch standalone window in this addon shows
--- (Guild, LFG, Professions, Auction House, Social, Collections, Cooldown Manager), so it's the
+-- (Guild, LFG, Professions, Auction House, Social, Cooldown Manager), so it's the
 -- default here too and this panel stops being the odd one out.
 --
 -- The tinted look is kept as an option rather than deleted because the argument for it is real and
