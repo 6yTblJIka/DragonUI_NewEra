@@ -713,6 +713,35 @@ local function ensurePetPortrait(f)
 end
 T._ApplyPetBackground = applyPetBackground
 
+-- Deepest tier the PLAYER's own trees use. 11 on a stock 3.3.5a client, but a server running custom
+-- talent tables can be shallower (Project Epoch ships the 2.4.3 trees at 9), and the window has to
+-- shrink to match or the last tier floats two rows above the bottom bar. Read from the class trees
+-- only — never the pet's, which is genuinely shallow and gets centred in the class depth instead.
+-- Cached: the talent TABLES don't change during a session (only the points spent in them do).
+local function playerTierDepth()
+  if T._playerTiers then return T._playerTiers end
+  local maxTier = 0
+  local numTabs = (GetNumTalentTabs and GetNumTalentTabs(false, false)) or 0
+  for tab = 1, numTabs do
+    local n = (GetNumTalents and GetNumTalents(tab, false, false)) or 0
+    for i = 1, n do
+      local _, _, tier = GetTalentInfo(tab, i, false, false)
+      if tier and tier > maxTier then maxTier = tier end
+    end
+  end
+  if maxTier < 1 then return nil end   -- data not in yet; re-ask on the next Populate
+  T._playerTiers = maxTier
+  return maxTier
+end
+
+-- Size the window to that depth. Called at login (so the window is already the right size the first
+-- time it is shown) and again from Populate (in case the talent API wasn't answering yet at login).
+function T.ApplyTierDepth()
+  if not T.SetTierDepth then return end
+  local depth = playerTierDepth()
+  if depth then T.SetTierDepth(depth) end
+end
+
 -- ----------------------------------------------------------------------------
 -- MAIN DATA REFRESH MATRIX (T.Populate)
 -- ----------------------------------------------------------------------------
@@ -721,6 +750,8 @@ function T.Populate()
   if not f or not GetTalentInfo then return end
   buildBottomBar(f)
   ensureFlowDriver(f)
+
+  T.ApplyTierDepth()   -- before anything is placed; a no-op at WotLK's 11 tiers
 
   if T._petView and not petHasTalents() then T._petView = false end
   local isPet   = T._petView and true or false

@@ -39,8 +39,10 @@ local NE = DragonUI_NewEra
 local T = NE.talents or {}
 NE.talents = T
 
--- WotLK deepest tier. Vanilla used 7 (the 31-point signature talent sat at tier 7), but
--- WotLK trees are 11 tiers deep with the signature/bottom talent near tier 11.
+-- Deepest tier — the one whose talents get the enlarged signature art. Vanilla used 7 (the 31-point
+-- talent sat at tier 7); WotLK trees are 11 deep. This is the WotLK default: T.SetTierDepth
+-- (Talents.lua) overwrites it at login with the depth the character's trees ACTUALLY have, so a
+-- server shipping custom/2.4.3-era 9-tier trees still crowns its bottom row.
 T.CAPSTONE_TIER = 11
 
 -- Authored corrections, keyed by talentID -> "square" | "circle" | "capstone".

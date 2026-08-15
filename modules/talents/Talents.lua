@@ -129,7 +129,13 @@ local PITCH_Y    = 44
 local LAST_TIER_EXTRA = 28
 local TREE_Y_SHIFT    = 16     -- small drop below the title band
 local COLS       = 4           -- Era NUM_TALENT_COLUMNS (WotLK keeps 4 columns)
-local TIERS      = 11          -- WotLK deepest tier (51-pt talent; vanilla was 7)
+local MAX_TIERS  = 11          -- WotLK deepest tier (51-pt talent; vanilla was 7)
+-- Tree depth this CHARACTER actually has. 11 on a stock 3.3.5a client, but servers that ship custom
+-- talent tables can hand us shallower trees (Project Epoch runs the 2.4.3 trees: 9 tiers), and a
+-- window sized for 11 then leaves two empty rows above the bottom bar while the deepest talent never
+-- reaches the capstone tier — so it draws as an ordinary node. T.SetTierDepth retunes this from the
+-- live data; on a stock server it is handed 11 and nothing below moves.
+local TIERS      = MAX_TIERS
 local TREE_GAP   = 132         -- gap between trees (tuned so the rightmost focal zone stays ~246px)
 -- Per-tree header band (offsets tier 1 down from the tree top; the spec name is auto-centred in the
 -- band above tier 1 by HEADER_CENTER_Y). Tuned so top->name, name->tier1, tier10->tier11 and
@@ -148,8 +154,24 @@ local CHROME_T, CHROME_B, CHROME_L, CHROME_R = 22, 0, 0, 0
 local HEADER_CENTER_Y = ((INSET_T + TREE_Y_SHIFT - CHROME_T) - HEADER_H) / 2
 
 local TREE_W = (COLS - 1) * PITCH_X + NODE        -- horizontal (162)
-local TREE_H = (TIERS - 1) * PITCH_Y + NODE       -- vertical: (11-1)*44 + 36 = 476
-local CONTENT_H = HEADER_H + TREE_H               -- 68 + 476 = 544
+
+-- Vertical geometry is DERIVED from the tree depth so a shallower tree shrinks the window rather
+-- than leaving dead space under its last tier (see T.SetTierDepth):
+--   tree    = (tiers-1) rows of pitch + the node itself
+--   content = header band + tree
+--   frame   = tree top offset + half a tier-1 node + header + (tiers-1) rows + the deepest tier's
+--             extra drop + half the enlarged capstone + an equal bottom gap + the bottom bar.
+-- At WotLK's depth of 11 that is 476 / 504 / 714 — the hand-tuned numbers this replaces.
+local CAPSTONE_HALF = CAPSTONE_SQUARE_SIZE / 2
+local BOTTOM_GAP    = 28   -- gap below the deepest tier, matched to the other ~28px gaps
+local function geometryFor(tiers)
+  local treeH = (tiers - 1) * PITCH_Y + NODE
+  return treeH,
+         HEADER_H + treeH,
+         (INSET_T + TREE_Y_SHIFT) + NODE / 2 + HEADER_H + (tiers - 1) * PITCH_Y
+           + LAST_TIER_EXTRA + CAPSTONE_HALF + BOTTOM_GAP + BOTTOMBAR_H
+end
+local TREE_H, CONTENT_H, TALENT_H = geometryFor(TIERS)
 
 -- ----------------------------------------------------------------------------
 -- Frame size. WotLK talent panel — narrower/shorter than retail's PlayerSpellsFrame (this is a
@@ -157,16 +179,13 @@ local CONTENT_H = HEADER_H + TREE_H               -- 68 + 476 = 544
 -- talents frame (trees left-anchored at INSET_L; the rightmost ~20% stays art-only — the spec
 -- painting's focal subject sits top-right, so the cover-crop keeps top+right).
 --
--- Height budget at PITCH_Y 44 / 11 tiers:
---   INSET_T 48 + TREE_Y_SHIFT 16 + HEADER_H 68 + TREE_H 476 (10*44+36) + LAST_TIER_EXTRA 28
---   + BOTTOMBAR_H 80 = 688, + ~62 breathing room ≈ 750. (Was vanilla 7-tier: 7 rows @ PITCH_Y 64
---   = 420 tree + a 55px capstone drop; the WotLK 11-tier tree at the tighter pitch lands the same
---   ~476 tree height, so the 750 frame budget holds.)
+-- Height is NOT a constant: geometryFor above spends it row by row, so 11-tier (WotLK) trees get
+-- 714 and a 9-tier (custom/2.4.3) set gets 626, both with the same gap under the last tier. (Was
+-- vanilla 7-tier: 7 rows @ PITCH_Y 64 = 420 tree + a 55px capstone drop; the WotLK 11-tier tree at
+-- the tighter 44 pitch lands a ~476 tree height.)
 local TALENT_W = 1214
--- Height tuned so the gap below the deepest tier (tier11 -> top of the bottom bar) matches the other
--- ~28px gaps. = treeOffset(64) + NODE/2 + HEADER_H + 10*PITCH_Y + LAST_TIER_EXTRA + capstone half(28)
--- + GAP(28) + BOTTOMBAR_H(80) ≈ 714. VERIFY/tune with HEADER_H.
-local TALENT_H = 714
+-- TALENT_H (714 at 11 tiers) comes from geometryFor above — the gap below the deepest tier matches
+-- the other ~28px gaps at whatever depth the character's trees turn out to be.
 -- Default top offset from UIParent TOP (this frame's own scaled units). Negative = below the top.
 local FRAME_TOP_OFFSET = -55
 
@@ -237,6 +256,38 @@ T.FRAME = {
   INSET_L = INSET_L, INSET_R = INSET_R, INSET_T = INSET_T, INSET_B = INSET_B,
   BOTTOMBAR_H = BOTTOMBAR_H,
 }
+
+-- Retune the vertical layout to the depth the character's trees ACTUALLY have. Behavior calls this
+-- from Populate with the deepest tier it read out of GetTalentInfo. On a stock 3.3.5a client that is
+-- 11 — the value everything above was tuned at — and this returns immediately; on a server running
+-- custom (2.4.3-era) talents it is 9, and without this the window keeps its 11-tier height (two rows
+-- of dead space above the bottom bar) while the deepest talent sits below CAPSTONE_TIER and renders
+-- as an ordinary node instead of the enlarged signature one.
+--
+-- Everything inside the window is anchored to an edge (trees to TOPLEFT, bar/buttons/tabs to BOTTOM,
+-- bg/host to both), so re-sizing the frame is all that's needed — nothing has to be re-laid-out.
+function T.SetTierDepth(tiers)
+  tiers = tonumber(tiers)
+  if not tiers then return end
+  if tiers < 1 then tiers = 1 elseif tiers > MAX_TIERS then tiers = MAX_TIERS end
+  if tiers == TIERS then return end
+
+  TIERS = tiers
+  TREE_H, CONTENT_H, TALENT_H = geometryFor(TIERS)
+  T.LAYOUT.TIERS = TIERS          -- Behavior's corridor map + the pet centring read this
+  T.CAPSTONE_TIER = TIERS         -- deepest tier earns the capstone art (NodeData.ResolveShape)
+  T.FRAME.H = TALENT_H
+
+  local f = T.frame
+  if not f then return end
+  f:SetSize(TALENT_W, TALENT_H)
+  for i = 1, 3 do
+    local tf = f.trees and f.trees[i]
+    if tf then tf:SetSize(TREE_W, CONTENT_H) end
+  end
+  -- The background is "cover"-cropped against the content box, so its texcoord depends on the height.
+  guard("setBackground", function() T.SetBackground(T._bgTab or T.DEFAULT_BACKGROUND_TAB or 1) end)
+end
 
 -- ----------------------------------------------------------------------------
 -- Node button factory (one square/circle/capstone node).
@@ -516,6 +567,7 @@ end
 function T.SetBackground(tab)
   local f = T.frame
   if not (f and f.bg) then return end
+  T._bgTab = tab   -- remembered so a re-crop (T.SetTierDepth) keeps the same painting
   local nick = T.BackgroundNick(tab)
   NE.tex.SetAtlas(f.bg, nick, false)   -- sets texcoord to the atlas element's sub-rect
   -- Desaturate the spec painting when viewing the INACTIVE (off) spec in dual-spec, so the whole
@@ -851,6 +903,9 @@ local function boot(event, arg1)
   if event == "PLAYER_LOGIN" then
     buildWindow()
     T.Host()                       -- create the content root the renderer parents to
+    -- Size to the character's real tree depth up front, so the window is never shown at the wrong
+    -- height first (Behavior re-asserts it in Populate if the talent API wasn't ready here).
+    if T.ApplyTierDepth then guard("tierdepth", T.ApplyTierDepth) end
     guard("intercept", interceptBlizzard)
     return
   end
