@@ -60,8 +60,8 @@ local FONT_TITLE_SIZE  = 14
 local FONT_PAGE_SIZE   = 14
 
 -- Category tabs — seated ON the wooden header, tops tucked just under the title bar (host top).
--- Dimensions match the addon's standard reskinned tabs (h 36 inactive / 42 active, min-w 70,
--- +24 text pad, 1px gap), applied in the Refresh chain loop + setTabArt.
+-- Dimensions match the Character panel's tabs (h 36 inactive / 42 active, min-w 70, +24 text pad,
+-- 1px gap), applied in the Refresh chain loop + setTabArt.
 local CAT_TAB_X        = 70
 local CAT_TAB_TOP      = -2
 local TAB_H_INACTIVE   = 36
@@ -406,23 +406,78 @@ local function createCard(i)
   -- card:IsMouseOver() so crossing the icon/text seam (focus passing card<->button) never flickers
   -- the tooltip — it only clears when the cursor actually leaves the cell. Anchored to the card so
   -- the tooltip is positioned off the whole cell.
-  local function cardEnter()
+  local function cardEnterInner()
+    if _G.NE_SB_DEBUG_HOVER and DEFAULT_CHAT_FRAME then
+      DEFAULT_CHAT_FRAME:AddMessage(("[SB hover] name=%s spellID=%s unlearned=%s"):format(
+        tostring(card.fallbackTipName), tostring(card.spellID), tostring(card.unlearned)))
+    end
     if not card.unlearned then
       card.Button.IconHighlight:SetAlpha(0.35)
       card.Button.IconHighlight:Show()
       card.Backplate:SetAlpha(1)
     end
     GameTooltip:SetOwner(card, "ANCHOR_RIGHT")
+    -- Try the native tooltip APIs first, but PCALL + verify they actually produced lines: some
+    -- 3.3.5a server forks throw (or silently no-op) on GameTooltip:SetSpellByID for spell IDs
+    -- that don't cleanly resolve server-side (common for "not yet trainable" ranks), which would
+    -- otherwise abort this whole function before Show() ever runs — i.e. NOTHING appears on
+    -- hover, with no error visible unless you have an error frame enabled. Falling back to a
+    -- plain-text tooltip built from our own data guarantees hover always shows *something*.
+    local shown = false
     if card.slot and GameTooltip.SetSpellBookItem then
-      GameTooltip:SetSpellBookItem(card.slot, card.bookType)
+      local ok = pcall(GameTooltip.SetSpellBookItem, GameTooltip, card.slot, card.bookType)
+      shown = ok and GameTooltip:IsOwned(card) and (GameTooltip:NumLines() or 0) > 0
+    end
+    if not shown and card.spellID and GameTooltip.SetSpellByID then
+      local ok = pcall(GameTooltip.SetSpellByID, GameTooltip, card.spellID)
+      shown = ok and GameTooltip:IsOwned(card) and (GameTooltip:NumLines() or 0) > 0
+    end
+    if not shown then
+      local name = card.tipName or card.fallbackTipName
+      if name then
+        GameTooltip:SetText(name, 1, 1, 1, 1, true)
+        local sub = card.tipSub or card.fallbackTipSub
+        if sub and sub ~= "" then GameTooltip:AddLine(sub, 0.6, 0.6, 0.6, true) end
+        if card.fallbackTipBody and card.fallbackTipBody ~= "" then
+          GameTooltip:AddLine(" ")
+          GameTooltip:AddLine(card.fallbackTipBody, 1, 0.82, 0, true)   -- yellow, matches native spell-description color
+        end
+        shown = true
+      end
+    end
+    if shown then GameTooltip:Show() end
+    -- Training tab: append WT's trainer-cost line under the normal spell tooltip (rank included),
+    -- same as WT's own tooltip — red when you can't currently afford it.
+    local cost = tonumber(card.trainingCost or 0) or 0
+    if shown and cost > 0 and GameTooltip:IsOwned(card) then
+      local coins = card.trainingFormattedCost or GetCoinTextureString(cost)
+      if GetMoney and GetMoney() < cost then
+        coins = RED_FONT_COLOR_CODE .. coins .. FONT_COLOR_CODE_CLOSE
+      end
+      local wtL = _G.WhatsTraining and _G.WhatsTraining.L
+      local fmt = (wtL and wtL.COST_FORMAT) or "Cost: %s"
+      GameTooltip:AddLine(" ")
+      GameTooltip:AddLine(HIGHLIGHT_FONT_COLOR_CODE .. string.format(fmt, coins) .. FONT_COLOR_CODE_CLOSE)
       GameTooltip:Show()
-    elseif card.spellID and GameTooltip.SetSpellByID then
-      GameTooltip:SetSpellByID(card.spellID)
-      GameTooltip:Show()
-    elseif card.tipName then
-      GameTooltip:SetText(card.tipName, 1, 1, 1, 1, true)
-      if card.tipSub and card.tipSub ~= "" then GameTooltip:AddLine(card.tipSub, 0.6, 0.6, 0.6, true) end
-      GameTooltip:Show()
+    end
+  end
+
+  -- Outer safety net: if ANYTHING above throws (bad API on this server fork, a nil global, etc.),
+  -- don't let it eat the hover silently — show a bare-minimum name tooltip anyway, and print the
+  -- real error to chat once so we can see exactly what broke. Remove the print once this is
+  -- confirmed working; the pcall wrapper itself is safe to keep permanently.
+  local function cardEnter()
+    local ok, err = pcall(cardEnterInner)
+    if not ok then
+      if card.fallbackTipName then
+        GameTooltip:SetOwner(card, "ANCHOR_RIGHT")
+        GameTooltip:SetText(card.fallbackTipName, 1, 1, 1, 1, true)
+        GameTooltip:Show()
+      end
+      if not _G.NE_SpellBookTooltipErrShown and DEFAULT_CHAT_FRAME then
+        _G.NE_SpellBookTooltipErrShown = true
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff5555[Spellbook card tooltip error]|r " .. tostring(err))
+      end
     end
   end
   local function cardLeave()
@@ -447,7 +502,7 @@ local function createCard(i)
   -- and vanity pets are companions (no slot) so they use PickupCompanion; a spellID pickup is the last
   -- resort. This is why dragging a mount to a bar did nothing before — the slot-only path skipped them.
   local function cardPickup()
-    if card.passive or InCombatLockdown() then return end
+    if card.passive or card.unlearned or InCombatLockdown() then return end
     if card.slot and PickupSpellBookItem then
       PickupSpellBookItem(card.slot, card.bookType)
     elseif card.companionType and card.companionIndex and PickupCompanion then
@@ -458,7 +513,7 @@ local function createCard(i)
   end
 
   b:SetScript("OnDragStart", function()
-    if card.passive then return end   -- passives are click/drag-inert (still hover for tooltip)
+    if card.passive or card.unlearned then return end   -- unlearned: nothing to pick up yet
     cardPickup()
   end)
 
@@ -620,8 +675,8 @@ local function categoryTab(i)
   return t
 end
 
--- Drive a reskinned tab's selected/deselected ART manually. ReskinClassicTab paints the
--- ACTIVE/gold atlas onto the *Disabled pieces,
+-- Drive a reskinned tab's selected/deselected ART manually (same as the Character panel's
+-- TabButtons.setTabArt). ReskinClassicTab paints the ACTIVE/gold atlas onto the *Disabled pieces,
 -- so SELECTED → show the *Disabled (gold) pieces + hide the regular ones; DESELECTED → reverse.
 -- (PanelTemplates_SetTab doesn't honour the reskin, which is why every tab read as active.) Also
 -- mute the custom hover highlight on the selected tab so it doesn't bleed over the gold art.
@@ -683,6 +738,10 @@ local function buildCategories()
   -- Companions / vanity pets (cog-toggled): the "CRITTER" companion list (parallel to Mounts).
   if SB.showCompanions and GetNumCompanions and (GetNumCompanions("CRITTER") or 0) > 0 then
     cats[#cats + 1] = { kind = "companions", label = COMPANIONS or "Companions" }
+  end
+  -- Training (Whats-Training-Epoch integration) — only offered if that addon is loaded.
+  if _G.WhatsTraining ~= nil then
+    cats[#cats + 1] = { kind = "training", label = "Upcoming" }
   end
   SB.categories = cats
   SB.generalIdx = generalIdx
@@ -853,6 +912,71 @@ local function addCompanionCards(els)
   end
 end
 
+-- ============================================================================
+-- TRAINING (Whats-Training-Epoch integration) — reads that addon's already-categorized data
+-- (wt.data: a flat list of {header, spell, spell, ..., header, spell, ...}, built by its Main.lua
+-- from a live trainer scan) and re-emits it as our own header/card elements so it renders through
+-- the SAME grid/paging/search/hover pipeline as every other tab. WT's category headers already
+-- carry embedded |cff..|r color codes (green Available, orange Missing Reqs, etc.) — SetText()
+-- honours those over the header's base ink color, so the coloring comes through unchanged.
+-- Spells WT hasn't marked "known" aren't actually learned yet, so their cards are marked
+-- e.unlearned = true: applyCardVisual desaturates them and skips the secure cast/pickup wiring
+-- (you can't cast or drag to a bar a spell you don't have — see applyCardVisual + createCard).
+-- ============================================================================
+local function addTrainingCards(els)
+  local wt = _G.WhatsTraining
+  if not wt then
+    els[#els + 1] = { kind = "header", label = "Upcoming" }
+    els[#els + 1] = { kind = "card", name = "Whats-Training-Epoch not loaded", subName = "",
+                       icon = "Interface\\Icons\\INV_Misc_QuestionMark", passive = true }
+    return
+  end
+  -- Make sure the data reflects current level/talents/known spells before we read it.
+  if type(wt.RebuildData) == "function" then
+    local ok = pcall(wt.RebuildData)
+    if not ok then return end
+  end
+  local data = wt.data or {}
+  local i = 1
+  while i <= #data do
+    local row = data[i]
+    if row and row.isHeader then
+      local headerIdx = #els + 1
+      els[#els + 1] = { kind = "header", label = row.formattedName or row.name or "" }
+      local added = 0
+      local j = i + 1
+      while data[j] and not data[j].isHeader do
+        local r = data[j]
+        if r.name and matchesSearch(r.name) then
+          local sub = r.formattedSubText or ""
+          if r.key == "available" and (r.cost or 0) > 0 then
+            sub = (sub ~= "" and (sub .. "  ") or "") .. (r.formattedCost or "")
+          elseif r.key ~= "known" and (r.level or 0) > 0 then
+            sub = (sub ~= "" and (sub .. "  ") or "") .. (r.formattedLevel or "")
+          end
+          els[#els + 1] = {
+            kind = "card", name = r.name, subName = sub, icon = r.icon,
+            spellID = r.id, passive = false, unlearned = (r.key ~= "known"),
+            trainingCost = r.cost, trainingFormattedCost = r.formattedCost,
+            tooltipBody = r.tooltip,
+          }
+          added = added + 1
+        end
+        j = j + 1
+      end
+      if added == 0 then table.remove(els, headerIdx) end
+      i = j
+    else
+      i = i + 1
+    end
+  end
+  if #els == 0 then
+    els[#els + 1] = { kind = "header", label = "Upcoming" }
+    els[#els + 1] = { kind = "card", name = "No trainer data yet", subName = "Visit a class trainer to scan",
+                       icon = "Interface\\Icons\\INV_Misc_QuestionMark", passive = true }
+  end
+end
+
 local function buildElements()
   local cats = SB.categories or buildCategories()
   if SB.selected > #cats then SB.selected = 1 end
@@ -866,6 +990,8 @@ local function buildElements()
       addMountCards(els)
     elseif cat.kind == "companions" then
       addCompanionCards(els)
+    elseif cat.kind == "training" then
+      addTrainingCards(els)
     elseif cat.kind == "sectioned" then
       for _, sec in ipairs(cat.sections) do
         local headerIdx = #els + 1
@@ -1038,18 +1164,24 @@ local function applyCardVisual(card, e)
   card.spellName = e.name   -- for the "active buff" overlay check
   card.companionType, card.companionIndex = e.companionType, e.companionIndex   -- mount/companion active glow
   card.passive = e.passive and true or false   -- passive cells are click/drag-inert
-  card.unlearned = false
+  card.unlearned = e.unlearned and true or false   -- WT trainer entry not yet learned: no cast/pickup, dimmed
+  card.trainingCost, card.trainingFormattedCost = e.trainingCost, e.trainingFormattedCost   -- WT cost tooltip line
   local b = card.Button
   card.Name:SetText(e.name or "")
   card.SubName:SetText(e.subName or "")
 
   card.tipName = (not e.slot and not e.spellID) and e.name or nil
   card.tipSub  = e.subName
+  -- Always-available plain-text fallback (used when native tooltip APIs fail — see cardEnter).
+  card.fallbackTipName = e.name
+  card.fallbackTipSub  = e.subName
+  card.fallbackTipBody = e.tooltipBody
 
   local ir, ig, ib = spellbookInk()
   card.Name:SetTextColor(ir, ig, ib)
   card.SubName:SetTextColor(ir, ig, ib)
-  card.Name:SetAlpha(1); card.SubName:SetAlpha(1)
+  card.Name:SetAlpha(card.unlearned and 0.55 or 1)
+  card.SubName:SetAlpha(card.unlearned and 0.55 or 1)
 
   -- art set: square (active) vs circle (passive). Passives fall back to the square silver frame only if
   -- this client can't clip the icon round at all (see paintIcon / ROUND_ICON_OK).
@@ -1059,6 +1191,8 @@ local function applyCardVisual(card, e)
 
   -- icon (also resets desaturation/alpha on whichever of the two icon textures is shown).
   paintIcon(b, e.icon, art.round)
+  if b.Icon.SetDesaturated then pcall(b.Icon.SetDesaturated, b.Icon, card.unlearned) end
+  if b.IconRound.SetDesaturated then pcall(b.IconRound.SetDesaturated, b.IconRound, card.unlearned) end
 
   -- border. SetAtlas fails gracefully (returns false, leaves prior); for the circle ring this
   -- is the degrade path — the grey ring may or may not exist, but the icon still shows.
@@ -1113,7 +1247,7 @@ local function applyCardVisual(card, e)
   -- ToggleSpellAutocast is protected → ADDON_ACTION_BLOCKED). Only autocast-capable spells get it.
   local isPetSlot = (e.bookType == BOOKTYPE_PET_) and e.slot ~= nil
   if not InCombatLockdown() then
-    if e.passive then
+    if e.passive or card.unlearned then
       b:SetAttribute("type", nil); b:SetAttribute("spell", nil)
     else
       b:SetAttribute("type", "spell"); b:SetAttribute("spell", e.name)
@@ -1431,7 +1565,7 @@ function SB.Refresh()
   for i, cat in ipairs(cats) do
     local t = categoryTab(i)
     t:SetText(cat.label)
-    -- Width to text (reset → measure → max(min, w+pad)).
+    -- Width to text, same as the Character panel's resizeTab (reset → measure → max(min, w+pad)).
     local txt = _G[t:GetName() .. "Text"]
     local tw = 0
     if txt then
