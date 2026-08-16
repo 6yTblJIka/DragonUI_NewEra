@@ -8,33 +8,6 @@ DragonUI ports the Dragonflight **HUD** to 3.3.5a. **DragonUI_NewEra** fills in 
 
 ## What's inside
 
-### Character panel
-
-![Character panel](screenshots/characterpanel.png)
-
-A full custom replacement for the 3.3.5a `CharacterFrame`, styled to match Dragonflight:
-
-- Paperdoll (3D model + all equipment slots) with modern model controls (zoom, click-drag rotate / pan)
-- **Stats sidebar** (General / Attributes / Melee / Ranged / Spell / Defense / Resistances) with proper tooltips - compatible with [EnhancedCharStats](https://github.com/thezephyrsong/EnhancedCharStats/)
-- Tabs for **Character, Pet, Skills, Honor, Reputation**
-- **Titles** picker — set your title from the panel; the window header shows `Name <Title>`
-- **Equipment Manager** — a fully client-side gear-set manager (works on any server, no reliance on the native equipment-manager API)
-
-### `/gearset` — equip a saved set by name
-
-Save gear sets in the Equipment Manager, then swap to one from chat or a macro:
-
-```
-/gearset "Tank Set"      -- equip the set named "Tank Set" (case-insensitive)
-/dnequip "Healer Set"    -- alias of /gearset
-```
-
-- Matches by name (quoted or bare); errors and lists your sets if no match.
-- If the set is already fully equipped, it does nothing (no redundant request to the server).
-- Sets are stored client-side in SavedVariables and applied with a physical item swap.
-
-*(Note: `/equip` and `/equipset` are reserved built-in WotLK macro commands, hence `/gearset` / `/dnequip`.)*
-
 ### Spellbook
 
 ![Spellbook](screenshots/spellbook.png)
@@ -42,7 +15,7 @@ Save gear sets in the Equipment Manager, then swap to one from chat or a macro:
 A standalone War-Within-style two-page spellbook, replacing the 3.3.5a `SpellBookFrame`:
 
 - **Card layout** — every learned spell as a Dragonflight-style card (icon + name + rank), flowing across a two-page evergreen book; a min/max button collapses it to a single page (↗ Expand / ↙ Condense).
-- **Category tabs** — General, your class (sectioned by spec), and a live Pet tab, styled to match the Character panel.
+- **Category tabs** — General, your class (sectioned by spec), and a live Pet tab, styled to match the rest of the window set.
 - **Active vs passive** — active spells use the gold spellbook frame; passives use the dark square talent-node socket. Passive cells are click-inert (hover for tooltip only); pet cells ignore right-click.
 - **Whole-cell interaction** — click anywhere on a cell to cast, drag to place it on a bar, hover anywhere for the tooltip.
 - **Search + options** — filter spells by name; a cog menu toggles *Hide Passives* and *Show All Ranks* (off = highest rank only).
@@ -191,7 +164,6 @@ The difference from every other version of this addon is where the data comes fr
 
 Faithfully downporting the remaining NewEra panels to 3.3.5a:
 
-- [x] ~~**Character panel**~~ — *done* (paperdoll, stats sidebar, Skills / Honor / Reputation / Pet tabs, Titles, Equipment Manager + `/gearset`)
 - [x] ~~**Spellbook**~~ — *done* (two-page book, category tabs, active/passive frames, search + Hide Passives / Show All Ranks, single/double-page toggle)
 - [x] ~~**Talents**~~ — *done* (3-tree panel, live preview/Apply/Reset, retail-style nodes, per-tier centering, spec-art backgrounds, animated connectors, dual-spec tabs with custom names, hunter **pet talents** tab, and a **glyphs** page with per-class artwork)
 - [x] ~~**Professions**~~ — *done* (Main profession Window, extra integration with Auctionator via AH Scan Button)

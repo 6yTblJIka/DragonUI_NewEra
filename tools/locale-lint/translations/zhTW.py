@@ -36,53 +36,7 @@ T = {
     "Have Materials": "擁有材料",
 
     # ── Character, titles, equipment manager ────────────────────────────────────────────────────
-    "Attributes": "屬性",
-    "Spell": "法術",
-    "Resistances": "抗性",
-    "Maximum Health. If your health reaches zero, you will die.": "最大生命值。生命值降至零時你將死亡。",
-    "Your maximum %s.": "你的最大%s。",
-    "Increases attack power for some classes and the damage you block with a shield.":
-        "提高部分職業的攻擊強度，以及你用盾牌格擋的傷害量。",
-    "Increases critical strike chance, dodge chance, armor, and (for some classes) attack power.":
-        "提高爆擊機率、閃躲機率、護甲，以及（部分職業的）攻擊強度。",
-    "Increases your maximum health.": "提高你的最大生命值。",
-    "Increases your maximum mana and your spell critical strike chance.":
-        "提高你的最大法力值和法術爆擊機率。",
-    "Increases your health and mana regeneration while out of combat.":
-        "提高你脫離戰鬥時的生命值和法力值回復速度。",
-    "Seconds between melee swings.": "近戰攻擊間隔（秒）。",
-    "Improves your chance to hit by %.2f%%.": "使你的命中機率提高%.2f%%。",
-    "Chance of melee attacks dealing extra damage.": "近戰攻擊造成額外傷害的機率。",
-    "Armor Penetration": "護甲穿透",
-    "Reduces the target's armor by up to %.2f%%.": "最多降低目標%.2f%%的護甲。",
-    "Reduces the chance your attacks are dodged or parried.": "降低你的攻擊被閃躲或招架的機率。",
-    "DPS": "每秒傷害",
-    "Hit Chance": "命中機率",
-    "Reduces your chance to miss.": "降低你的未命中機率。",
-    "Crit Chance": "爆擊機率",
-    "Chance of ranged attacks dealing extra damage.": "遠程攻擊造成額外傷害的機率。",
-    "Lowest bonus damage across schools. Hover the paper-doll stat for a breakdown.":
-        "所有法術類型中最低的額外傷害。將滑鼠移到角色屬性上可查看明細。",
-    "Bonus power applied to healing spells.": "套用於治療法術的額外強度。",
-    "Not casting: %d / 5s\\nWhile casting: %d / 5s": "非施法時：%d / 5秒\\n施法時：%d / 5秒",
-    "Chance of spells dealing extra damage.": "法術造成額外傷害的機率。",
-    "Haste Rating": "加速等級",
-    "Reduces chance to be hit and crit; raises block/dodge/parry.":
-        "降低被命中和被爆擊的機率；提高格擋、閃躲和招架機率。",
-    "Chance to dodge enemy melee attacks.": "閃躲敵人近戰攻擊的機率。",
-    "Chance to parry. Requires a weapon.": "招架機率。需要裝備武器。",
-    "Chance to block. Requires a shield.\\nBlock Value: %d": "格擋機率。需要裝備盾牌。\\n格擋值：%d",
-    "Resilience": "韌性",
-    "Reduces the chance you'll be critically hit by %.2f%% and reduces critical damage taken.":
-        "使你被爆擊的機率降低%.2f%%，並減少受到的爆擊傷害。",
-    "Reduces magic damage taken.": "減少受到的魔法傷害。",
-    "Character": "角色",
-    "Titles": "稱號",
-    "Equipment Manager": "裝備管理員",
     "None": "無",
-    "New Equipment Set": "新增裝備組合",
-    "Edit": "編輯",
-    "equipped": "已裝備",
 
     # ── Auction house ───────────────────────────────────────────────────────────────────────────
     " -- partial scan": " -- 部分掃描",
@@ -145,20 +99,6 @@ T = {
         "與 DragonUI 選項中「啟用物品等級」（強化 > 物品等級）為同一項設定。同樣適用於角色面板和其他所有視窗。",
     "Turn on Item Level in DragonUI's options (Enhancements > Item Level) first.":
         "請先在 DragonUI 選項中開啟「物品等級」（強化 > 物品等級）。",
-
-    # ── Character panel ─────────────────────────────────────────────────────────────────────────
-    "A modern Dragonflight character window (custom frame; the Blizzard frame is hidden).":
-        "現代巨龍崛起風格的角色視窗（自訂框架；暴雪原視窗會被隱藏）。",
-    "Background": "背景",
-    "Character Panel": "角色面板",
-    "Character panel settings": "角色面板設定",
-    "Dark": "深色",
-    "Earn honorable kills in battlegrounds and world PvP to gain rank.":
-        "在戰場和野外 PvP 中取得榮譽擊殺以提升軍階。",
-    "Equipment manager not ready.": "裝備管理員尚未就緒。",
-    "Stone": "石質",
-    "The modern Dragonflight character window. Off by default because DragonUI ships its own.":
-        "現代巨龍崛起風格的角色視窗。預設關閉，因為 DragonUI 已自帶一個。",
 
     # ── Cooldown manager ────────────────────────────────────────────────────────────────────────
     "(empty)": "（空）",
@@ -558,7 +498,6 @@ T = {
     "Boss and loot browser. Requires a /reload to take effect (the micro button doesn't re-check this "
     "live).":
         "首領與戰利品瀏覽器。需 /reload 才會生效（微型按鈕不會即時重新檢查此項）。",
-    "Character panel": "角色面板",
     "Click for this frame's settings.": "點擊可查看該視窗的設定。",
     "Combined Bag": "合併背包",
     "Custom": "自訂",
@@ -576,9 +515,6 @@ T = {
     "here as their modules load.":
         "移植到 DragonUI 上的 NewEra 面板。在下方開啟或關閉某個面板。面板會隨其模組載入而出現在這裡。",
     "No scaling": "不縮放",
-    "Our Dragonflight character window. OFF by default — DragonUI ships its own. Reload (/reload) to "
-    "apply.":
-        "我們的巨龍崛起風格角色視窗。預設「關閉」——DragonUI 已自帶一個。需 /reload 生效。",
     "Our all-in-one bag window. Turn OFF to use the stock Blizzard bags instead. Reload (/reload) to "
     "apply.":
         "我們的一體式背包視窗。關閉後將改用暴雪原版背包。需 /reload 生效。",

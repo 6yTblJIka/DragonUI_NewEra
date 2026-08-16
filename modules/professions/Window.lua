@@ -175,8 +175,8 @@ end
 -- Mirrors the reference Crafting.lua buildChrome() with 3.3.5a compat guards.
 -- ============================================================================
 local function buildChrome(f)
-  -- Rock body background (same FDID 374155 used by Character panel, already registered in
-  -- Textures/Assets.lua — so no double-registration needed).
+  -- Rock body background (shared FDID 374155, already registered in Textures/Assets.lua — so no
+  -- double-registration needed).
   local body = f:CreateTexture(nil, "BACKGROUND", nil, -8)
   local rockPath = NE.tex.localFiles and NE.tex.localFiles[374155]
   if rockPath then

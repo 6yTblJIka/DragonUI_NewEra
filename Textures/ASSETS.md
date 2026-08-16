@@ -102,13 +102,18 @@ Nothing is *missing* from the source `Art/` tree — all later-panel art is pres
 Future sprints grab from `/root/downport/DOWNPORT THIS/NewEra/Art/` and register in either a
 per-panel `Textures/<Panel>/Assets.lua` (panel-owned) or extend `Textures/Assets.lua` (shared Core).
 
-### CharacterPanel (Sprint 1+) — `Art/CharacterPanel/` and `Art/Common/`
+### CharacterPanel — `Art/CharacterPanel/` and `Art/Common/`
+> **Not shipped.** The character panel was removed (DragonUI ships its own), and `Textures/
+> CharacterPanel/` went with it. The one sheet with a surviving consumer, 1662186, moved to
+> `Textures/Spellbook/` — that window's portrait is the only thing that still draws it. The rest of
+> this section is kept as a source-tree inventory, not a shipping list.
+
 | FDID | Source path | Role |
 |---|---|---|
 | 1400895 | `Art/CharacterPanel/1400895-character-info-classes-a.blp` (1.0M) | class-themed paperdoll bg (Mage/Monk/Pal/Priest/Rogue/Sham/Lock/War + title/itemlevel bounce) |
 | 1400896 | `Art/CharacterPanel/1400896-character-info-classes-b.blp` (525K) | class paperdoll bg (DK/DH/Druid/Hunter) |
 | 5882640 | `Art/CharacterPanel/5882640-character-panel-background.blp` (525K) | overall character-pane bg |
-| 1662186 | `Art/Common/1662186-classicon.blp` (2.1M) | UI-Classes-Circles class-icon sheet (portrait swap) |
+| 1662186 | `Art/Common/1662186-classicon.blp` (2.1M) | UI-Classes-Circles class-icon sheet (portrait swap) — **shipped**, now under `Textures/Spellbook/` |
 
 > Other CharacterPanel sheets referenced by NewEra `CharacterPanel/Assets.lua` and living in
 > `Art/Common/`: 3534438/3487944 (model-control buttons+icons), 410247/410248/410249

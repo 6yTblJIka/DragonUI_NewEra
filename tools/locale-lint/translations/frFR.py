@@ -33,61 +33,7 @@ T = {
     "Have Materials": "Composants disponibles",
 
     # ── Character, titles, equipment manager ────────────────────────────────────────────────────
-    "Attributes": "Attributs",
-    "Spell": "Sort",
-    "Resistances": "Résistances",
-    "Maximum Health. If your health reaches zero, you will die.":
-        "Points de vie maximum. Si vos points de vie tombent à zéro, vous mourrez.",
-    "Your maximum %s.": "Votre %s maximum.",
-    "Increases attack power for some classes and the damage you block with a shield.":
-        "Augmente la puissance d'attaque de certaines classes et les dégâts bloqués avec un bouclier.",
-    "Increases critical strike chance, dodge chance, armor, and (for some classes) attack power.":
-        "Augmente les chances de coup critique et d'esquive, l'armure et (pour certaines classes) la "
-        "puissance d'attaque.",
-    "Increases your maximum health.": "Augmente vos points de vie maximum.",
-    "Increases your maximum mana and your spell critical strike chance.":
-        "Augmente votre mana maximum et vos chances de coup critique avec les sorts.",
-    "Increases your health and mana regeneration while out of combat.":
-        "Augmente votre régénération de vie et de mana hors combat.",
-    "Seconds between melee swings.": "Secondes entre deux attaques de mêlée.",
-    "Improves your chance to hit by %.2f%%.": "Améliore vos chances de toucher de %.2f%%.",
-    "Chance of melee attacks dealing extra damage.":
-        "Chances que les attaques de mêlée infligent des dégâts supplémentaires.",
-    "Armor Penetration": "Pénétration d'armure",
-    "Reduces the target's armor by up to %.2f%%.":
-        "Réduit l'armure de la cible de %.2f%% au maximum.",
-    "Reduces the chance your attacks are dodged or parried.":
-        "Réduit les chances que vos attaques soient esquivées ou parées.",
-    "DPS": "DPS",
-    "Hit Chance": "Chances de toucher",
-    "Reduces your chance to miss.": "Réduit vos chances de rater.",
-    "Crit Chance": "Chances de critique",
-    "Chance of ranged attacks dealing extra damage.":
-        "Chances que les attaques à distance infligent des dégâts supplémentaires.",
-    "Lowest bonus damage across schools. Hover the paper-doll stat for a breakdown.":
-        "Dégâts bonus les plus faibles toutes écoles confondues. Survolez la caractéristique pour le détail.",
-    "Bonus power applied to healing spells.": "Puissance bonus appliquée aux sorts de soin.",
-    "Not casting: %d / 5s\\nWhile casting: %d / 5s": "Hors incantation : %d / 5s\\nEn incantation : %d / 5s",
-    "Chance of spells dealing extra damage.":
-        "Chances que les sorts infligent des dégâts supplémentaires.",
-    "Haste Rating": "Score de hâte",
-    "Reduces chance to be hit and crit; raises block/dodge/parry.":
-        "Réduit les chances d'être touché et critiqué ; augmente blocage/esquive/parade.",
-    "Chance to dodge enemy melee attacks.": "Chances d'esquiver les attaques de mêlée ennemies.",
-    "Chance to parry. Requires a weapon.": "Chances de parer. Nécessite une arme.",
-    "Chance to block. Requires a shield.\\nBlock Value: %d":
-        "Chances de bloquer. Nécessite un bouclier.\\nValeur de blocage : %d",
-    "Resilience": "Résilience",
-    "Reduces the chance you'll be critically hit by %.2f%% and reduces critical damage taken.":
-        "Réduit de %.2f%% les chances d'être touché de façon critique et réduit les dégâts critiques subis.",
-    "Reduces magic damage taken.": "Réduit les dégâts magiques subis.",
-    "Character": "Personnage",
-    "Titles": "Titres",
-    "Equipment Manager": "Gestionnaire d'équipement",
     "None": "Aucun",
-    "New Equipment Set": "Nouvel ensemble d'équipement",
-    "Edit": "Modifier",
-    "equipped": "équipé",
 
     # ── Auction house ───────────────────────────────────────────────────────────────────────────
     " -- partial scan": " -- analyse partielle",
@@ -157,22 +103,6 @@ T = {
         "Niveau d'objet). Couvre également la fenêtre de personnage et toutes les autres fenêtres.",
     "Turn on Item Level in DragonUI's options (Enhancements > Item Level) first.":
         "Activez d'abord « Niveau d'objet » dans les options de DragonUI (Améliorations > Niveau d'objet).",
-
-    # ── Character panel ─────────────────────────────────────────────────────────────────────────
-    "A modern Dragonflight character window (custom frame; the Blizzard frame is hidden).":
-        "Une fenêtre de personnage moderne façon Dragonflight (cadre personnalisé ; la fenêtre Blizzard est "
-        "masquée).",
-    "Background": "Arrière-plan",
-    "Character Panel": "Fenêtre de personnage",
-    "Character panel settings": "Réglages de la fenêtre de personnage",
-    "Dark": "Sombre",
-    "Earn honorable kills in battlegrounds and world PvP to gain rank.":
-        "Remportez des victimes honorables en champ de bataille et en JcJ ouvert pour gagner des rangs.",
-    "Equipment manager not ready.": "Le gestionnaire d'équipement n'est pas prêt.",
-    "Stone": "Pierre",
-    "The modern Dragonflight character window. Off by default because DragonUI ships its own.":
-        "La fenêtre de personnage moderne façon Dragonflight. Désactivée par défaut car DragonUI fournit la "
-        "sienne.",
 
     # ── Cooldown manager ────────────────────────────────────────────────────────────────────────
     "(empty)": "(vide)",
@@ -646,7 +576,6 @@ T = {
     "live).":
         "Navigateur de boss et de butin. Nécessite un /reload pour prendre effet (le micro-bouton ne le "
         "revérifie pas en direct).",
-    "Character panel": "Fenêtre de personnage",
     "Click for this frame's settings.": "Cliquez pour les réglages de cette fenêtre.",
     "Combined Bag": "Sac combiné",
     "Custom": "Personnalisé",
@@ -667,10 +596,6 @@ T = {
         "Fenêtres NewEra portées sur DragonUI. Activez ou désactivez une fenêtre ci-dessous. Les fenêtres "
         "apparaissent ici à mesure que leurs modules se chargent.",
     "No scaling": "Aucune mise à l'échelle",
-    "Our Dragonflight character window. OFF by default — DragonUI ships its own. Reload (/reload) to "
-    "apply.":
-        "Notre fenêtre de personnage façon Dragonflight. DÉSACTIVÉE par défaut — DragonUI fournit la sienne. "
-        "/reload pour appliquer.",
     "Our all-in-one bag window. Turn OFF to use the stock Blizzard bags instead. Reload (/reload) to "
     "apply.":
         "Notre fenêtre de sacs tout-en-un. DÉSACTIVEZ-la pour utiliser les sacs Blizzard d'origine. /reload "

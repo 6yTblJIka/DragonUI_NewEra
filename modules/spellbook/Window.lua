@@ -55,10 +55,9 @@ SB.CHROME_B = 0
 local FRAME_NAME = "NE_SpellBookFrame"
 local MODULE     = "Spellbook"
 
--- Portrait: the circular CLASS icon, identical to the Character panel's portrait — the
--- baked-circular classicon-<classfile> atlas (FDID 1662186, registered by
--- modules/character/Assets.lua, which loads first) fills the metal ring cleanly. Degrades to the
--- native circular player portrait if the sheet isn't shipped.
+-- Portrait: the circular CLASS icon — the baked-circular classicon-<classfile> atlas (FDID 1662186,
+-- registered by modules/spellbook/Assets.lua) fills the metal ring cleanly. Degrades to the native
+-- circular player portrait if the sheet isn't shipped.
 
 -- ----------------------------------------------------------------------------
 -- Local logger + guard (NE.Log may be absent on a standalone load).
@@ -224,8 +223,8 @@ local function buildMinimize(f)
 end
 
 -- ----------------------------------------------------------------------------
--- Build the window shell ONCE. Modern portrait-frame chrome (via NE.chrome.Apply — the
--- character panel's proven path on a bare CreateFrame), a content-root Host child, the
+-- Build the window shell ONCE. Modern portrait-frame chrome (via NE.chrome.Apply, the addon's
+-- proven path on a bare CreateFrame), a content-root Host child, the
 -- minimize button, ESC-close, and open/close sounds. Hidden by default.
 -- ----------------------------------------------------------------------------
 local function buildWindow()

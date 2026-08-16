@@ -355,8 +355,7 @@ CB.UpdateMoneyBand = updateMoneyBand
 
 -- Stop watching a currency on the backpack. SetCurrencyBackpack indexes the CURRENCY LIST (not the
 -- backpack), and that list hides children under collapsed headers — so we expand every header, find
--- the entry by itemID (fallback name), untrack it, then restore the headers we opened. Also refreshes
--- the character Currency tab so its watch checkbox reflects the change.
+-- the entry by itemID (fallback name), untrack it, then restore the headers we opened.
 function CB.UntrackCurrency(itemID, name)
   if not (SetCurrencyBackpack and GetCurrencyListSize and GetCurrencyListInfo) then return end
 
@@ -395,7 +394,6 @@ function CB.UntrackCurrency(itemID, name)
   end
 
   CB.Refresh()
-  if NE.charpanel and NE.charpanel.RefreshCurrency then NE.charpanel.RefreshCurrency() end
 end
 
 -- ----------------------------------------------------------------------------
@@ -424,8 +422,8 @@ local function buildChrome()
   -- Portrait (the generic bag icon) seated into the metal corner cutout.
   local portrait = frame:CreateTexture(nil, "ARTWORK")
   if NE.portrait and NE.portrait.ApplyCutout then
-    -- Fill the metal ring, centred on it — same size/anchor the character panel uses for this exact
-    -- PortraitMetal corner (size 60 seated at TOPLEFT{-5,8} → centred on the ring circle).
+    -- Fill the metal ring, centred on it — the standard size/anchor for this exact PortraitMetal
+    -- corner (size 60 seated at TOPLEFT{-5,8} → centred on the ring circle).
     pcall(NE.portrait.ApplyCutout, portrait, frame,
       { size = 60, layer = "ARTWORK", anchor = { "TOPLEFT", -5, 8 }, maskInset = { 1, 0, -1, 2 } })
   end

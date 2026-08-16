@@ -3,8 +3,8 @@
 -- DOWNPORT of NewEra/Core/Chrome/PanelManager.lua (Classic 1.15), heavily trimmed. Every window in
 -- this addon is a free-floating DIALOG/HIGH frame that hard-codes its own default anchor at build
 -- time, and several of them picked the SAME spot: AuctionHouse / Social / Guild / LFG all default to
--- UIParent LEFT+16 or TOPLEFT 16,-116, Spellbook and Professions both to TOP 0,-55, and Character /
--- EncounterJournal both sit near CENTER. Open two of a pair and they land fully
+-- UIParent LEFT+16 or TOPLEFT 16,-116, Spellbook and Professions both to TOP 0,-55, and the
+-- EncounterJournal sits near CENTER. Open two of a pair and they land fully
 -- overlapped (github issue #49: the Friends list rendered inside the Auction House). Until now the
 -- only de-collision was a hard-coded PAIR — Social pushed Guild to its right and Guild anchored
 -- itself to Social's right — which the Auction House was never part of. This replaces that pact.
@@ -32,11 +32,11 @@
 --       handles reachable, which a perfect overlap does not.
 --
 -- USER PLACEMENT WINS. Unlike the source (where panels are not movable at all), every window here
--- drags, and six of them persist through NE.FrameUtil.PersistWindowPosition. A window the player has
--- dragged — this session, or in a previous one via db.windowPos — leaves the system entirely: it is
--- never moved, and it does not take a slot in the row. FrameUtil calls in here on drag-stop and on
--- its resolution reset (which puts every window back in the system, since a saved spot from another
--- resolution is exactly what it drops).
+-- drags, and several of them persist through NE.FrameUtil.PersistWindowPosition. A window the
+-- player has dragged — this session, or in a previous one via db.windowPos — leaves the system
+-- entirely: it is never moved, and it does not take a slot in the row. FrameUtil calls in here on
+-- drag-stop and on its resolution reset (which puts every window back in the system, since a saved
+-- spot from another resolution is exactly what it drops).
 --
 -- SCOPE: toggled PANEL windows only. HUD frames (unit frames, action bars, cooldown viewers, the
 -- level-up banner) are not panels and register through NE.RegisterHUDFrame instead. The combined bag
@@ -89,7 +89,6 @@ M.DEFAULTS = {
   -- The CENTER cluster. Registered for the two-windows-open case only; each still opens at its own
   -- tuned centre when it is alone on screen (see the HOME WHEN ALONE rule above).
   NE_EncounterJournal         = { pushable = 3 },
-  DragonUI_NewEra_Character   = { pushable = 4, posKey = "character" },
   -- Spellbook + Talents share retail's PlayerSpells slot (rightmost). The Spellbook is the one
   -- genuinely protected window in the addon: its spell cards are secure, and its OnShow/OnHide carry
   -- a SecureHandlerWrapScript ESC binding — hence watch.
@@ -194,8 +193,8 @@ end
 M._dragOrigin = M._dragOrigin or setmetatable({}, { __mode = "k" })
 
 -- Record where a drag began. Called from both drag owners: this file hooks the frame's own
--- OnDragStart, and FrameUtil.PersistWindowPosition calls in for the windows that drag by a separate
--- handle (the character panel's title band), whose OnDragStart the frame itself never sees.
+-- OnDragStart, and FrameUtil.PersistWindowPosition calls in for a window that drags by a separate
+-- handle (a title band), whose OnDragStart the frame itself never sees.
 function M.NoteDragStart(frame)
   if not (frame and frame.GetLeft) then return end
   local l, t = frame:GetLeft(), frame:GetTop()
@@ -502,8 +501,8 @@ function M.Register(frame, meta)
   end)
 
   -- Width is what the row is measured in, and some of these windows change theirs while open (the
-  -- Spellbook's minimize button, the character panel's sidebar expand). Without this the neighbour
-  -- keeps the slot it was given for the OLD width and an expanding window grows straight into it.
+  -- Spellbook's minimize button). Without this the neighbour keeps the slot it was given for the
+  -- OLD width and an expanding window grows straight into it.
   -- Deferred only — a resize can land mid-secure-show, and ScheduleReflow coalesces the burst of
   -- events a single SetWidth produces into one pass.
   frame:HookScript("OnSizeChanged", function() M.ScheduleReflow() end)

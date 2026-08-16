@@ -44,51 +44,6 @@ L["Has Skill Up"] = "Sube habilidad"
 L["Have Materials"] = "Tengo materiales"
 
 -- ============================================================================
--- CHARACTER, TITLES, EQUIPMENT MANAGER
--- ============================================================================
-
-L["Attributes"] = "Atributos"
-L["Spell"] = "Hechizo"
-L["Resistances"] = "Resistencias"
-L["Maximum Health. If your health reaches zero, you will die."] = "Salud máxima. Si tu salud llega a cero, morirás."
-L["Your maximum %s."] = "Tu %s máximo."
-L["Increases attack power for some classes and the damage you block with a shield."] = "Aumenta el poder de ataque de algunas clases y el daño que bloqueas con un escudo."
-L["Increases critical strike chance, dodge chance, armor, and (for some classes) attack power."] = "Aumenta la probabilidad de golpe crítico, de esquivar, la armadura y (en algunas clases) el poder de ataque."
-L["Increases your maximum health."] = "Aumenta tu salud máxima."
-L["Increases your maximum mana and your spell critical strike chance."] = "Aumenta tu maná máximo y tu probabilidad de golpe crítico con hechizos."
-L["Increases your health and mana regeneration while out of combat."] = "Aumenta tu regeneración de salud y maná fuera de combate."
-L["Seconds between melee swings."] = "Segundos entre golpes cuerpo a cuerpo."
-L["Improves your chance to hit by %.2f%%."] = "Mejora tu probabilidad de golpear en un %.2f%%."
-L["Chance of melee attacks dealing extra damage."] = "Probabilidad de que los ataques cuerpo a cuerpo inflijan daño adicional."
-L["Armor Penetration"] = "Penetración de armadura"
-L["Reduces the target's armor by up to %.2f%%."] = "Reduce la armadura del objetivo hasta en un %.2f%%."
-L["Reduces the chance your attacks are dodged or parried."] = "Reduce la probabilidad de que tus ataques sean esquivados o parados."
-L["DPS"] = "DPS"
-L["Hit Chance"] = "Probabilidad de golpe"
-L["Reduces your chance to miss."] = "Reduce tu probabilidad de fallar."
-L["Crit Chance"] = "Probabilidad crítica"
-L["Chance of ranged attacks dealing extra damage."] = "Probabilidad de que los ataques a distancia inflijan daño adicional."
-L["Lowest bonus damage across schools. Hover the paper-doll stat for a breakdown."] = "Daño adicional más bajo de todas las escuelas. Pasa el cursor por la estadística para ver el desglose."
-L["Bonus power applied to healing spells."] = "Poder adicional aplicado a los hechizos de sanación."
-L["Not casting: %d / 5s\nWhile casting: %d / 5s"] = "Sin lanzar: %d / 5s\nAl lanzar: %d / 5s"
-L["Chance of spells dealing extra damage."] = "Probabilidad de que los hechizos inflijan daño adicional."
-L["Haste Rating"] = "Índice de celeridad"
-L["Reduces chance to be hit and crit; raises block/dodge/parry."] = "Reduce la probabilidad de ser golpeado y de recibir críticos; aumenta bloqueo/esquivar/parada."
-L["Chance to dodge enemy melee attacks."] = "Probabilidad de esquivar los ataques cuerpo a cuerpo enemigos."
-L["Chance to parry. Requires a weapon."] = "Probabilidad de parada. Requiere un arma."
-L["Chance to block. Requires a shield.\nBlock Value: %d"] = "Probabilidad de bloqueo. Requiere un escudo.\nValor de bloqueo: %d"
-L["Resilience"] = "Temple"
-L["Reduces the chance you'll be critically hit by %.2f%% and reduces critical damage taken."] = "Reduce en un %.2f%% la probabilidad de recibir golpes críticos y reduce el daño crítico recibido."
-L["Reduces magic damage taken."] = "Reduce el daño mágico recibido."
-L["Character"] = "Personaje"
-L["Titles"] = "Títulos"
-L["Equipment Manager"] = "Gestor de equipo"
-L["None"] = "Ninguno"
-L["New Equipment Set"] = "Nuevo conjunto de equipo"
-L["Edit"] = "Editar"
-L["equipped"] = "equipado"
-
--- ============================================================================
 -- AUCTION HOUSE
 -- ============================================================================
 
@@ -144,20 +99,6 @@ L["Sorting…"] = "Ordenando…"
 L["Swapping bag…"] = "Cambiando bolsa…"
 L["The same setting as Enable Item Level in DragonUI's options (Enhancements > Item Level). Covers the character panel and every other frame too."] = "La misma opción que 'Activar nivel de objeto' en las opciones de DragonUI (Mejoras > Nivel de objeto). También cubre el panel de personaje y todas las demás ventanas."
 L["Turn on Item Level in DragonUI's options (Enhancements > Item Level) first."] = "Activa antes 'Nivel de objeto' en las opciones de DragonUI (Mejoras > Nivel de objeto)."
-
--- ============================================================================
--- CHARACTER
--- ============================================================================
-
-L["A modern Dragonflight character window (custom frame; the Blizzard frame is hidden)."] = "Una ventana de personaje moderna estilo Dragonflight (marco propio; la ventana de Blizzard queda oculta)."
-L["Background"] = "Fondo"
-L["Character Panel"] = "Panel de personaje"
-L["Character panel settings"] = "Ajustes del panel de personaje"
-L["Dark"] = "Oscuro"
-L["Earn honorable kills in battlegrounds and world PvP to gain rank."] = "Consigue muertes honorables en campos de batalla y JcJ mundial para subir de rango."
-L["Equipment manager not ready."] = "El gestor de equipo no está listo."
-L["Stone"] = "Piedra"
-L["The modern Dragonflight character window. Off by default because DragonUI ships its own."] = "La ventana de personaje moderna estilo Dragonflight. Desactivada por defecto porque DragonUI incluye la suya."
 
 -- ============================================================================
 -- COOLDOWN MANAGER
@@ -239,6 +180,7 @@ L["Move to %s"] = "Mover a %s"
 L["Name Only"] = "Solo nombre"
 L["Name this layout:"] = "Nombra este diseño:"
 L["New Layout"] = "Nuevo diseño"
+L["None"] = "Ninguno"
 L["Not displayed on any viewer"] = "No se muestra en ningún visor"
 L["Not yet learned"] = "Aún no aprendido"
 L["Nothing to undo. It covers LAYOUTS, not the settings|non these tabs — a viewer's own size and position revert|nfrom its edit-mode panel instead."] = "Nada que deshacer. Cubre los DISEÑOS, no los ajustes|nde estas pestañas: el tamaño y la posición de un visor|nse revierten desde su panel de modo de edición."
@@ -441,7 +383,6 @@ L["\n\nReset at a class trainer, then load again. (The rest has been staged — 
 L["Adventure Guide (Encounter Journal)"] = "Guía de aventuras (Diario de encuentros)"
 L["Auction House"] = "Casa de subastas"
 L["Boss and loot browser. Requires a /reload to take effect (the micro button doesn't re-check this live)."] = "Explorador de jefes y botín. Requiere /reload para surtir efecto (el microbotón no lo vuelve a comprobar en directo)."
-L["Character panel"] = "Panel de personaje"
 L["Click for this frame's settings."] = "Haz clic para ver los ajustes de esta ventana."
 L["Combined Bag"] = "Bolsa combinada"
 L["Custom"] = "Personalizado"
@@ -453,7 +394,6 @@ L["Looking For Group"] = "Buscar grupo"
 L["Looking For Group (Dungeon/Raid Finder)"] = "Buscar grupo (buscador de mazmorras/bandas)"
 L["NewEra panels ported onto DragonUI. Toggle a panel below to enable or disable it. Panels appear here as their modules load."] = "Paneles de NewEra portados a DragonUI. Activa o desactiva un panel abajo. Los paneles aparecen aquí a medida que se cargan sus módulos."
 L["No scaling"] = "Sin escalado"
-L["Our Dragonflight character window. OFF by default — DragonUI ships its own. Reload (/reload) to apply."] = "Nuestra ventana de personaje estilo Dragonflight. DESACTIVADA por defecto: DragonUI incluye la suya. /reload para aplicar."
 L["Our all-in-one bag window. Turn OFF to use the stock Blizzard bags instead. Reload (/reload) to apply."] = "Nuestra ventana de bolsas todo en uno. DESACTÍVALA para usar las bolsas originales de Blizzard. /reload para aplicar."
 L["Professions"] = "Profesiones"
 L["Reload (/reload) to apply."] = "/reload para aplicar."

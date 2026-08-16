@@ -160,8 +160,8 @@ local function makeMoneyDisplay(parent)
 end
 
 -- Sort-direction arrow off the gear-manager flyout sheet -- the one rotatable arrow texture
--- already proven on this client (modules/character/EquipmentFlyout.lua). Upper half of the
--- sheet is the arrow pointing up; vertical texcoord flip points it down.
+-- already proven on this client. Upper half of the sheet is the arrow pointing up; vertical
+-- texcoord flip points it down.
 local ARROW_TEX = "Interface\\PaperDollInfoFrame\\UI-GearManager-FlyoutButton"
 local function setArrowDirection(tex, descending)
   if descending then

@@ -56,7 +56,6 @@ simply already satisfied for the symbols it owns.
 | `GetSpellBookItemTexture` (global) | compat | `SpellBook.lua` | Maps to 3.3.5 `GetSpellTexture(slot,bookType)`. ClassicAPI's `C_SpellBook` does not alias this. Used by `modules/spellbook`. |
 | `GetSpellBookItemInfo` (global) | compat | `SpellBook.lua` | Returns `"SPELL", spellID` (spellID parsed from the hyperlink). No 3.3.5 / ClassicAPI equivalent. Used by `modules/spellbook`. |
 | `GameTooltip:SetSpellBookItem` | compat | `SpellBook.lua` | Aliased to `GameTooltip:SetSpell`. No 3.3.5 / ClassicAPI equivalent. Used by `modules/spellbook`. |
-| `C_EquipmentSet.*` | compat (custom backend gate) | `C_EquipmentSet.lua` | ClassicAPI ships NO `C_EquipmentSet`. CharacterPanel uses the ItemRack-model custom backend in its own SavedVariables; this file publishes a safe namespace so stray `C_EquipmentSet.*` refs don't nil-error. |
 
 > **Mixin note (for human review):** the task brief listed `compat/Mixin.lua` under "ClassicAPI does
 > NOT provide", but `!!!ClassicAPI/Util/Mixin.lua` **does** define `Mixin`, `CreateFromMixins`, and
@@ -88,5 +87,6 @@ simply already satisfied for the symbols it owns.
   `C_Container` / `C_Item` / `C_Spell` / `C_SpellBook`, and `C_Map.GetBestMapForUnit`.
 - `compat/C_Timer.lua` and `compat/C_Texture.lua` were **deleted** (fully ClassicAPI-owned).
 - `compat/` now ships only ClassicAPI gaps: two `C_Container` fns, two `C_Item` fns, one `C_Spell`
-  stub, two `C_Map` stubs, three spellbook globals, and the `C_EquipmentSet` custom-backend gate
-  (plus the redundant `Mixin.lua`, retained pending review).
+  stub, two `C_Map` stubs, and three spellbook globals (plus the redundant `Mixin.lua`, retained
+  pending review). `C_EquipmentSet.lua` was **deleted** along with the character panel it gated —
+  DragonUI ships its own character window now, and nothing else referenced the namespace.

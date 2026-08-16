@@ -39,7 +39,7 @@ local COLUMNS = {
 
 -- Native 3.3.5a class-icon sheet + coords. CLASS_ICON_TCOORDS is a stock global (modules/talents
 -- already relies on it). The addon also ships a CIRCULAR `classicon-<class>` atlas via
--- modules/character/Assets.lua, but the reference frame's icons are the SQUARE stock ones.
+-- modules/spellbook/Assets.lua, but the reference frame's icons are the SQUARE stock ones.
 local CLASS_ICON_TEX = "Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes"
 
 local function classColor(classFile)

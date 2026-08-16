@@ -19,7 +19,6 @@ T = {
         "Etiqueta las builds exportadas con este servidor para que las importaciones en otros diseños "
         "avisen antes.",
     "Pet": "Mascota",
-    "Resilience": "Temple",
     "First Aid": "Primeros auxilios",
     "Leatherworking": "Peletería",
     "Herbalism": "Herboristería",

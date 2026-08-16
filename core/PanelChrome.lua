@@ -173,7 +173,7 @@ end
 -- DOWNPORT: the raw UI-Background-Rock sheet renders mid-brown on first paint (retail darkens it via
 -- panel composition). This explicit dark tint is what makes every NewEra window read dark immediately
 -- instead of only after a /reload settles it. It's the SHARED body tone for the whole window set —
--- retune it here and the character panel, bags and every other chrome'd window move together.
+-- retune it here and the bags and every other chrome'd window move together.
 PC.BODY_TINT = { 0.32, 0.32, 0.32 }
 
 -- Paint f.Bg with the standard dark rock body fill. Returns true when the rock art was available,

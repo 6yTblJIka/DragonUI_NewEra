@@ -340,8 +340,8 @@ function NE.FrameUtil.PersistWindowPosition(frame, key, default, dragHandle)
   handle:SetScript("OnDragStart", function()
     frame:StartMoving()
     -- Baseline for the did-it-actually-move test below. Recorded here rather than in PanelManager's
-    -- own hook because several windows drag by a separate handle, whose OnDragStart the frame never
-    -- sees (the character panel's title band).
+    -- own hook because a window may drag by a separate handle (a title band), whose OnDragStart the
+    -- frame itself never sees.
     if NE.panelmgr and NE.panelmgr.NoteDragStart then NE.panelmgr.NoteDragStart(frame) end
   end)
   handle:SetScript("OnDragStop", function()
@@ -359,8 +359,8 @@ function NE.FrameUtil.PersistWindowPosition(frame, key, default, dragHandle)
     end
     -- A window the player has placed themselves stops taking part in the panel row
     -- (core/PanelManager.lua) — it is never moved again, and the other windows tile without it.
-    -- Needed here as well as in PanelManager's own drag hook because several windows drag by a
-    -- separate handle (the character panel's title band), whose OnDragStop the frame never sees.
+    -- Needed here as well as in PanelManager's own drag hook because a window may drag by a
+    -- separate handle (a title band), whose OnDragStop the frame itself never sees.
     if NE.panelmgr and NE.panelmgr.MarkUserPlaced then NE.panelmgr.MarkUserPlaced(frame) end
   end)
 

@@ -42,7 +42,8 @@ NE.tex.RegisterLocal(2406987, P .. "Common\\2406987-uiframe-metal-edges-horiz.bl
 --     left/right end caps + a stretched center (atlas coords registered by the bags module).
 NE.tex.RegisterLocal(4701880, P .. "Common\\4701880-common-currencybox.blp")        -- 32x64 BGRA; common-currencybox-{left,right,center}
 
--- --- UI-Background-Rock — ButtonFrameTemplate rock fill (shared: CharacterPanel + Social).
+-- --- UI-Background-Rock — ButtonFrameTemplate rock fill (shared body art: Social, bags, and
+--     every other chrome'd window).
 NE.tex.RegisterLocal(374155,  P .. "Common\\374155-uibackground-rock.blp")          -- 1024x1024 DXT1
 
 -- --- InsetFrameTemplate inner-border (the thin gold inner-recess trim). Shared Core
@@ -75,14 +76,14 @@ NE.tex.RegisterLocal(5390329, P .. "Common\\5390329-common-dropdown-bg.blp")    
 NE.tex.RegisterLocal(4698972, P .. "Common\\4698972-redbutton-exit-2x.blp")          -- 36x38 states grid
 
 -- --- DF metal panel-tab sheet (4707839) — the modern bottom-tab look (uiframe-tab / -activetab),
---     used by core/Tabs.lua (NE.tabs.ReskinClassicTab) for the CharacterPanel tabs and any other
---     reskinned classic tabs. Coords live in core/NineSliceLayouts.lua; this ships the art.
+--     used by core/Tabs.lua (NE.tabs.ReskinClassicTab) for every reskinned classic tab in the
+--     addon. Coords live in core/NineSliceLayouts.lua; this ships the art.
 NE.tex.RegisterLocal(4707839, P .. "Common\\4707839-uiframe-tab.blp")                -- 64x256 tab/activetab grid
 
 -- --- Minimal-scrollbar art (the DF "MinimalScrollBar" look), consumed by core/ScrollbarReskin.lua
 --     over the classic Slider-based UIPanelScrollBar. Coords live in core/NineSliceLayouts.lua;
 --     these ship the four backing sheets so the reskin lights up (track + arrows + thumb caps +
---     thumb middle). Shared Core art — every character panel's FauxScrollFrame reskins through it.
+--     thumb middle). Shared Core art — every FauxScrollFrame in the addon reskins through it.
 NE.tex.RegisterLocal(4331838, P .. "Common\\4331838-minimal-scrollbar.blp")                       -- track top/bottom + arrows
 NE.tex.RegisterLocal(4332072, P .. "Common\\4332072-minimal-scrollbar-track-middle.blp")          -- !track-middle 1px tile
 NE.tex.RegisterLocal(5142784, P .. "Common\\5142784-minimal-scrollbar-small-thumb-middle.blp")    -- small thumb middle strip

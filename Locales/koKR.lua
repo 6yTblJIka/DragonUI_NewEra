@@ -44,51 +44,6 @@ L["Has Skill Up"] = "숙련도 상승"
 L["Have Materials"] = "재료 보유"
 
 -- ============================================================================
--- CHARACTER, TITLES, EQUIPMENT MANAGER
--- ============================================================================
-
-L["Attributes"] = "능력치"
-L["Spell"] = "주문"
-L["Resistances"] = "저항력"
-L["Maximum Health. If your health reaches zero, you will die."] = "최대 생명력입니다. 생명력이 0이 되면 사망합니다."
-L["Your maximum %s."] = "최대 %s 수치입니다."
-L["Increases attack power for some classes and the damage you block with a shield."] = "일부 직업의 공격력과 방패로 막아내는 피해량을 증가시킵니다."
-L["Increases critical strike chance, dodge chance, armor, and (for some classes) attack power."] = "치명타 확률, 회피 확률, 방어도, 그리고 (일부 직업의) 공격력을 증가시킵니다."
-L["Increases your maximum health."] = "최대 생명력을 증가시킵니다."
-L["Increases your maximum mana and your spell critical strike chance."] = "최대 마나와 주문 치명타 확률을 증가시킵니다."
-L["Increases your health and mana regeneration while out of combat."] = "비전투 시 생명력과 마나 회복량을 증가시킵니다."
-L["Seconds between melee swings."] = "근접 공격 사이의 간격(초)입니다."
-L["Improves your chance to hit by %.2f%%."] = "적중 확률을 %.2f%% 증가시킵니다."
-L["Chance of melee attacks dealing extra damage."] = "근접 공격이 추가 피해를 입힐 확률입니다."
-L["Armor Penetration"] = "방어 관통"
-L["Reduces the target's armor by up to %.2f%%."] = "대상의 방어도를 최대 %.2f%% 감소시킵니다."
-L["Reduces the chance your attacks are dodged or parried."] = "공격이 회피되거나 무기 막기 될 확률을 감소시킵니다."
-L["DPS"] = "초당 피해량"
-L["Hit Chance"] = "적중 확률"
-L["Reduces your chance to miss."] = "빗나갈 확률을 감소시킵니다."
-L["Crit Chance"] = "치명타 확률"
-L["Chance of ranged attacks dealing extra damage."] = "원거리 공격이 추가 피해를 입힐 확률입니다."
-L["Lowest bonus damage across schools. Hover the paper-doll stat for a breakdown."] = "모든 계열 중 가장 낮은 추가 피해량입니다. 캐릭터 능력치 위에 마우스를 올리면 상세 내역을 볼 수 있습니다."
-L["Bonus power applied to healing spells."] = "치유 주문에 적용되는 추가 강도입니다."
-L["Not casting: %d / 5s\nWhile casting: %d / 5s"] = "시전하지 않을 때: %d / 5초\n시전 중: %d / 5초"
-L["Chance of spells dealing extra damage."] = "주문이 추가 피해를 입힐 확률입니다."
-L["Haste Rating"] = "가속 등급"
-L["Reduces chance to be hit and crit; raises block/dodge/parry."] = "적중당하거나 치명타를 입을 확률을 낮추고, 방패 막기/회피/무기 막기 확률을 높입니다."
-L["Chance to dodge enemy melee attacks."] = "적의 근접 공격을 회피할 확률입니다."
-L["Chance to parry. Requires a weapon."] = "무기 막기 확률입니다. 무기가 필요합니다."
-L["Chance to block. Requires a shield.\nBlock Value: %d"] = "방패 막기 확률입니다. 방패가 필요합니다.\n방어량: %d"
-L["Resilience"] = "탄력"
-L["Reduces the chance you'll be critically hit by %.2f%% and reduces critical damage taken."] = "치명타를 입을 확률을 %.2f%% 감소시키고 받는 치명타 피해를 줄입니다."
-L["Reduces magic damage taken."] = "받는 마법 피해를 감소시킵니다."
-L["Character"] = "캐릭터"
-L["Titles"] = "칭호"
-L["Equipment Manager"] = "장비 관리자"
-L["None"] = "없음"
-L["New Equipment Set"] = "새 장비 세트"
-L["Edit"] = "편집"
-L["equipped"] = "착용 중"
-
--- ============================================================================
 -- AUCTION HOUSE
 -- ============================================================================
 
@@ -144,20 +99,6 @@ L["Sorting…"] = "정리하는 중…"
 L["Swapping bag…"] = "가방 교체 중…"
 L["The same setting as Enable Item Level in DragonUI's options (Enhancements > Item Level). Covers the character panel and every other frame too."] = "DragonUI 설정의 '아이템 레벨 사용'(강화 > 아이템 레벨)과 동일한 설정입니다. 캐릭터 창을 비롯한 모든 창에도 적용됩니다."
 L["Turn on Item Level in DragonUI's options (Enhancements > Item Level) first."] = "먼저 DragonUI 설정에서 '아이템 레벨'(강화 > 아이템 레벨)을 켜십시오."
-
--- ============================================================================
--- CHARACTER
--- ============================================================================
-
-L["A modern Dragonflight character window (custom frame; the Blizzard frame is hidden)."] = "현대적인 용의 군단 스타일 캐릭터 창입니다 (자체 프레임이며, 블리자드 창은 숨겨집니다)."
-L["Background"] = "배경"
-L["Character Panel"] = "캐릭터 창"
-L["Character panel settings"] = "캐릭터 창 설정"
-L["Dark"] = "어두운색"
-L["Earn honorable kills in battlegrounds and world PvP to gain rank."] = "전장과 야외 PvP에서 명예 처치를 획득하여 계급을 올리십시오."
-L["Equipment manager not ready."] = "장비 관리자가 아직 준비되지 않았습니다."
-L["Stone"] = "석재"
-L["The modern Dragonflight character window. Off by default because DragonUI ships its own."] = "현대적인 용의 군단 스타일 캐릭터 창입니다. DragonUI에 자체 창이 있으므로 기본적으로 꺼져 있습니다."
 
 -- ============================================================================
 -- COOLDOWN MANAGER
@@ -239,6 +180,7 @@ L["Move to %s"] = "%s(으)로 이동"
 L["Name Only"] = "이름만"
 L["Name this layout:"] = "이 배치의 이름:"
 L["New Layout"] = "새 배치"
+L["None"] = "없음"
 L["Not displayed on any viewer"] = "어떤 표시창에도 표시되지 않음"
 L["Not yet learned"] = "아직 배우지 않음"
 L["Nothing to undo. It covers LAYOUTS, not the settings|non these tabs — a viewer's own size and position revert|nfrom its edit-mode panel instead."] = "되돌릴 것이 없습니다. 이 기능은 이 탭의 설정이 아니라|n'배치'를 다룹니다 — 표시창 고유의 크기와 위치는|n해당 편집 모드 창에서 되돌립니다."
@@ -441,7 +383,6 @@ L["\n\nReset at a class trainer, then load again. (The rest has been staged — 
 L["Adventure Guide (Encounter Journal)"] = "모험 안내서 (전투 기록)"
 L["Auction House"] = "경매장"
 L["Boss and loot browser. Requires a /reload to take effect (the micro button doesn't re-check this live)."] = "우두머리와 전리품 탐색기입니다. 적용하려면 /reload가 필요합니다 (작은 버튼은 이 값을 실시간으로 다시 확인하지 않습니다)."
-L["Character panel"] = "캐릭터 창"
 L["Click for this frame's settings."] = "클릭하면 이 창의 설정이 열립니다."
 L["Combined Bag"] = "통합 가방"
 L["Custom"] = "사용자 지정"
@@ -453,7 +394,6 @@ L["Looking For Group"] = "파티 찾기"
 L["Looking For Group (Dungeon/Raid Finder)"] = "파티 찾기 (던전/공격대 찾기)"
 L["NewEra panels ported onto DragonUI. Toggle a panel below to enable or disable it. Panels appear here as their modules load."] = "DragonUI로 이식된 NewEra 창입니다. 아래에서 창을 켜거나 끌 수 있습니다. 창은 해당 모듈이 로드되면 여기에 나타납니다."
 L["No scaling"] = "크기 조절 안 함"
-L["Our Dragonflight character window. OFF by default — DragonUI ships its own. Reload (/reload) to apply."] = "이 애드온의 용의 군단 스타일 캐릭터 창입니다. 기본적으로 '꺼짐'입니다 — DragonUI에 자체 창이 있습니다. 적용하려면 /reload 하십시오."
 L["Our all-in-one bag window. Turn OFF to use the stock Blizzard bags instead. Reload (/reload) to apply."] = "이 애드온의 일체형 가방 창입니다. 끄면 기본 블리자드 가방을 사용합니다. 적용하려면 /reload 하십시오."
 L["Professions"] = "전문 기술"
 L["Reload (/reload) to apply."] = "적용하려면 /reload 하십시오."

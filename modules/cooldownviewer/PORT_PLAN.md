@@ -3,6 +3,11 @@
 Downport of `ReferenceAddons/NewEra/CooldownViewer/` + `CooldownViewerSettings/` (Classic 1.15 /
 TBC 2.5.x) onto 3.3.5a. Read `CONTRACTS.md` §0 first — every global convention there applies.
 
+> **Stale paths, kept on purpose.** This is a record of the port as it was carried out, so the
+> `modules/character/*` files it cites as precedent are left as written. That module has since been
+> deleted (DragonUI ships its own character window) — nothing here depends on it at runtime, and the
+> art it points at is likewise gone. Read those references as history, not as live files.
+
 **Status: the port is complete.** Phases 0-4a, 4b-1 through 4b-5, 4c (the Settings tab), 5a (on-use
 trinkets), 6 (loose ends), 7 (the tracked-aura catalog), 8 (the art) and 9 (the guide audit) are
 implemented — the whole of both phasing tables except the deliberate cuts. Offline harnesses pass

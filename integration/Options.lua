@@ -58,7 +58,7 @@ local function builder(scroll)
     if C.AddSpacer then C:AddSpacer(scroll) end
 
     -- (Per-window enable toggles live in the "Windows" section below; we intentionally do NOT also
-    -- render NE.optionPanels here — that produced a redundant top-of-page "Character Panel" toggle.)
+    -- render NE.optionPanels here — that produced a redundant duplicate toggle per window.)
 
     -- ----------------------------------------------------------------------------
     -- Windows — enable/disable each replacement window. RELOAD-GATED: toggling only writes the flag;
@@ -72,12 +72,9 @@ local function builder(scroll)
         -- the combined bag itself IS toggleable so players can turn our bag UI off entirely and fall
         -- back to the stock Blizzard bags. To also re-expose the per-window restyle, add a row:
         --   { id = "bags", label = "Retail bags" }
-        -- "Character panel" ships OFF: DragonUI now has its own version of that window, so ours is
-        -- opt-in rather than a second replacement over the top. (Collections went further — DragonUI
-        -- ships that one too, so our window was removed outright and has no row here.)
+        -- No Character panel or Collections rows here: DragonUI ships both of those windows itself,
+        -- so ours were removed outright rather than kept as a second replacement over the top.
         local WINDOWS = {
-            { id = "character",   label = L["Character panel"],
-              desc = L["Our Dragonflight character window. OFF by default — DragonUI ships its own. Reload (/reload) to apply."] },
             { id = "Spellbook",   label = SPELLBOOK or L["Spellbook"] },
             { id = "Talents",     label = TALENTS or L["Talents"] },
             { id = "Professions", label = L["Professions"] },
@@ -148,7 +145,6 @@ local function builder(scroll)
         -- A window that hasn't been opened yet this session simply has no frame registered — the
         -- setting still persists and applies on its first build.
         local WINDOWS = {
-            { key = "character",       label = CHARACTER or L["Character"] },
             { key = "spellbook",       label = SPELLBOOK or L["Spellbook"] },
             { key = "talents",         label = TALENTS or L["Talents"] },
             { key = "professions",     label = L["Professions"] },

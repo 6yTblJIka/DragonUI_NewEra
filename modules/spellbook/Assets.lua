@@ -10,7 +10,8 @@
 -- 4633068 / sheenmask 4731579) provide the passive-spell round-icon clip + node border/sheen reused
 -- by the spellbook passive rows. Sheet 5684744 (questlog) is shipped here for its cog gear icon
 -- (questlog-icon-setting); the addon's Tabs.lua references unrelated questlog-tab-side* atlases off a
--- different (not-yet-shipped) sheet, so there is no overlap.
+-- different (not-yet-shipped) sheet, so there is no overlap. The class-icon sheet (1662186) moved
+-- here when the character panel was removed: this window's portrait is now its only consumer.
 --
 -- Source coord rects transcribed from NewEra/Generated/AtlasData.lua.
 
@@ -29,6 +30,13 @@ NE.tex.RegisterLocal(4200162, P .. "4200162-spellbook-skilllinetab.blp")      --
 NE.tex.RegisterLocal(5684744, P .. "5684744-questlog.blp")                    -- cog gear icon sheet
 NE.tex.RegisterLocal(4556093, P .. "4556093-talents.blp")                     -- talents sheet (node circle + sheen)
 
+-- Class-icon sheet (12 classes, 128x128 each) — the window portrait's circular class badge.
+-- DOWNPORT: class icons are CIRCULAR. The retail 1662186 sheet is SQUARE (upstream masks it with
+-- CreateMaskTexture, which returns nil on 3.3.5a), so a circular alpha mask was baked into each
+-- class cell offline (DXT5→DDS decode → per-cell circle mask → TGA). Same layout, so the texcoords
+-- below are unchanged. Half-res (1024x512) RLE TGA; normalized texcoords are resolution-independent.
+NE.tex.RegisterLocal(1662186, P .. "1662186-classicon.blp")                   -- circular class icons (baked)
+
 -- Masks (full-texcoord 0->1; circular/sheen alpha clips).
 NE.tex.RegisterLocal(5899876, P .. "5899876-spellbook-spellicon-mask.blp")    -- spell-icon circular clip
 NE.tex.RegisterLocal(5794906, P .. "5794906-spellbook-sheen-mask.blp")        -- icon-frame sheen mask
@@ -40,6 +48,24 @@ NE.tex.RegisterLocal(4731579, P .. "4731579-talents-circle-sheenmask.blp")    --
 -- 2. atlas-name -> texcoord rect  (NE.tex.RegisterAtlases)
 --    Rects transcribed verbatim from NewEra/Generated/AtlasData.lua.
 -- ============================================================================
+
+-- Sheet 1662186 — class icons (128x128 each). evoker has no 3.3.5a class, kept for parity (never
+-- selected). Coords transcribed from NewEra/Generated/AtlasData.lua:2402-2414.
+NE.tex.RegisterAtlases({
+  ["classicon-deathknight"] = { file=1662186, left=0.000488, right=0.062988, top=0.000977, bottom=0.125977, width=128, height=128 },
+  ["classicon-demonhunter"] = { file=1662186, left=0.000488, right=0.062988, top=0.127930, bottom=0.252930, width=128, height=128 },
+  ["classicon-druid"]       = { file=1662186, left=0.000488, right=0.062988, top=0.254883, bottom=0.379883, width=128, height=128 },
+  ["classicon-evoker"]      = { file=1662186, left=0.000488, right=0.062988, top=0.381836, bottom=0.506836, width=128, height=128 },
+  ["classicon-hunter"]      = { file=1662186, left=0.000488, right=0.062988, top=0.508789, bottom=0.633789, width=128, height=128 },
+  ["classicon-mage"]        = { file=1662186, left=0.000488, right=0.062988, top=0.635742, bottom=0.760742, width=128, height=128 },
+  ["classicon-monk"]        = { file=1662186, left=0.000488, right=0.062988, top=0.762695, bottom=0.887695, width=128, height=128 },
+  ["classicon-paladin"]     = { file=1662186, left=0.063965, right=0.126465, top=0.000977, bottom=0.125977, width=128, height=128 },
+  ["classicon-priest"]      = { file=1662186, left=0.063965, right=0.126465, top=0.127930, bottom=0.252930, width=128, height=128 },
+  ["classicon-rogue"]       = { file=1662186, left=0.063965, right=0.126465, top=0.254883, bottom=0.379883, width=128, height=128 },
+  ["classicon-shaman"]      = { file=1662186, left=0.063965, right=0.126465, top=0.381836, bottom=0.506836, width=128, height=128 },
+  ["classicon-warlock"]     = { file=1662186, left=0.063965, right=0.126465, top=0.508789, bottom=0.633789, width=128, height=128 },
+  ["classicon-warrior"]     = { file=1662186, left=0.063965, right=0.126465, top=0.635742, bottom=0.760742, width=128, height=128 },
+})
 
 -- Sheet 5834697 — evergreen book backgrounds.
 NE.tex.RegisterAtlases({

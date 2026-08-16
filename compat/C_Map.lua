@@ -4,7 +4,7 @@
 -- DOWNPORT: Classic 1.15's C_Map is a uiMapID-based world-map model that 3.3.5a
 -- simply does not have (3.3.5 uses SetMapToCurrentZone / GetCurrentMapAreaID /
 -- GetPlayerMapPosition with a totally different id space). The v1 modules
--- (CharacterPanel, Spellbook, Talents, QuestFrame, MerchantFrame, MailFrame) do NOT
+-- (Spellbook, Talents, QuestFrame, MerchantFrame, MailFrame) do NOT
 -- call C_Map — it's referenced only by NewEra's WorldMap/Minimap/Quest map providers
 -- which are out of scope for v1. CONTRACTS §1 still asks for a best-effort shim so
 -- anything that incidentally probes C_Map gets safe nils rather than a nil-index

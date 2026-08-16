@@ -4,7 +4,7 @@
 --   (1) BLP paths point at OUR addon (Textures\Guild\...), and
 --   (2) the atlas-name → texcoord rects NewEra read from its generated NE_ATLAS global are
 --       TRANSCRIBED here into NE.tex.atlases via NE.tex.RegisterAtlases (the 3.3.5a client has
---       no native atlas DB; same convention as modules/character/Assets.lua + Professions/Assets.lua).
+--       no native atlas DB; same convention as modules/professions/Assets.lua).
 --
 -- Source coord rects transcribed verbatim from NewEra/Generated/AtlasData.lua (build 12.0.5.67451):
 --   communities-guildbanner-background -> AtlasData.lua:2830

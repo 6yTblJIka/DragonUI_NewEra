@@ -60,8 +60,8 @@ local FONT_TITLE_SIZE  = 14
 local FONT_PAGE_SIZE   = 14
 
 -- Category tabs — seated ON the wooden header, tops tucked just under the title bar (host top).
--- Dimensions match the Character panel's tabs (h 36 inactive / 42 active, min-w 70, +24 text pad,
--- 1px gap), applied in the Refresh chain loop + setTabArt.
+-- Dimensions match the addon's standard reskinned tabs (h 36 inactive / 42 active, min-w 70,
+-- +24 text pad, 1px gap), applied in the Refresh chain loop + setTabArt.
 local CAT_TAB_X        = 70
 local CAT_TAB_TOP      = -2
 local TAB_H_INACTIVE   = 36
@@ -620,8 +620,8 @@ local function categoryTab(i)
   return t
 end
 
--- Drive a reskinned tab's selected/deselected ART manually (same as the Character panel's
--- TabButtons.setTabArt). ReskinClassicTab paints the ACTIVE/gold atlas onto the *Disabled pieces,
+-- Drive a reskinned tab's selected/deselected ART manually. ReskinClassicTab paints the
+-- ACTIVE/gold atlas onto the *Disabled pieces,
 -- so SELECTED → show the *Disabled (gold) pieces + hide the regular ones; DESELECTED → reverse.
 -- (PanelTemplates_SetTab doesn't honour the reskin, which is why every tab read as active.) Also
 -- mute the custom hover highlight on the selected tab so it doesn't bleed over the gold art.
@@ -1431,7 +1431,7 @@ function SB.Refresh()
   for i, cat in ipairs(cats) do
     local t = categoryTab(i)
     t:SetText(cat.label)
-    -- Width to text, same as the Character panel's resizeTab (reset → measure → max(min, w+pad)).
+    -- Width to text (reset → measure → max(min, w+pad)).
     local txt = _G[t:GetName() .. "Text"]
     local tw = 0
     if txt then

@@ -1231,7 +1231,7 @@ local function createWindow()
   if G.frame then return G.frame end
 
   -- DOWNPORT: a bare Frame (no "PortraitFrameTemplate" widget-template inheritance) — matches
-  -- modules/professions + modules/spellbook + modules/character, NOT the Auction House module's
+  -- modules/professions + modules/spellbook, NOT the Auction House module's
   -- template-inherited approach. On this client, inheriting the template didn't yield a usable
   -- f.portrait region and left the chrome looking flat; every OTHER window in this addon builds
   -- 100% of its chrome (body/streaks/nineslice/portrait) manually on a plain frame, which is the

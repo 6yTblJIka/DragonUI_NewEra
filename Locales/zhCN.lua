@@ -44,51 +44,6 @@ L["Has Skill Up"] = "可提升技能"
 L["Have Materials"] = "拥有材料"
 
 -- ============================================================================
--- CHARACTER, TITLES, EQUIPMENT MANAGER
--- ============================================================================
-
-L["Attributes"] = "属性"
-L["Spell"] = "法术"
-L["Resistances"] = "抗性"
-L["Maximum Health. If your health reaches zero, you will die."] = "最大生命值。生命值降为零时你将死亡。"
-L["Your maximum %s."] = "你的最大%s。"
-L["Increases attack power for some classes and the damage you block with a shield."] = "提高部分职业的攻击强度，以及你用盾牌格挡的伤害量。"
-L["Increases critical strike chance, dodge chance, armor, and (for some classes) attack power."] = "提高爆击几率、躲闪几率、护甲，以及（部分职业的）攻击强度。"
-L["Increases your maximum health."] = "提高你的最大生命值。"
-L["Increases your maximum mana and your spell critical strike chance."] = "提高你的最大法力值和法术爆击几率。"
-L["Increases your health and mana regeneration while out of combat."] = "提高你脱离战斗时的生命值和法力值回复速度。"
-L["Seconds between melee swings."] = "近战攻击间隔（秒）。"
-L["Improves your chance to hit by %.2f%%."] = "使你的命中几率提高%.2f%%。"
-L["Chance of melee attacks dealing extra damage."] = "近战攻击造成额外伤害的几率。"
-L["Armor Penetration"] = "护甲穿透"
-L["Reduces the target's armor by up to %.2f%%."] = "最多降低目标%.2f%%的护甲。"
-L["Reduces the chance your attacks are dodged or parried."] = "降低你的攻击被躲闪或招架的几率。"
-L["DPS"] = "每秒伤害"
-L["Hit Chance"] = "命中几率"
-L["Reduces your chance to miss."] = "降低你的未命中几率。"
-L["Crit Chance"] = "爆击几率"
-L["Chance of ranged attacks dealing extra damage."] = "远程攻击造成额外伤害的几率。"
-L["Lowest bonus damage across schools. Hover the paper-doll stat for a breakdown."] = "所有法术学派中最低的额外伤害。将鼠标悬停在角色属性上可查看明细。"
-L["Bonus power applied to healing spells."] = "作用于治疗法术的额外强度。"
-L["Not casting: %d / 5s\nWhile casting: %d / 5s"] = "非施法时：%d / 5秒\n施法时：%d / 5秒"
-L["Chance of spells dealing extra damage."] = "法术造成额外伤害的几率。"
-L["Haste Rating"] = "急速等级"
-L["Reduces chance to be hit and crit; raises block/dodge/parry."] = "降低被命中和被爆击的几率；提高格挡、躲闪和招架几率。"
-L["Chance to dodge enemy melee attacks."] = "躲闪敌人近战攻击的几率。"
-L["Chance to parry. Requires a weapon."] = "招架几率。需要装备武器。"
-L["Chance to block. Requires a shield.\nBlock Value: %d"] = "格挡几率。需要装备盾牌。\n格挡值：%d"
-L["Resilience"] = "韧性"
-L["Reduces the chance you'll be critically hit by %.2f%% and reduces critical damage taken."] = "使你被爆击的几率降低%.2f%%，并减少受到的爆击伤害。"
-L["Reduces magic damage taken."] = "减少受到的魔法伤害。"
-L["Character"] = "角色"
-L["Titles"] = "头衔"
-L["Equipment Manager"] = "装备管理器"
-L["None"] = "无"
-L["New Equipment Set"] = "新建装备套装"
-L["Edit"] = "编辑"
-L["equipped"] = "已装备"
-
--- ============================================================================
 -- AUCTION HOUSE
 -- ============================================================================
 
@@ -144,20 +99,6 @@ L["Sorting…"] = "正在整理……"
 L["Swapping bag…"] = "正在更换背包……"
 L["The same setting as Enable Item Level in DragonUI's options (Enhancements > Item Level). Covers the character panel and every other frame too."] = "与 DragonUI 选项中“启用物品等级”（增强 > 物品等级）为同一项设置。同样作用于角色面板和其他所有窗口。"
 L["Turn on Item Level in DragonUI's options (Enhancements > Item Level) first."] = "请先在 DragonUI 选项中开启“物品等级”（增强 > 物品等级）。"
-
--- ============================================================================
--- CHARACTER
--- ============================================================================
-
-L["A modern Dragonflight character window (custom frame; the Blizzard frame is hidden)."] = "现代巨龙时代风格的角色窗口（自定义窗体；暴雪原窗口会被隐藏）。"
-L["Background"] = "背景"
-L["Character Panel"] = "角色面板"
-L["Character panel settings"] = "角色面板设置"
-L["Dark"] = "深色"
-L["Earn honorable kills in battlegrounds and world PvP to gain rank."] = "在战场和野外 PvP 中获得荣誉击杀以提升军衔。"
-L["Equipment manager not ready."] = "装备管理器尚未就绪。"
-L["Stone"] = "石质"
-L["The modern Dragonflight character window. Off by default because DragonUI ships its own."] = "现代巨龙时代风格的角色窗口。默认关闭，因为 DragonUI 自带了一个。"
 
 -- ============================================================================
 -- COOLDOWN MANAGER
@@ -239,6 +180,7 @@ L["Move to %s"] = "移动到%s"
 L["Name Only"] = "仅名称"
 L["Name this layout:"] = "为该布局命名："
 L["New Layout"] = "新建布局"
+L["None"] = "无"
 L["Not displayed on any viewer"] = "未在任何显示器上显示"
 L["Not yet learned"] = "尚未学会"
 L["Nothing to undo. It covers LAYOUTS, not the settings|non these tabs — a viewer's own size and position revert|nfrom its edit-mode panel instead."] = "没有可撤销的内容。它涵盖的是“布局”，而非这些标签页|n中的设置——显示器自身的大小和位置需从它的|n编辑模式面板还原。"
@@ -441,7 +383,6 @@ L["\n\nReset at a class trainer, then load again. (The rest has been staged — 
 L["Adventure Guide (Encounter Journal)"] = "冒险指南（首领战日志）"
 L["Auction House"] = "拍卖行"
 L["Boss and loot browser. Requires a /reload to take effect (the micro button doesn't re-check this live)."] = "首领与战利品浏览器。需 /reload 才能生效（微型按钮不会实时重新检查此项）。"
-L["Character panel"] = "角色面板"
 L["Click for this frame's settings."] = "点击可查看该窗口的设置。"
 L["Combined Bag"] = "合并背包"
 L["Custom"] = "自定义"
@@ -453,7 +394,6 @@ L["Looking For Group"] = "寻找组队"
 L["Looking For Group (Dungeon/Raid Finder)"] = "寻找组队（地下城/团队副本查找器）"
 L["NewEra panels ported onto DragonUI. Toggle a panel below to enable or disable it. Panels appear here as their modules load."] = "移植到 DragonUI 上的 NewEra 面板。在下方开启或关闭某个面板。面板会随其模块载入而出现在这里。"
 L["No scaling"] = "不缩放"
-L["Our Dragonflight character window. OFF by default — DragonUI ships its own. Reload (/reload) to apply."] = "我们的巨龙时代风格角色窗口。默认“关闭”——DragonUI 自带了一个。需 /reload 生效。"
 L["Our all-in-one bag window. Turn OFF to use the stock Blizzard bags instead. Reload (/reload) to apply."] = "我们的一体式背包窗口。关闭后将改用暴雪原版背包。需 /reload 生效。"
 L["Professions"] = "专业"
 L["Reload (/reload) to apply."] = "需 /reload 生效。"

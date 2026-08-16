@@ -41,58 +41,7 @@ T = {
     "Have Materials": "Materialien vorhanden",
 
     # ── Character, titles, equipment manager ────────────────────────────────────────────────────
-    "Attributes": "Attribute",
-    "Spell": "Zauber",
-    "Resistances": "Widerstände",
-    "Maximum Health. If your health reaches zero, you will die.":
-        "Maximale Gesundheit. Fällt Eure Gesundheit auf null, sterbt Ihr.",
-    "Your maximum %s.": "Euer maximaler Wert für %s.",
-    "Increases attack power for some classes and the damage you block with a shield.":
-        "Erhöht die Angriffskraft einiger Klassen und den mit einem Schild geblockten Schaden.",
-    "Increases critical strike chance, dodge chance, armor, and (for some classes) attack power.":
-        "Erhöht kritische Trefferchance, Ausweichchance, Rüstung und (bei einigen Klassen) Angriffskraft.",
-    "Increases your maximum health.": "Erhöht Eure maximale Gesundheit.",
-    "Increases your maximum mana and your spell critical strike chance.":
-        "Erhöht Euer maximales Mana und Eure kritische Zaubertrefferchance.",
-    "Increases your health and mana regeneration while out of combat.":
-        "Erhöht Eure Gesundheits- und Manaregeneration außerhalb des Kampfes.",
-    "Seconds between melee swings.": "Sekunden zwischen Nahkampfangriffen.",
-    "Improves your chance to hit by %.2f%%.": "Erhöht Eure Trefferchance um %.2f%%.",
-    "Chance of melee attacks dealing extra damage.":
-        "Chance, dass Nahkampfangriffe zusätzlichen Schaden verursachen.",
-    "Armor Penetration": "Rüstungsdurchschlag",
-    "Reduces the target's armor by up to %.2f%%.": "Verringert die Rüstung des Ziels um bis zu %.2f%%.",
-    "Reduces the chance your attacks are dodged or parried.":
-        "Verringert die Chance, dass Euren Angriffen ausgewichen oder sie pariert werden.",
-    "DPS": "DPS",
-    "Hit Chance": "Trefferchance",
-    "Reduces your chance to miss.": "Verringert Eure Chance zu verfehlen.",
-    "Crit Chance": "Kritische Chance",
-    "Chance of ranged attacks dealing extra damage.":
-        "Chance, dass Distanzangriffe zusätzlichen Schaden verursachen.",
-    "Lowest bonus damage across schools. Hover the paper-doll stat for a breakdown.":
-        "Niedrigster Bonusschaden aller Schulen. Fahrt über den Charakterwert für eine Aufschlüsselung.",
-    "Bonus power applied to healing spells.": "Bonusstärke für Heilzauber.",
-    "Not casting: %d / 5s\\nWhile casting: %d / 5s": "Außerhalb des Zaubers: %d / 5s\\nBeim Zaubern: %d / 5s",
-    "Chance of spells dealing extra damage.": "Chance, dass Zauber zusätzlichen Schaden verursachen.",
-    "Haste Rating": "Tempowertung",
-    "Reduces chance to be hit and crit; raises block/dodge/parry.":
-        "Verringert die Chance, getroffen und kritisch getroffen zu werden; erhöht Blocken/Ausweichen/Parieren.",
-    "Chance to dodge enemy melee attacks.": "Chance, gegnerischen Nahkampfangriffen auszuweichen.",
-    "Chance to parry. Requires a weapon.": "Chance zu parieren. Erfordert eine Waffe.",
-    "Chance to block. Requires a shield.\\nBlock Value: %d":
-        "Chance zu blocken. Erfordert einen Schild.\\nBlockwert: %d",
-    "Resilience": "Abhärtung",
-    "Reduces the chance you'll be critically hit by %.2f%% and reduces critical damage taken.":
-        "Verringert die Chance, kritisch getroffen zu werden, um %.2f%% und senkt den erlittenen kritischen Schaden.",
-    "Reduces magic damage taken.": "Verringert erlittenen Magieschaden.",
-    "Character": "Charakter",
-    "Titles": "Titel",
-    "Equipment Manager": "Ausrüstungsmanager",
     "None": "Keine",
-    "New Equipment Set": "Neues Ausrüstungsset",
-    "Edit": "Bearbeiten",
-    "equipped": "angelegt",
 
     # ── Auction house ───────────────────────────────────────────────────────────────────────────
     " -- partial scan": " -- Teilsuche",
@@ -160,20 +109,6 @@ T = {
         "(Erweiterungen > Gegenstandsstufe). Gilt auch für das Charakterfenster und alle anderen Fenster.",
     "Turn on Item Level in DragonUI's options (Enhancements > Item Level) first.":
         "Aktiviert zuerst 'Gegenstandsstufe' in den DragonUI-Optionen (Erweiterungen > Gegenstandsstufe).",
-
-    # ── Character panel ─────────────────────────────────────────────────────────────────────────
-    "A modern Dragonflight character window (custom frame; the Blizzard frame is hidden).":
-        "Ein modernes Dragonflight-Charakterfenster (eigener Rahmen; das Blizzard-Fenster wird ausgeblendet).",
-    "Background": "Hintergrund",
-    "Character Panel": "Charakterfenster",
-    "Character panel settings": "Einstellungen des Charakterfensters",
-    "Dark": "Dunkel",
-    "Earn honorable kills in battlegrounds and world PvP to gain rank.":
-        "Erzielt ehrenhafte Siege in Schlachtfeldern und im Welt-PvP, um im Rang aufzusteigen.",
-    "Equipment manager not ready.": "Ausrüstungsmanager ist nicht bereit.",
-    "Stone": "Stein",
-    "The modern Dragonflight character window. Off by default because DragonUI ships its own.":
-        "Das moderne Dragonflight-Charakterfenster. Standardmäßig aus, da DragonUI ein eigenes mitliefert.",
 
     # ── Cooldown manager ────────────────────────────────────────────────────────────────────────
     "(empty)": "(leer)",
@@ -635,7 +570,6 @@ T = {
     "Boss and loot browser. Requires a /reload to take effect (the micro button doesn't re-check this "
     "live).":
         "Boss- und Beutebrowser. Erfordert ein /reload (die Mikroschaltfläche prüft dies nicht live erneut).",
-    "Character panel": "Charakterfenster",
     "Click for this frame's settings.": "Klicken für die Einstellungen dieses Fensters.",
     "Combined Bag": "Kombinierte Tasche",
     "Custom": "Benutzerdefiniert",
@@ -657,10 +591,6 @@ T = {
         "NewEra-Fenster, portiert auf DragonUI. Schaltet ein Fenster unten ein oder aus. Fenster erscheinen "
         "hier, sobald ihre Module geladen werden.",
     "No scaling": "Keine Skalierung",
-    "Our Dragonflight character window. OFF by default — DragonUI ships its own. Reload (/reload) to "
-    "apply.":
-        "Unser Dragonflight-Charakterfenster. Standardmäßig AUS — DragonUI liefert ein eigenes mit. /reload "
-        "zum Anwenden.",
     "Our all-in-one bag window. Turn OFF to use the stock Blizzard bags instead. Reload (/reload) to "
     "apply.":
         "Unser Alles-in-einem-Taschenfenster. AUSschalten, um stattdessen die Standardtaschen von Blizzard "

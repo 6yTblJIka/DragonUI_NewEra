@@ -36,57 +36,7 @@ T = {
     "Have Materials": "재료 보유",
 
     # ── Character, titles, equipment manager ────────────────────────────────────────────────────
-    "Attributes": "능력치",
-    "Spell": "주문",
-    "Resistances": "저항력",
-    "Maximum Health. If your health reaches zero, you will die.":
-        "최대 생명력입니다. 생명력이 0이 되면 사망합니다.",
-    "Your maximum %s.": "최대 %s 수치입니다.",
-    "Increases attack power for some classes and the damage you block with a shield.":
-        "일부 직업의 공격력과 방패로 막아내는 피해량을 증가시킵니다.",
-    "Increases critical strike chance, dodge chance, armor, and (for some classes) attack power.":
-        "치명타 확률, 회피 확률, 방어도, 그리고 (일부 직업의) 공격력을 증가시킵니다.",
-    "Increases your maximum health.": "최대 생명력을 증가시킵니다.",
-    "Increases your maximum mana and your spell critical strike chance.":
-        "최대 마나와 주문 치명타 확률을 증가시킵니다.",
-    "Increases your health and mana regeneration while out of combat.":
-        "비전투 시 생명력과 마나 회복량을 증가시킵니다.",
-    "Seconds between melee swings.": "근접 공격 사이의 간격(초)입니다.",
-    "Improves your chance to hit by %.2f%%.": "적중 확률을 %.2f%% 증가시킵니다.",
-    "Chance of melee attacks dealing extra damage.": "근접 공격이 추가 피해를 입힐 확률입니다.",
-    "Armor Penetration": "방어 관통",
-    "Reduces the target's armor by up to %.2f%%.": "대상의 방어도를 최대 %.2f%% 감소시킵니다.",
-    "Reduces the chance your attacks are dodged or parried.":
-        "공격이 회피되거나 무기 막기 될 확률을 감소시킵니다.",
-    "DPS": "초당 피해량",
-    "Hit Chance": "적중 확률",
-    "Reduces your chance to miss.": "빗나갈 확률을 감소시킵니다.",
-    "Crit Chance": "치명타 확률",
-    "Chance of ranged attacks dealing extra damage.": "원거리 공격이 추가 피해를 입힐 확률입니다.",
-    "Lowest bonus damage across schools. Hover the paper-doll stat for a breakdown.":
-        "모든 계열 중 가장 낮은 추가 피해량입니다. 캐릭터 능력치 위에 마우스를 올리면 상세 내역을 볼 수 "
-        "있습니다.",
-    "Bonus power applied to healing spells.": "치유 주문에 적용되는 추가 강도입니다.",
-    "Not casting: %d / 5s\\nWhile casting: %d / 5s": "시전하지 않을 때: %d / 5초\\n시전 중: %d / 5초",
-    "Chance of spells dealing extra damage.": "주문이 추가 피해를 입힐 확률입니다.",
-    "Haste Rating": "가속 등급",
-    "Reduces chance to be hit and crit; raises block/dodge/parry.":
-        "적중당하거나 치명타를 입을 확률을 낮추고, 방패 막기/회피/무기 막기 확률을 높입니다.",
-    "Chance to dodge enemy melee attacks.": "적의 근접 공격을 회피할 확률입니다.",
-    "Chance to parry. Requires a weapon.": "무기 막기 확률입니다. 무기가 필요합니다.",
-    "Chance to block. Requires a shield.\\nBlock Value: %d":
-        "방패 막기 확률입니다. 방패가 필요합니다.\\n방어량: %d",
-    "Resilience": "탄력",
-    "Reduces the chance you'll be critically hit by %.2f%% and reduces critical damage taken.":
-        "치명타를 입을 확률을 %.2f%% 감소시키고 받는 치명타 피해를 줄입니다.",
-    "Reduces magic damage taken.": "받는 마법 피해를 감소시킵니다.",
-    "Character": "캐릭터",
-    "Titles": "칭호",
-    "Equipment Manager": "장비 관리자",
     "None": "없음",
-    "New Equipment Set": "새 장비 세트",
-    "Edit": "편집",
-    "equipped": "착용 중",
 
     # ── Auction house ───────────────────────────────────────────────────────────────────────────
     " -- partial scan": " -- 부분 검색",
@@ -152,20 +102,6 @@ T = {
         "모든 창에도 적용됩니다.",
     "Turn on Item Level in DragonUI's options (Enhancements > Item Level) first.":
         "먼저 DragonUI 설정에서 '아이템 레벨'(강화 > 아이템 레벨)을 켜십시오.",
-
-    # ── Character panel ─────────────────────────────────────────────────────────────────────────
-    "A modern Dragonflight character window (custom frame; the Blizzard frame is hidden).":
-        "현대적인 용의 군단 스타일 캐릭터 창입니다 (자체 프레임이며, 블리자드 창은 숨겨집니다).",
-    "Background": "배경",
-    "Character Panel": "캐릭터 창",
-    "Character panel settings": "캐릭터 창 설정",
-    "Dark": "어두운색",
-    "Earn honorable kills in battlegrounds and world PvP to gain rank.":
-        "전장과 야외 PvP에서 명예 처치를 획득하여 계급을 올리십시오.",
-    "Equipment manager not ready.": "장비 관리자가 아직 준비되지 않았습니다.",
-    "Stone": "석재",
-    "The modern Dragonflight character window. Off by default because DragonUI ships its own.":
-        "현대적인 용의 군단 스타일 캐릭터 창입니다. DragonUI에 자체 창이 있으므로 기본적으로 꺼져 있습니다.",
 
     # ── Cooldown manager ────────────────────────────────────────────────────────────────────────
     "(empty)": "(비어 있음)",
@@ -608,7 +544,6 @@ T = {
     "live).":
         "우두머리와 전리품 탐색기입니다. 적용하려면 /reload가 필요합니다 (작은 버튼은 이 값을 실시간으로 "
         "다시 확인하지 않습니다).",
-    "Character panel": "캐릭터 창",
     "Click for this frame's settings.": "클릭하면 이 창의 설정이 열립니다.",
     "Combined Bag": "통합 가방",
     "Custom": "사용자 지정",
@@ -628,10 +563,6 @@ T = {
         "DragonUI로 이식된 NewEra 창입니다. 아래에서 창을 켜거나 끌 수 있습니다. 창은 해당 모듈이 로드되면 "
         "여기에 나타납니다.",
     "No scaling": "크기 조절 안 함",
-    "Our Dragonflight character window. OFF by default — DragonUI ships its own. Reload (/reload) to "
-    "apply.":
-        "이 애드온의 용의 군단 스타일 캐릭터 창입니다. 기본적으로 '꺼짐'입니다 — DragonUI에 자체 창이 "
-        "있습니다. 적용하려면 /reload 하십시오.",
     "Our all-in-one bag window. Turn OFF to use the stock Blizzard bags instead. Reload (/reload) to "
     "apply.":
         "이 애드온의 일체형 가방 창입니다. 끄면 기본 블리자드 가방을 사용합니다. 적용하려면 /reload "

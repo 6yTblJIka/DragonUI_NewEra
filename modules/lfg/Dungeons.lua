@@ -569,9 +569,9 @@ local function buildPane(host)
     FauxScrollFrame_OnVerticalScroll(self, offset, ROW_H, updateSpecificList)
   end)
   scroll.ScrollBar = _G[SCROLL_NAME .. "ScrollBar"]   -- 3.3.5a template doesn't set the parentKey
-  -- Hand-built minimal scrollbar (same as the character window's lists). NE.scrollbar.Reskin's
-  -- stock-slider re-skin leaves the bar untextured/invisible on 3.3.5a (its atlas sheets aren't
-  -- shipped); BuildCustom draws a visible bar. See modules/character/Reputation.lua.
+  -- Hand-built minimal scrollbar. NE.scrollbar.Reskin's stock-slider re-skin leaves the bar
+  -- untextured/invisible on 3.3.5a (its atlas sheets aren't shipped); BuildCustom draws a
+  -- visible bar.
   -- Via L.BuildListBar, not BuildCustom directly -- it adds the DIALOG strata bump this window
   -- needs for the bar to render in front of its own background at all (see Window.lua).
   L.BuildListBar(scroll, { x = -8, alwaysShow = true })

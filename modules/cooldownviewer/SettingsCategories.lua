@@ -6,8 +6,8 @@
 -- numbers are upstream's, probe-confirmed against retail, and are kept exactly.
 --
 -- DOWNPORT: upstream builds its header with NE.listheader.Build, a Core helper this addon does not
--- have. Built inline here instead — the same substitution modules/character/Reputation.lua made for
--- the same missing helper, using the client's own +/- buttons for the collapse affordance.
+-- have. Built inline here instead, using the client's own +/- buttons for the collapse affordance
+-- (the same substitution every other window that wanted a collapsible header made).
 --
 -- Phase 4b-2 rendered and tooltipped. 4b-3 made the tiles live: right-click routes to
 -- CDS.OnItemClick, and the alert badge / tooltip extras come from SettingsMenu.lua. Both are
@@ -259,8 +259,8 @@ end
 
 -- ── Category section ────────────────────────────────────────────────────────────────────────────
 
--- Inline collapsible header. NE.listheader does not exist here; this is the same substitution
--- modules/character/Reputation.lua makes, with the client's own +/- collapse buttons.
+-- Inline collapsible header. NE.listheader does not exist here; this substitutes for it with the
+-- client's own +/- collapse buttons.
 local function makeHeader(parent, onToggle)
   local h = CreateFrame("Button", nil, parent)
   h:SetHeight(HEADER_H)

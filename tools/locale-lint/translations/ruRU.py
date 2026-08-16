@@ -35,68 +35,9 @@ T = {
     "Have Materials": "Есть реагенты",
 
     # ── Character, titles, equipment manager (human-translated) ─────────────────────────────────
-    "Attributes": "Основные",
-    "Spell": "Магия",
-    "Resistances": "Сопротивление",
-    "Maximum Health. If your health reaches zero, you will die.":
-        "Максимальный запас здоровья. Если ваше здоровье упадет до нуля, вы погибнете.",
     # Was "Максимальное значение данного ресурса." -- the %s was dropped, so the resource name never
     # appeared. Restored so the placeholder round-trips.
-    "Your maximum %s.": "Максимальное значение: %s.",
-    "Increases attack power for some classes and the damage you block with a shield.":
-        "Увеличивает силу атаки некоторых классов и показатель блока щитом.",
-    "Increases critical strike chance, dodge chance, armor, and (for some classes) attack power.":
-        "Увеличивает шанс критического удара, уклонение, броню и (для некоторых классов) силу атаки.",
-    "Increases your maximum health.": "Увеличивает максимальный запас здоровья.",
-    "Increases your maximum mana and your spell critical strike chance.":
-        "Увеличивает максимальный запас маны и шанс критического удара заклинаниями.",
-    "Increases your health and mana regeneration while out of combat.":
-        "Увеличивает скорость восполнения здоровья и маны вне боя.",
-    "Seconds between melee swings.": "Задержка между ударами ближнего боя (сек.)",
-    "Improves your chance to hit by %.2f%%.": "Увеличивает вероятность попадания по цели на %.2f%%.",
-    "Chance of melee attacks dealing extra damage.":
-        "Вероятность нанесения дополнительного урона при атаках ближнего боя.",
-    "Armor Penetration": "Рейт. пробивание брони",
-    "Reduces the target's armor by up to %.2f%%.": "Снижает броню цели максимум на %.2f%%.",
-    "Reduces the chance your attacks are dodged or parried.":
-        "Снижает вероятность уклонения или парирования вашей атаки.",
-    "DPS": "Урон в сек.",
-    "Hit Chance": "Рейт. меткости",
-    "Reduces your chance to miss.": "Снижает вероятность промаха.",
-    "Crit Chance": "Крит. Удар",
-    "Chance of ranged attacks dealing extra damage.":
-        "Вероятность нанесения дополнительного урона при атаках дальнего боя.",
-    "Lowest bonus damage across schools. Hover the paper-doll stat for a breakdown.":
-        "Наименьший дополнительный урон среди всех школ магии. Наведите курсор на характеристику "
-        "персонажа для подробностей.",
-    "Bonus power applied to healing spells.":
-        "Дополнительный эффект, применяемый к исцеляющим заклинаниям.",
-    "Not casting: %d / 5s\\nWhile casting: %d / 5s":
-        "Вне применения: %d / 5 сек.\\nПри применении: %d / 5cек.",
-    "Chance of spells dealing extra damage.":
-        "Вероятность нанесения дополнительного урона заклинаниями.",
-    "Haste Rating": "Рейт. скорости",
-    "Reduces chance to be hit and crit; raises block/dodge/parry.":
-        "Снижает вероятность попадания и критического удара по вам; повышает шанс блока, уклонения и "
-        "парирования.",
-    "Chance to dodge enemy melee attacks.":
-        "Вероятность уклониться от атак противника в ближнем бою.",
-    "Chance to parry. Requires a weapon.":
-        "Вероятность парировать атаку противника. Требуется оружие.",
-    "Chance to block. Requires a shield.\\nBlock Value: %d":
-        "Вероятность заблокировать атаку щитом. Требуется щит.\\nПоказатель блока: %d",
-    "Resilience": "Устойчивость",
-    "Reduces the chance you'll be critically hit by %.2f%% and reduces critical damage taken.":
-        "Снижает вероятность получения критического удара на %.2f%% и уменьшает получаемый критический "
-        "урон.",
-    "Reduces magic damage taken.": "Снижает получаемый урон от соответствующей школы магии.",
-    "Character": "Персонаж",
-    "Titles": "Звания",
-    "Equipment Manager": "Управление экипировкой",
     "None": "Нет",
-    "New Equipment Set": "Новый комплект",
-    "Edit": "Редактировать",
-    "equipped": "надето",
 
     # ── Auction house ───────────────────────────────────────────────────────────────────────────
     " -- partial scan": " -- частичное сканирование",
@@ -165,21 +106,6 @@ T = {
         "предмета). Действует и на окно персонажа, и на все остальные окна.",
     "Turn on Item Level in DragonUI's options (Enhancements > Item Level) first.":
         "Сначала включите «Уровень предмета» в настройках DragonUI (Улучшения > Уровень предмета).",
-
-    # ── Character panel ─────────────────────────────────────────────────────────────────────────
-    "A modern Dragonflight character window (custom frame; the Blizzard frame is hidden).":
-        "Современное окно персонажа в стиле Dragonflight (собственная рамка; окно Blizzard скрыто).",
-    "Background": "Фон",
-    "Character Panel": "Окно персонажа",
-    "Character panel settings": "Настройки окна персонажа",
-    "Dark": "Тёмный",
-    "Earn honorable kills in battlegrounds and world PvP to gain rank.":
-        "Зарабатывайте почётные победы на полях боя и в мировом PvP, чтобы повысить ранг.",
-    "Equipment manager not ready.": "Управление экипировкой не готово.",
-    "Stone": "Камень",
-    "The modern Dragonflight character window. Off by default because DragonUI ships its own.":
-        "Современное окно персонажа в стиле Dragonflight. По умолчанию выключено, так как у DragonUI есть "
-        "своё.",
 
     # ── Cooldown manager ────────────────────────────────────────────────────────────────────────
     "(empty)": "(пусто)",
@@ -642,7 +568,6 @@ T = {
     "Boss and loot browser. Requires a /reload to take effect (the micro button doesn't re-check this "
     "live).":
         "Обозреватель боссов и добычи. Требуется /reload (микрокнопка не перепроверяет это на лету).",
-    "Character panel": "Окно персонажа",
     "Click for this frame's settings.": "Щёлкните для настроек этого окна.",
     "Combined Bag": "Объединённая сумка",
     "Custom": "Своё значение",
@@ -662,10 +587,6 @@ T = {
         "Окна NewEra, перенесённые на DragonUI. Включайте и выключайте окна ниже. Окна появляются здесь по "
         "мере загрузки их модулей.",
     "No scaling": "Без масштабирования",
-    "Our Dragonflight character window. OFF by default — DragonUI ships its own. Reload (/reload) to "
-    "apply.":
-        "Наше окно персонажа в стиле Dragonflight. По умолчанию ВЫКЛЮЧЕНО — у DragonUI есть своё. /reload "
-        "для применения.",
     "Our all-in-one bag window. Turn OFF to use the stock Blizzard bags instead. Reload (/reload) to "
     "apply.":
         "Наше окно сумок «всё в одном». ВЫКЛЮЧИТЕ, чтобы вместо него использовать стандартные сумки "

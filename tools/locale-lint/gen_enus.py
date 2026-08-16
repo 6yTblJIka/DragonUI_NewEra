@@ -21,7 +21,6 @@ ENUS = os.path.join(ROOT, "Locales", "enUS.lua")
 SECTIONS = [
     ("modules/auctionhouse", "AUCTION HOUSE"),
     ("modules/bags", "BAGS"),
-    ("modules/character", "CHARACTER"),
     ("modules/collections", "COLLECTIONS"),
     ("modules/cooldownviewer", "COOLDOWN MANAGER"),
     ("modules/encounterjournal", "ADVENTURE GUIDE"),

@@ -176,8 +176,8 @@ local function build()
   end
   if PC and PC.ModernizeCloseButton then PC.ModernizeCloseButton(f.CloseButton) end
 
-  -- Portrait: retail shows the spec icon. No specs on 3.3.5a, so use the class icon — the same
-  -- fallback the character panel's spec portrait uses, and a solid circle that fills the cutout.
+  -- Portrait: retail shows the spec icon. No specs on 3.3.5a, so use the class icon — a solid
+  -- circle that fills the cutout.
   if f.portrait and NE.portrait and NE.portrait.ApplyCutout then
     local _, class = UnitClass("player")
     local coords = class and CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[class]

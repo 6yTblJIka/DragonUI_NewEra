@@ -33,60 +33,7 @@ T = {
     "Have Materials": "Tenho materiais",
 
     # ── Character, titles, equipment manager ────────────────────────────────────────────────────
-    "Attributes": "Atributos",
-    "Spell": "Magia",
-    "Resistances": "Resistências",
-    "Maximum Health. If your health reaches zero, you will die.":
-        "Vida máxima. Se sua vida chegar a zero, você morrerá.",
-    "Your maximum %s.": "Seu %s máximo.",
-    "Increases attack power for some classes and the damage you block with a shield.":
-        "Aumenta o poder de ataque de algumas classes e o dano bloqueado com escudo.",
-    "Increases critical strike chance, dodge chance, armor, and (for some classes) attack power.":
-        "Aumenta a chance de acerto crítico, a chance de esquiva, a armadura e (para algumas classes) o "
-        "poder de ataque.",
-    "Increases your maximum health.": "Aumenta sua vida máxima.",
-    "Increases your maximum mana and your spell critical strike chance.":
-        "Aumenta sua mana máxima e sua chance de acerto crítico mágico.",
-    "Increases your health and mana regeneration while out of combat.":
-        "Aumenta sua regeneração de vida e mana fora de combate.",
-    "Seconds between melee swings.": "Segundos entre golpes corpo a corpo.",
-    "Improves your chance to hit by %.2f%%.": "Aumenta sua chance de acerto em %.2f%%.",
-    "Chance of melee attacks dealing extra damage.":
-        "Chance de ataques corpo a corpo causarem dano adicional.",
-    "Armor Penetration": "Penetração de armadura",
-    "Reduces the target's armor by up to %.2f%%.": "Reduz a armadura do alvo em até %.2f%%.",
-    "Reduces the chance your attacks are dodged or parried.":
-        "Reduz a chance de seus ataques serem esquivados ou aparados.",
-    "DPS": "DPS",
-    "Hit Chance": "Chance de acerto",
-    "Reduces your chance to miss.": "Reduz sua chance de errar.",
-    "Crit Chance": "Chance crítica",
-    "Chance of ranged attacks dealing extra damage.":
-        "Chance de ataques à distância causarem dano adicional.",
-    "Lowest bonus damage across schools. Hover the paper-doll stat for a breakdown.":
-        "Menor dano bônus entre as escolas. Passe o cursor sobre o atributo para ver o detalhamento.",
-    "Bonus power applied to healing spells.": "Poder bônus aplicado a magias de cura.",
-    "Not casting: %d / 5s\\nWhile casting: %d / 5s": "Sem conjurar: %d / 5s\\nConjurando: %d / 5s",
-    "Chance of spells dealing extra damage.": "Chance de magias causarem dano adicional.",
-    "Haste Rating": "Índice de aceleração",
-    "Reduces chance to be hit and crit; raises block/dodge/parry.":
-        "Reduz a chance de ser atingido e de sofrer críticos; aumenta bloqueio/esquiva/aparo.",
-    "Chance to dodge enemy melee attacks.":
-        "Chance de esquivar de ataques corpo a corpo inimigos.",
-    "Chance to parry. Requires a weapon.": "Chance de aparar. Requer uma arma.",
-    "Chance to block. Requires a shield.\\nBlock Value: %d":
-        "Chance de bloquear. Requer um escudo.\\nValor de bloqueio: %d",
-    "Resilience": "Resiliência",
-    "Reduces the chance you'll be critically hit by %.2f%% and reduces critical damage taken.":
-        "Reduz em %.2f%% a chance de sofrer acertos críticos e reduz o dano crítico recebido.",
-    "Reduces magic damage taken.": "Reduz o dano mágico recebido.",
-    "Character": "Personagem",
-    "Titles": "Títulos",
-    "Equipment Manager": "Gerenciador de equipamento",
     "None": "Nenhum",
-    "New Equipment Set": "Novo conjunto de equipamento",
-    "Edit": "Editar",
-    "equipped": "equipado",
 
     # ── Auction house ───────────────────────────────────────────────────────────────────────────
     " -- partial scan": " -- varredura parcial",
@@ -154,22 +101,6 @@ T = {
         "Vale também para o painel de personagem e todas as outras janelas.",
     "Turn on Item Level in DragonUI's options (Enhancements > Item Level) first.":
         "Ative antes 'Nível de item' nas opções do DragonUI (Melhorias > Nível de item).",
-
-    # ── Character panel ─────────────────────────────────────────────────────────────────────────
-    "A modern Dragonflight character window (custom frame; the Blizzard frame is hidden).":
-        "Uma janela de personagem moderna no estilo Dragonflight (moldura própria; a janela da Blizzard "
-        "fica oculta).",
-    "Background": "Fundo",
-    "Character Panel": "Painel de personagem",
-    "Character panel settings": "Configurações do painel de personagem",
-    "Dark": "Escuro",
-    "Earn honorable kills in battlegrounds and world PvP to gain rank.":
-        "Consiga abates honrosos em campos de batalha e JxJ no mundo para subir de patente.",
-    "Equipment manager not ready.": "O gerenciador de equipamento não está pronto.",
-    "Stone": "Pedra",
-    "The modern Dragonflight character window. Off by default because DragonUI ships its own.":
-        "A janela de personagem moderna no estilo Dragonflight. Desativada por padrão porque o DragonUI já "
-        "traz a sua.",
 
     # ── Cooldown manager ────────────────────────────────────────────────────────────────────────
     "(empty)": "(vazio)",
@@ -634,7 +565,6 @@ T = {
     "live).":
         "Navegador de chefes e despojos. Requer /reload para ter efeito (o microbotão não reconfere isso "
         "ao vivo).",
-    "Character panel": "Painel de personagem",
     "Click for this frame's settings.": "Clique para ver as configurações desta janela.",
     "Combined Bag": "Bolsa combinada",
     "Custom": "Personalizado",
@@ -654,10 +584,6 @@ T = {
         "Painéis do NewEra portados para o DragonUI. Ative ou desative um painel abaixo. Os painéis "
         "aparecem aqui conforme seus módulos são carregados.",
     "No scaling": "Sem escala",
-    "Our Dragonflight character window. OFF by default — DragonUI ships its own. Reload (/reload) to "
-    "apply.":
-        "Nossa janela de personagem no estilo Dragonflight. DESATIVADA por padrão — o DragonUI traz a "
-        "dele. /reload para aplicar.",
     "Our all-in-one bag window. Turn OFF to use the stock Blizzard bags instead. Reload (/reload) to "
     "apply.":
         "Nossa janela de bolsas tudo-em-um. DESATIVE para usar as bolsas originais da Blizzard. /reload "

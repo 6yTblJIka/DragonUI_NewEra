@@ -14,8 +14,7 @@ local S = NE.scale
 
 S.MIN, S.MAX = 0.5, 1.5
 
--- Per-window defaults preserve each window's prior look: spellbook/talents were a fixed 0.8; the
--- character panel had no custom scale (= followed the UI scale).
+-- Per-window defaults preserve each window's prior look: spellbook/talents were a fixed 0.8.
 -- BUG FIX (owner report 2026-07-17: "the default scaling is massive" after social/guild switched
 -- from PinPixelPerfect(f, 1.21) to NE.scale's plain "custom" mode SetScale(c)): those aren't the
 -- same computation -- PinPixelPerfect normalizes against physical screen height and the parent's
@@ -31,7 +30,6 @@ S.MIN, S.MAX = 0.5, 1.5
 -- with a hard-coded PinPixelPerfect(f, N) -> "none" (which IS PinPixelPerfect) with that same N
 -- carried over as their BASE_SCALE below.
 local DEFAULTS = {
-  character        = { mode = "ui",     custom = 1.0 },
   spellbook        = { mode = "custom", custom = 0.8 },
   talents          = { mode = "custom", custom = 0.8 },
   social           = { mode = "custom", custom = 1.0 },
@@ -49,7 +47,7 @@ local DEFAULTS = {
 -- BUG FIX (owner report 2026-07-17, round two: "the default is still massive" after DEFAULTS.social/
 -- guild's custom value dropped to 1.0). Setting custom=1.0 only made S.Apply's "custom" branch do a
 -- literal f:SetScale(1.0) -- genuinely unscaled/native. Turns out social/guild's raw pixel footprint
--- (465x560, unlike the smaller character/spellbook/talents/professions windows) IS just "massive" at
+-- (465x560, unlike the smaller spellbook/talents/professions windows) IS just "massive" at
 -- native size on this owner's setup -- 1.0 was never the right target scale, it just happened to be
 -- what "not 1.21" meant. Owner steer: "make it overall 30% smaller ... this should show as 1.0" --
 -- i.e. the SLIDER should keep reading a clean "1.0" as its default/center point, but the ACTUAL
