@@ -60,8 +60,8 @@ local FONT_TITLE_SIZE  = 14
 local FONT_PAGE_SIZE   = 14
 
 -- Category tabs — seated ON the wooden header, tops tucked just under the title bar (host top).
--- Dimensions match the Character panel's tabs (h 36 inactive / 42 active, min-w 70, +24 text pad,
--- 1px gap), applied in the Refresh chain loop + setTabArt.
+-- Dimensions match the addon's standard reskinned tabs (h 36 inactive / 42 active, min-w 70,
+-- +24 text pad, 1px gap), applied in the Refresh chain loop + setTabArt.
 local CAT_TAB_X        = 70
 local CAT_TAB_TOP      = -2
 local TAB_H_INACTIVE   = 36
@@ -100,6 +100,7 @@ SB.showMounts   = SB.showMounts or false   -- cog option: show the Mounts tab
 SB.showCompanions = SB.showCompanions or false   -- cog option: show the Companions (vanity pets) tab
 if SB.showActiveGlow == nil then SB.showActiveGlow = true end   -- cog option: glow active spells (default ON)
 SB.refreshQueued = SB.refreshQueued or false
+if SB.trainingDirty == nil then SB.trainingDirty = true end   -- Upcoming tab: re-read WT's data on next build
 
 -- The content root we parent everything to. Provided by the window agent as SB.Host().
 local function host()
@@ -407,10 +408,6 @@ local function createCard(i)
   -- the tooltip — it only clears when the cursor actually leaves the cell. Anchored to the card so
   -- the tooltip is positioned off the whole cell.
   local function cardEnterInner()
-    if _G.NE_SB_DEBUG_HOVER and DEFAULT_CHAT_FRAME then
-      DEFAULT_CHAT_FRAME:AddMessage(("[SB hover] name=%s spellID=%s unlearned=%s"):format(
-        tostring(card.fallbackTipName), tostring(card.spellID), tostring(card.unlearned)))
-    end
     if not card.unlearned then
       card.Button.IconHighlight:SetAlpha(0.35)
       card.Button.IconHighlight:Show()
@@ -463,21 +460,13 @@ local function createCard(i)
   end
 
   -- Outer safety net: if ANYTHING above throws (bad API on this server fork, a nil global, etc.),
-  -- don't let it eat the hover silently — show a bare-minimum name tooltip anyway, and print the
-  -- real error to chat once so we can see exactly what broke. Remove the print once this is
-  -- confirmed working; the pcall wrapper itself is safe to keep permanently.
+  -- don't let it eat the hover silently — show a bare-minimum name tooltip anyway.
   local function cardEnter()
-    local ok, err = pcall(cardEnterInner)
-    if not ok then
-      if card.fallbackTipName then
-        GameTooltip:SetOwner(card, "ANCHOR_RIGHT")
-        GameTooltip:SetText(card.fallbackTipName, 1, 1, 1, 1, true)
-        GameTooltip:Show()
-      end
-      if not _G.NE_SpellBookTooltipErrShown and DEFAULT_CHAT_FRAME then
-        _G.NE_SpellBookTooltipErrShown = true
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff5555[Spellbook card tooltip error]|r " .. tostring(err))
-      end
+    if pcall(cardEnterInner) then return end
+    if card.fallbackTipName then
+      GameTooltip:SetOwner(card, "ANCHOR_RIGHT")
+      GameTooltip:SetText(card.fallbackTipName, 1, 1, 1, 1, true)
+      GameTooltip:Show()
     end
   end
   local function cardLeave()
@@ -675,8 +664,8 @@ local function categoryTab(i)
   return t
 end
 
--- Drive a reskinned tab's selected/deselected ART manually (same as the Character panel's
--- TabButtons.setTabArt). ReskinClassicTab paints the ACTIVE/gold atlas onto the *Disabled pieces,
+-- Drive a reskinned tab's selected/deselected ART manually. ReskinClassicTab paints the
+-- ACTIVE/gold atlas onto the *Disabled pieces,
 -- so SELECTED → show the *Disabled (gold) pieces + hide the regular ones; DESELECTED → reverse.
 -- (PanelTemplates_SetTab doesn't honour the reskin, which is why every tab read as active.) Also
 -- mute the custom hover highlight on the selected tab so it doesn't bleed over the gold art.
@@ -739,7 +728,7 @@ local function buildCategories()
   if SB.showCompanions and GetNumCompanions and (GetNumCompanions("CRITTER") or 0) > 0 then
     cats[#cats + 1] = { kind = "companions", label = COMPANIONS or "Companions" }
   end
-  -- Training (Whats-Training-Epoch integration) — only offered if that addon is loaded.
+  -- Training (What's Training? integration) — only offered if that addon is loaded.
   if _G.WhatsTraining ~= nil then
     cats[#cats + 1] = { kind = "training", label = "Upcoming" }
   end
@@ -776,6 +765,7 @@ function SB.SelectCategory(index)
   SB.selected = index
   SB.userPickedCategory = true
   SB.page = 1
+  SB.trainingDirty = true   -- entering the Upcoming tab re-reads WT's data once (see addTrainingCards)
   SB.Refresh()
 end
 
@@ -913,7 +903,7 @@ local function addCompanionCards(els)
 end
 
 -- ============================================================================
--- TRAINING (Whats-Training-Epoch integration) — reads that addon's already-categorized data
+-- TRAINING (What's Training? integration) — reads that addon's already-categorized data
 -- (wt.data: a flat list of {header, spell, spell, ..., header, spell, ...}, built by its Main.lua
 -- from a live trainer scan) and re-emits it as our own header/card elements so it renders through
 -- the SAME grid/paging/search/hover pipeline as every other tab. WT's category headers already
@@ -923,18 +913,32 @@ end
 -- e.unlearned = true: applyCardVisual desaturates them and skips the secure cast/pickup wiring
 -- (you can't cast or drag to a bar a spell you don't have — see applyCardVisual + createCard).
 -- ============================================================================
+
+-- WT's RebuildData wipes and re-categorizes its whole trainer DB (sort + per-row work, plus its own
+-- chat module's post-rebuild hook), so it must NOT run on every buildElements — that would fire it
+-- once per keystroke in the search box. Rebuild only when something could have changed the answer:
+-- a tab click, a trainer visit, a level-up, or a newly learned spell.
+do
+  local w = CreateFrame("Frame")
+  w:RegisterEvent("TRAINER_CLOSED")          -- WT just harvested the trainer's service list
+  w:RegisterEvent("PLAYER_LEVEL_UP")         -- moves spells between its level buckets
+  w:RegisterEvent("LEARNED_SPELL_IN_TAB")    -- trained something → it becomes "known"
+  w:SetScript("OnEvent", function() SB.trainingDirty = true end)
+end
+
 local function addTrainingCards(els)
   local wt = _G.WhatsTraining
   if not wt then
     els[#els + 1] = { kind = "header", label = "Upcoming" }
-    els[#els + 1] = { kind = "card", name = "Whats-Training-Epoch not loaded", subName = "",
+    els[#els + 1] = { kind = "card", name = "What's Training? not loaded", subName = "",
                        icon = "Interface\\Icons\\INV_Misc_QuestionMark", passive = true }
     return
   end
-  -- Make sure the data reflects current level/talents/known spells before we read it.
-  if type(wt.RebuildData) == "function" then
-    local ok = pcall(wt.RebuildData)
-    if not ok then return end
+  -- Make sure the data reflects current level/talents/known spells before we read it. On failure
+  -- fall through and render whatever wt.data already holds rather than a blank page.
+  if SB.trainingDirty and type(wt.RebuildData) == "function" then
+    SB.trainingDirty = false
+    pcall(wt.RebuildData)
   end
   local data = wt.data or {}
   local i = 1
@@ -970,7 +974,9 @@ local function addTrainingCards(els)
       i = i + 1
     end
   end
-  if #els == 0 then
+  -- Only claim there's no data when nothing is filtered out — an empty search result is just an
+  -- empty page, same as every other tab.
+  if #els == 0 and SB.search == "" then
     els[#els + 1] = { kind = "header", label = "Upcoming" }
     els[#els + 1] = { kind = "card", name = "No trainer data yet", subName = "Visit a class trainer to scan",
                        icon = "Interface\\Icons\\INV_Misc_QuestionMark", passive = true }
@@ -1084,7 +1090,10 @@ function SB.UpdateActiveOverlay(card)
   local ov = card.Button and card.Button.AutoCastOverlay
   if not ov then return end
   local active = false
-  if SB.showActiveGlow then   -- cog "Glow active spells" gates BOTH pet-autocast and active-buff glow
+  -- Unlearned (Upcoming tab) cards never glow: a higher, untrained rank of a buff you already have
+  -- up (Fortitude, Mark of the Wild, …) would otherwise read as "active" — same guard as
+  -- setCardCooldown.
+  if SB.showActiveGlow and not card.unlearned then   -- cog "Glow active spells" gates BOTH pet-autocast and active-buff glow
     if card.slot and card.bookType == BOOKTYPE_PET_ and GetSpellAutocast then
       local allowed, enabled = GetSpellAutocast(card.slot, card.bookType)
       active = (allowed and enabled) and true or false
@@ -1565,7 +1574,7 @@ function SB.Refresh()
   for i, cat in ipairs(cats) do
     local t = categoryTab(i)
     t:SetText(cat.label)
-    -- Width to text, same as the Character panel's resizeTab (reset → measure → max(min, w+pad)).
+    -- Width to text (reset → measure → max(min, w+pad)).
     local txt = _G[t:GetName() .. "Text"]
     local tw = 0
     if txt then
