@@ -199,10 +199,11 @@ Faithfully downporting the remaining NewEra panels to 3.3.5a:
 
 Optional — nothing here is required, and each is detected at runtime. Install one and the matching feature simply appears.
 
-| Addon | What it adds |
-| --- | --- |
-| **Auctionator** | An AH scan button in the profession window, and a full embed + reskin of its Buy/Sell/More panel inside the Auction House window. |
-| **What's Training?** (`Whats-Training-WotLK` by ZythDr) | An **Upcoming** tab in the spellbook listing what your class trainer offers — grouped by available / missing requirements / next level, with cost and level on each card. |
+| Addon | Module | What it adds | Source |
+| --- | --- | --- | --- |
+| **Auctionator** | Auction House | An AH scan button in the profession window, and a full embed + reskin of its Buy/Sell/More panel inside the Auction House window. | https://github.com/Intervence/AuctionatorPlus |
+| **What's Training?** | Spellbook | An **Upcoming** tab in the spellbook listing what your class trainer offers — grouped by available / missing requirements / next level, with cost and level on each card. | https://github.com/thezephyrsong/Whats-Training-WotLK |
+| **Deadly Boss Mods** | Boss Timers | Allows retail timer skinning to actually have timers | https://github.com/5Buttons/DBM-Chromiecraft |
 
 ## Credits
 
@@ -211,3 +212,8 @@ Optional — nothing here is required, and each is detected at runtime. Install 
 - **EZCollections** by ZEUStiger — some retail-look art (the bag window's loading spinner) is ported from EZCollections.
 - **Deadly Boss Mods** — the encounter detection behind the Boss Timers module; this addon only draws what DBM reports.
 - Dragonflight UI © Blizzard Entertainment.
+
+
+## Modules removed as now part of DragonUI
+- **Character Panel**
+- **Collections tab**
