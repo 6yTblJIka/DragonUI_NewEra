@@ -195,6 +195,15 @@ Faithfully downporting the remaining NewEra panels to 3.3.5a:
 - [ ] **Merchant**
 - [ ] **Mail**
 
+## Compatible with
+
+Optional — nothing here is required, and each is detected at runtime. Install one and the matching feature simply appears.
+
+| Addon | What it adds |
+| --- | --- |
+| **Auctionator** | An AH scan button in the profession window, and a full embed + reskin of its Buy/Sell/More panel inside the Auction House window. |
+| **What's Training?** (`Whats-Training-WotLK` by ZythDr) | An **Upcoming** tab in the spellbook listing what your class trainer offers — grouped by available / missing requirements / next level, with cost and level on each card. |
+
 ## Credits
 
 - **[DragonUI](https://github.com/NeticSoul/DragonUI)** by NeticSoul — the base 3.3.5a Dragonflight UI port this builds on.
