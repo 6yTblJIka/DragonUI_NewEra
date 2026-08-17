@@ -524,7 +524,9 @@ local function popupEditBox(self)
     or (self.GetName and _G[(self:GetName() or "") .. "EditBox"]) or nil
 end
 
-StaticPopupDialogs = StaticPopupDialogs or {}
+-- NOTE: Do not reassign `StaticPopupDialogs = StaticPopupDialogs or {}` here. Blizzard guarantees this
+-- table exists before addons load, and a direct assignment to the global taints it for the whole
+-- session (breaks unrelated systems like enchanting, disenchanting, etc). Only write table keys below.
 
 StaticPopupDialogs["NE_CDM_LAYOUT_NAME"] = {
   text = L["Name this layout:"],
