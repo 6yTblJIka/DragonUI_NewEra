@@ -396,7 +396,9 @@ function CDS.SettingsMenuGenerator(_, root)
 end
 
 -- Both resets are destructive and irreversible (there is no undo store until 4b-5), so both confirm.
-StaticPopupDialogs = StaticPopupDialogs or {}
+-- NOTE: Do not reassign `StaticPopupDialogs = StaticPopupDialogs or {}` here. Blizzard guarantees this
+-- table exists before addons load, and a direct assignment to the global taints it for the whole
+-- session (breaks unrelated systems like enchanting, disenchanting, etc). Only write table keys below.
 StaticPopupDialogs["NE_CDM_RESET_TRACKING"] = {
   -- Names the scope in the confirm too. This is the last thing read before an irreversible action,
   -- and it used to say nothing about WHOSE lists — while the code behind it cleared every class.
