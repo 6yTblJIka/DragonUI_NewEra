@@ -299,5 +299,15 @@ modules\bossmods\DBMAdapter.lua
 modules\bossmods\EditorPanel.lua
 modules\bossmods\Register.lua
 
+# --- Details! skin (downport of NewEra/DetailsSkin) — opt-in, no meter of our own ---
+# A theme that makes the Details! Damage Meter read like retail's. The 3.3.5a Details backport is
+# v8.3.0 (Jan 2020), which is missing a third of the skin keys the 1.15 source drives — the port's
+# adaptations are annotated in DetailsSkin.lua's header. Registering the skin is harmless and
+# changes nothing on screen; applying it is a button on the options tab (and /nedetails).
+# Load order: DetailsSkin (the skin table + install, which must run as early as possible or Details
+# overwrites the player's saved skin choice) -> Register (options section, slash command).
+modules\detailsskin\DetailsSkin.lua
+modules\detailsskin\Register.lua
+
 # --- demo: Sprint-0 proof panel (owner: Core/Chrome Engineer) ---
 core\_HelloDemo.lua

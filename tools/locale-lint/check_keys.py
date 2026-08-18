@@ -30,7 +30,10 @@ SKIP_FILES = {
     # category as the Data files: encounter content, translated by whoever sourced it, not chrome.
     "AbilitiesEra.lua", "AbilitiesTBC.lua", "AbilitiesWotLK.lua",
 }
-SKIP_DIRS = {"Libs", "Locales", "tools", ".git", "Textures", "Sounds", "screenshots"}
+# ReferenceAddons is other people's source, kept for reading and gitignored — never ours to
+# translate. It also uses the same `L["..."]` idiom, so without this its keys land in the MISSING
+# list and `gen_enus.py` (which shares this walk) appends every one of them to enUS.lua.
+SKIP_DIRS = {"ReferenceAddons", "Libs", "Locales", "tools", ".git", "Textures", "Sounds", "screenshots"}
 
 # A key is `L["..."]` / `NE.L["..."]`, where the subscript may be several adjacent literals joined
 # by `..` and wrapped across lines -- long option descriptions are written that way.
@@ -158,6 +161,10 @@ ALLOWED = {
         "Auctionator is a third-party addon's name",
     "modules/guild/Window.lua":
         "error passthrough from GuildControlPopupFrame; the payload is a client error string",
+    "modules/detailsskin/DetailsSkin.lua":
+        "skin-table metadata handed to Details! for ITS skin list (author/desc, carrying the MIT "
+        "attribution), not our chrome; every player-facing string for this module is in its "
+        "Register.lua and goes through L",
 }
 
 

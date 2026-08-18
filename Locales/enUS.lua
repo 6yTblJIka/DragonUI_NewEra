@@ -470,3 +470,26 @@ L["Bars view only. Mirrors each row — the icon moves to the right and the bar 
 L["Hovering an ability shows its spell tooltip. DBM raises some timers that are not a spell at all — a pull timer, a phase change — and those show their own name instead."] = true
 L["Show the ability icons"] = true
 L["The two copies of the ability's own icon either side of the text — what retail draws. The text already names the ability, so this is decoration; turn it off for a plain line of text."] = true
+
+-- ============================================================================
+-- DAMAGE METER SKIN
+-- ============================================================================
+
+L["A retail-styled theme for |cffffcc55Details!|r, drawn with art from retail's own damage meter: a gold-titled header bar, class-coloured bars on a near-invisible panel, and abbreviated numbers. It is registered with Details! at login, so it also appears in Details!' own skin list under |cffffcc55New Era|r."] = true
+L["Apply the New Era skin"] = true
+L["Could not apply the skin — Details! is not ready yet."] = true
+L["Damage Meter Skin"] = true
+L["Details! is not installed."] = true
+L["Details! skin applied."] = true
+L["Run |cffffcc55/nedetails|r to apply it."] = true
+L["|cffff5555Details! is not installed.|r This is a theme for the Details! Damage Meter, not a meter of its own — with Details! absent there is nothing to skin."] = true
+
+-- ============================================================================
+-- DAMAGE METER SKIN
+-- ============================================================================
+
+-- ============================================================================
+-- DAMAGE METER SKIN
+-- ============================================================================
+
+L["Switches every Details! window to the skin and sets K/M number abbreviation. Window size and position stay yours — use Details!' own scale slider for those. Your choice is remembered and put back after a reload (Details! does not keep it on its own); picking another skin in Details! ends that. Run this again after you customise something in Details! and want the theme back."] = true

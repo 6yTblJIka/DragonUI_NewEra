@@ -86,6 +86,30 @@ and its bars live on two unnamed anchors — the second of which does not exist 
 created. That last detail is the one the 1.15 source's suppression would have missed, so it has its
 own assertion. See `modules/bossmods/PORT_PLAN.md` §B.
 
+Check the Details! theme against a stubbed Details v8.3.0 (71 assertions) — install at file load,
+LibSharedMedia registration, every skin key the backport does NOT honour staying out of the table,
+`show_timer` as its three-boolean form, the shipped BLPs' container (power-of-two and the palette
+block — the client draws a BLP it cannot sample as solid bright green), the title bar's centring
+arithmetic (nothing in that bar is positioned relative to the window, the header art's bottom rows
+are shadow rather than bar so its centre line is not the band's, the title has to land on the row's
+own inset to line up with the class icon, and plugin icons chain off the menu row in whichever
+direction the skin picks), the K/M abbreviation plus the formatter re-select, the
+window size being left to Details while the one scale an earlier build wrote is undone, Details' own
+overhanging title-bar pieces being replaced and then handed back in their prior state, the header on
+a re-apply (where Details skips the skin callback), both ways a reload loses the theme and the
+restore for each, a skin the player chose being left alone across that restore, forced re-install,
+and a clean no-op with Details absent:
+
+```bash
+luajit qa/offline/test_detailsskin.lua
+```
+
+The fake Details models the **backport in `ReferenceAddons/Details`**, not Details master: v8.3.0
+refuses to overwrite an installed skin, has no `no_cache`, no `titlebar_*` keys, and — the detail the
+port is built around — replaces an unknown skin name with the default and writes it back over the
+player's saved choice. The skin-key assertions are a version contract: copying more of the 1.15
+source back in fails here rather than silently doing nothing in game.
+
 ## What test_boot.lua stubs
 
 A minimal widget API (`CreateFrame`, textures, font strings, scripts, events) plus the 3.3.5a game

@@ -208,3 +208,71 @@ makes. See `modules/bossmods/PORT_PLAN.md` §C.3 and §D.
 The Cooldown Manager atlases this module also draws with — `UI-HUD-CoolDownManager-IconOverlay`,
 `-Bar`, `-Bar-BG`, `-Bar-Pip` (fdid 6704514) — are NOT duplicated; `modules/cooldownviewer/Assets.lua`
 already registers them and the TOC loads it first.
+
+---
+
+## 9. Details! skin — `Textures/DetailsSkin/` (4 BLPs, 164 KB)
+Copied from `ReferenceAddons/NewEra/Art/DetailsSkin/` for the Details! theme
+(`modules/detailsskin`), then **repacked** — see the rule below. NOT registered through `NE.tex` and
+NOT in any `Assets.lua`: these are consumed by **Details!**, which takes a plain texture path (and a
+LibSharedMedia "statusbar" name for the bar/backdrop ones). `modules/detailsskin/DetailsSkin.lua`
+hardcodes the paths and does the LSM registration itself.
+
+Each file is one already-sliced REGION, not a sheet — the source cut them out of retail's
+`Blizzard_DamageMeter` art, so they are used with full 0..1 texcoords and stretched to the frame.
+
+| FileDataID | File (`Textures/DetailsSkin/`) | Dimensions | Bytes | Role |
+|---|---|---|---|---|
+| 7499559 | 7499559-dm-header.blp | 256×32 | 33,940 | `ui-damagemeters-header-bar` — the title band, drawn over Details' own header (v8.3.0 has no titlebar key) |
+| 7499559 | 7499559-dm-panel-bg.blp | 128×128 | 66,708 | `damagemeters-background` — window backdrop, ~invisible at the skin's `bg_alpha = 0` |
+| 7499559 | 7499559-dm-bar-shadowbg.blp | 256×32 | 33,940 | `ui-damagemeters-bar-shadowbg` — the shadow behind each row |
+| 6704514 | 6704514-dm-bar-fill.blp | 256×32 | 33,940 | `ui-hud-cooldownmanager-bar` — row fill, class-vertex-coloured by Details |
+
+### The container rule these files taught us
+
+**This client renders a BLP it cannot sample as SOLID BRIGHT GREEN** — no error, no fallback, and it
+looks like a skin bug rather than an art bug. Two properties decide it:
+
+- **Power-of-two on both axes.** Retail crops art to its content, so these arrived 280×28, 248×20,
+  256×28 and 154×148. All four are now 256×32 / 128×128.
+- **The 1024-byte palette block** (256 × BGRA) between the 148-byte header and mip 0. It is dead
+  weight for an uncompressed BGRA image and a writer may skip it, putting mip 0 at offset 148 — but
+  every BLP that works in this addon starts mip 0 at **1172**.
+
+Of the 829 BLPs shipped here, 822 satisfy both. `tools/blp/repack_pot.py --info` reports them, and
+`--resize WxH` rewrites an uncompressed BGRA file in place to match. Only art that is STRETCHED at
+draw time may be resampled this way; anything read through texcoords must be re-cut at the source
+instead, because padding moves every rect. `qa/offline/test_detailsskin.lua` asserts both properties
+on these four so a re-copy from `ReferenceAddons/` cannot quietly reintroduce the green.
+
+### What is actually inside 7499559-dm-header.blp
+
+The header is not a plain rectangle, and two of its properties drove title-bar bugs that looked like
+layout faults. Both were measured off the shipped file with `repack_pot.py --png`, per-column and
+per-row max alpha over its 256x32:
+
+| axis | painted | what the rest is |
+|---|---|---|
+| columns | ~14 … 244 (alpha > 128) | an authored fade at each end, ~5% of the width per side |
+| rows | 1 … 26 | rows 27–31 are the soft shadow UNDER the bar |
+
+- **The ends fade** because that is how retail authors a bar that has to sit over arbitrary content.
+  Stretched to a window, the shortfall is a percentage of its width, so no constant offset tracks it
+  at every size. `modules/detailsskin` hangs the band `HEADER_OVERHANG = 4`px past each edge, which
+  puts the ramp outside the frame; raising that number widens the apparent bar.
+- **The bottom rows are shadow, not bar**, so the bar's centre is ~1.5px ABOVE the centre of the band
+  it is stretched into. Anything centred on the band's own height therefore renders low — which is
+  exactly how the toolbar icons first looked. `BAR_CENTRE_Y` in that module is computed from the row
+  numbers above, and the title and icon offsets are both derived from it.
+
+If this art is ever re-cut, re-measure both: `qa/offline/test_detailsskin.lua` asserts the resulting
+geometry (title flush with the row's class icon, title and icons on the bar's centre line, matching
+side margins) but it cannot know that the pixels moved.
+
+**Still outstanding:** `Textures/Professions/383588-professions-book-left.blp` (512×456) and
+`383589-professions-book-right.blp` (32×410) break both rules as well, and predate this note.
+
+Same two FileDataIDs as §8's sheets, different crops: §8 ships the whole 512×256
+`damagemeters-background` sheet (the Bars-view plate) and the Cooldown Manager's 6704514 sheet with
+atlas rects, both drawn through `NE.tex`. Nothing is shared between the two — a skin hands Details a
+file, and Details cannot take a texcoord rect into someone else's sheet.

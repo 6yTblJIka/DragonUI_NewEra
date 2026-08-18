@@ -23,6 +23,7 @@ SECTIONS = [
     ("modules/bags", "BAGS"),
     ("modules/collections", "COLLECTIONS"),
     ("modules/cooldownviewer", "COOLDOWN MANAGER"),
+    ("modules/detailsskin", "DAMAGE METER SKIN"),
     ("modules/encounterjournal", "ADVENTURE GUIDE"),
     ("modules/guild", "GUILD"),
     ("modules/levelup", "LEVEL UP DISPLAY"),
