@@ -534,4 +534,21 @@ T = {
 
     # ── Shared UI ───────────────────────────────────────────────────────────────────────────────
     "Select All": "全选",
+
+    # ── Inspect ──────────────────────────────────────────────────────────────────
+    #
+    # Honor / Arena / Rating / Kills are FALLBACKS: modules/inspect/PvPPane.lua prefers the
+    # client's own HONOR / ARENA / RATING / HONORABLE_KILLS globals and only reaches for these
+    # if one of them is missing.
+    "Arena": "竞技场",
+    "Honor": "荣誉",
+    "Inspect window": "查看窗口",
+    "Kills": "击杀",
+    "Modern frame, portrait and tabs on the inspect window, with its Character tab laid out like the character window. Reload (/reload) to apply.":
+        "为查看窗口应用现代风格的边框、头像和标签页，其角色标签页的布局与角色面板一致。需要 /reload 生效。",
+    "No team": "无队伍",
+    "Rating": "评分",
+    "Unranked": "无军衔",
+    "View this player's talents.": "查看该玩家的天赋。",
+    "points spent": "点已花费",
 }

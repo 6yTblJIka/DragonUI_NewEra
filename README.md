@@ -160,6 +160,21 @@ The difference from every other version of this addon is where the data comes fr
 
 `/nelevelup coverage` reports what has been learned for the current realm and class; `/nelevelup harvest` re-reads an open trainer on demand.
 
+### Inspect
+
+![Inspect](screenshots/inspect.png)
+
+The 3.3.5a inspect window in the same chrome as the rest of the set, with its Character tab laid out like DragonUI's character panel and its other two tabs rebuilt rather than reskinned.
+
+- **The frame** — Dragonflight metal border, the stone body every NewEra window shares with a recessed dark inset over the content (and a second rimming the character viewer, drawn with the character panel's own trim), the inspected player's portrait in the corner cutout, their name centred in the title band, and the tab strip out on the frame's bottom edge in the modern tab art. The wooden quadrant sheets each tab pane draws are swept off — including the ones the talents pane declares a layer up from the other two.
+- **Its Character tab is DragonUI's character window** — the same width, the same slot frames, the same 231-wide model (as tall as the window allows), the same class-coloured "Level N Race Class" line, with the guild under it. Inspecting someone should look like opening your own character sheet, so it uses that panel's numbers and its art rather than shipping a second set.
+- **Model controls** — hover the model for the rotate / zoom / reset strip, or just drag it, wheel it, right-drag to pan and middle-click to reset, exactly as on your own paperdoll.
+- **A rebuilt PvP tab** — honor kills and honor by today / yesterday / lifetime, the lifetime rank with its insignia, and a row per arena bracket showing the team's standard, name, rating and season record (a bracket with no team keeps its row, dimmed). Drawn on this window set's own furniture from the client's inspect-honor and arena data, in place of Blizzard's parchment. Its crest shows the *inspected* player's faction, which the native pane gets wrong.
+- **Talents open in the real talent window** — the Talents tab opens DragonUI_NewEra's own three-tree talent panel on the inspected player, read-only: their nodes, their ranks, their dependency edges, their class in the corner, no Apply and nothing clickable.
+- **One window, on every tab, beside your own** — nothing resizes when you click a tab, the window is the character panel's size to the pixel, and it opens to the right of that panel rather than shoving it aside.
+
+Blizzard's own panes stay loaded underneath: the PvP one is what pumps the honor data, and the talent one is what the tab falls back to if this addon's talent module is turned off.
+
 ### Boss Timers
 
 Retail's **Boss Abilities** timeline and **encounter warnings** (the `Blizzard_EncounterTimeline` / `Blizzard_EncounterWarnings` systems added in 11.1), downported from NewEra — a vertical rail down which spell icons slide toward "now", plus three tiers of centre-screen warning text flanked by spell icons.
@@ -189,6 +204,7 @@ Faithfully downporting the remaining NewEra panels to 3.3.5a:
 - [x] ~~**Adventure Guide (Encounter Journal)**~~ — *done* (Classic/TBC/Wrath instances, per-boss abilities + loot pages, search + breadcrumb nav)
 - [x] ~~**Cooldown Manager**~~ — *done* (Essential/Utility/Buff-icon/Tracked-bar viewers, DBC-sourced talent-gated spell lists, tracked buffs + trinkets, right-click alerts and ready sounds, edit-mode movers and per-viewer settings, per-spec layouts with import/export)
 - [x] ~~**Level Up Display**~~ — *done* (retail's level-up banner, with unlocks harvested from the live server's own trainer/battleground/dungeon data rather than a baked spell table, per-realm storage, grid overflow panel, `/nelevelup`)
+- [x] ~~**Inspect**~~ — *done* (modern frame/portrait/tabs on the LoadOnDemand inspect window, its Character tab laid out like DragonUI's character panel with hover model controls and a guild line, a rebuilt PvP tab over the client's inspect-honor/arena data, and a Talents tab that opens this addon's own talent trees on the inspected player)
 - [x] ~~**Boss Timers**~~ — *done* (retail's encounter timeline + warning tiers over DBM's event bus: rail or bar view, imminent glow/grow/blink, three placeable warning tiers, DBM display suppression with orphan-bar adoption; requires DBM)
 - [ ] **Bags** — *work in progress* (retail combined bag + individual-bag restyle: grid, smart sort, separated specialty-bag sections, keyring row, rarity/usable cues, money + currency band)
 - [ ] **Quest Log**

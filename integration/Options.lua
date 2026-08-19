@@ -80,6 +80,11 @@ local function builder(scroll)
             { id = "Professions", label = L["Professions"] },
             { id = "AuctionHouse", label = L["Auction House"] },
             { id = "Social",      label = L["Social (Friends/Who/Guild/Chat/Raid)"] },
+            -- A reskin rather than a replacement window: OFF here means Blizzard's own inspect
+            -- window, untouched.
+            { id = "Inspect",     label = L["Inspect window"],
+              desc = L["Modern frame, portrait and tabs on the inspect window, with its Character "
+                     .. "tab laid out like the character window. Reload (/reload) to apply."] },
             { id = "LFG",         label = L["Looking For Group (Dungeon/Raid Finder)"] },
             { id = "combinedbag", label = L["Combined bag (all-in-one)"],
               desc = L["Our all-in-one bag window. Turn OFF to use the stock Blizzard bags instead. Reload (/reload) to apply."] },

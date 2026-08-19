@@ -496,3 +496,28 @@ L["|cffff5555Details! is not installed.|r This is a theme for the Details! Damag
 -- ============================================================================
 
 L["Switches every Details! window to the skin and sets K/M number abbreviation. Window size and position stay yours — use Details!' own scale slider for those. Your choice is remembered and put back after a reload (Details! does not keep it on its own); picking another skin in Details! ends that. Run this again after you customise something in Details! and want the theme back."] = true
+
+-- ============================================================================
+-- OPTIONS PANEL
+-- ============================================================================
+
+L["Inspect window"] = "查看窗口"
+L["Modern frame, portrait and tabs on the inspect window, with its Character tab laid out like the character window. Reload (/reload) to apply."] = "为查看窗口应用现代风格的边框、头像和标签页，其角色标签页的布局与角色面板一致。需要 /reload 生效。"
+
+-- ============================================================================
+-- TALENTS
+-- ============================================================================
+
+L["points spent"] = "点已花费"
+
+-- ============================================================================
+-- MISCELLANEOUS
+-- ============================================================================
+
+L["Arena"] = "竞技场"
+L["Honor"] = "荣誉"
+L["Kills"] = "击杀"
+L["No team"] = "无队伍"
+L["Rating"] = "评分"
+L["Unranked"] = "无军衔"
+L["View this player's talents."] = "查看该玩家的天赋。"

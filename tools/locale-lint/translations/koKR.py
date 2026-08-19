@@ -586,4 +586,21 @@ T = {
 
     # ── Shared UI ───────────────────────────────────────────────────────────────────────────────
     "Select All": "모두 선택",
+
+    # ── Inspect ──────────────────────────────────────────────────────────────────
+    #
+    # Honor / Arena / Rating / Kills are FALLBACKS: modules/inspect/PvPPane.lua prefers the
+    # client's own HONOR / ARENA / RATING / HONORABLE_KILLS globals and only reaches for these
+    # if one of them is missing.
+    "Arena": "투기장",
+    "Honor": "명예",
+    "Inspect window": "살펴보기 창",
+    "Kills": "처치",
+    "Modern frame, portrait and tabs on the inspect window, with its Character tab laid out like the character window. Reload (/reload) to apply.":
+        "살펴보기 창에 현대적인 프레임과 초상화, 탭을 적용하고 캐릭터 탭을 캐릭터 창과 같은 배치로 만듭니다. 적용하려면 /reload 하십시오.",
+    "No team": "팀 없음",
+    "Rating": "평점",
+    "Unranked": "등급 없음",
+    "View this player's talents.": "이 플레이어의 특성을 봅니다.",
+    "points spent": "포인트 사용",
 }

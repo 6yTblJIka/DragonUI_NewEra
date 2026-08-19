@@ -824,6 +824,63 @@ function T.Toggle()
   if f:IsShown() then f:Hide() else f:Show() end
 end
 
+-- ----------------------------------------------------------------------------
+-- T.ShowInspect(unit) — open this window on ANOTHER unit's talents, read-only.
+--
+-- The entry point retail uses for the same job (its inspect frame has no talent tab; it has a
+-- button that opens the talent UI on the inspected unit), and the one the 1.15 NewEra source
+-- reached for. Everything below the flag is Behavior.lua's: it threads `isInspect` through the
+-- talent getters and turns editability off. Here we only own the window: title, portrait, and the
+-- level gate, which asks about the INSPECTED unit rather than the player.
+--
+-- The flag is cleared on hide, so the next ordinary open is the player's own window again.
+-- ----------------------------------------------------------------------------
+function T.ShowInspect(unit)
+  if not unit or not UnitExists(unit) then return end
+  local f = T.frame or buildWindow()
+  if not f then return end
+
+  T._inspectUnit = unit
+  T._petView = false                          -- an inspected unit's pet has no transmitted talents
+  if T.GlyphsSetActive then T.GlyphsSetActive(false) end   -- and no inspect glyph API on 3.3.5a
+
+  if not f._neInspectHooked then
+    f._neInspectHooked = true
+    f:HookScript("OnHide", function() if T.ClearInspect then T.ClearInspect() end end)
+  end
+
+  -- Title follows the unit. The PORTRAIT is left to Populate, which paints the class icon for
+  -- whoever is being rendered — this window wears a class circle rather than a head, and setting
+  -- one here would only flash before Populate replaced it.
+  if f._neTitle or f.Title then
+    local who = (GetUnitName and GetUnitName(unit, true)) or UnitName(unit) or ""
+    if NE.chrome and NE.chrome.SetTitle then NE.chrome.SetTitle(f, who) end
+  end
+
+  if not f:IsShown() then f:Show() else if T.Populate then T.Populate() end end
+end
+
+-- The inspected unit's talents arrive AFTER the window opens (the request goes out on NotifyInspect
+-- and lands on INSPECT_TALENT_READY — this client has no INSPECT_READY), so the first paint is
+-- routinely empty and this is what fills it in.
+do
+  local ev = CreateFrame("Frame")
+  ev:RegisterEvent("INSPECT_TALENT_READY")
+  ev:SetScript("OnEvent", function()
+    if T.IsInspecting and T.IsInspecting() and T.Refresh then T.Refresh() end
+  end)
+end
+
+-- Restore the window's own identity after an inspect view closes, so the next player open is not
+-- still wearing someone else's name and face.
+function T.ClearInspect()
+  local f = T.frame
+  T._inspectUnit = nil
+  if not f then return end
+  if NE.chrome and NE.chrome.SetTitle then NE.chrome.SetTitle(f, TALENTS or "Talents") end
+  if f.portrait then f.portrait:SetTexture("Interface\\Icons\\Ability_Marksmanship") end
+end
+
 function T.OpenGlyphTab()
   if not (T.frame and T.frame:IsShown()) and refuseIfLocked() then return end
   local f = T.frame or buildWindow()

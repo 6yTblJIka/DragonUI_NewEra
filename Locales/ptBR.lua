@@ -496,3 +496,28 @@ L["|cffff5555Details! is not installed.|r This is a theme for the Details! Damag
 -- ============================================================================
 
 L["Switches every Details! window to the skin and sets K/M number abbreviation. Window size and position stay yours — use Details!' own scale slider for those. Your choice is remembered and put back after a reload (Details! does not keep it on its own); picking another skin in Details! ends that. Run this again after you customise something in Details! and want the theme back."] = true
+
+-- ============================================================================
+-- OPTIONS PANEL
+-- ============================================================================
+
+L["Inspect window"] = "Janela de inspeção"
+L["Modern frame, portrait and tabs on the inspect window, with its Character tab laid out like the character window. Reload (/reload) to apply."] = "Moldura, retrato e abas modernos na janela de inspeção, com a aba Personagem disposta como a janela de personagem. Recarregue (/reload) para aplicar."
+
+-- ============================================================================
+-- TALENTS
+-- ============================================================================
+
+L["points spent"] = "pontos gastos"
+
+-- ============================================================================
+-- MISCELLANEOUS
+-- ============================================================================
+
+L["Arena"] = "Arena"
+L["Honor"] = "Honra"
+L["Kills"] = "Abates"
+L["No team"] = "Sem equipe"
+L["Rating"] = "Classificação"
+L["Unranked"] = "Sem classificação"
+L["View this player's talents."] = "Ver os talentos deste jogador."

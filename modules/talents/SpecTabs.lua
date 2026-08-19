@@ -234,6 +234,18 @@ end
 function T.RefreshSpecTabs()
   local f = T.frame
   if not f then return end
+
+  -- Inspect view: no tabs at all. An inspected unit transmits one talent group and no glyphs, and
+  -- its pet transmits nothing — so every tab here would either be a lie or a dead end.
+  if T.IsInspecting and T.IsInspecting() then
+    for _, n in ipairs({ TAB_NAMES[1], TAB_NAMES[2], TAB_NAMES[3], TAB_NAMES[4],
+                         PET_TAB_NAME, GLYPH_TAB_NAME }) do
+      local tab = _G[n]
+      if tab then tab:Hide() end
+    end
+    if T._specCog then T._specCog:Hide() end
+    return
+  end
   
   -- Triumvirate bypasses the default Blizzard 2-spec limit (up to 4 specs). Everywhere else, respect
   -- the real GetNumTalentGroups() so we don't show unlock tabs for specs the server doesn't support.

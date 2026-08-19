@@ -103,6 +103,21 @@ modules\bags\BagSkin.lua
 modules\bags\Bags.lua
 modules\bags\CombinedBag.lua
 
+# --- Inspect (modern chrome on the LoadOnDemand Blizzard_InspectUI window) ---
+# A RESKIN, not a replacement: on 3.3.5a InspectFrame is a bare 384x512 frame whose three tab
+# subframes (PaperDoll / PVP / Talent) own all of the wooden art and all of the content, and the
+# PvP and Talents panes are Blizzard's to keep -- scaled and anchored so their content lands on the
+# one window size every tab uses. Load order: InspectFrame (chrome, tabs, geometry + the pane fit)
+# -> PaperDoll (the Character tab re-laid-out to DragonUI's character-panel geometry) ->
+# Register (the reload-gated module entry + the ADDON_LOADED gate the LoD window needs).
+# See modules/inspect/PORT_NOTES.md for what the 1.15 source has that this client cannot.
+modules\inspect\InspectFrame.lua
+modules\inspect\PaperDoll.lua
+# The PVP tab, drawn on our own furniture over the client's inspect-honor/arena data. The native
+# InspectPVPFrame stays loaded and keeps driving that data; only its content is squelched.
+modules\inspect\PvPPane.lua
+modules\inspect\Register.lua
+
 # --- Professions (retail-style crafting window; downport of NewEra/Professions/Crafting) ---
 # Load order: Assets (atlas + texcoord registration) -> Window (chrome + event wiring) ->
 # RecipeList (left panel, FauxScrollFrame) -> Crafting (schematic form, rank bar, controls).

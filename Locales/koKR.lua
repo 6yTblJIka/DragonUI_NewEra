@@ -496,3 +496,28 @@ L["|cffff5555Details! is not installed.|r This is a theme for the Details! Damag
 -- ============================================================================
 
 L["Switches every Details! window to the skin and sets K/M number abbreviation. Window size and position stay yours — use Details!' own scale slider for those. Your choice is remembered and put back after a reload (Details! does not keep it on its own); picking another skin in Details! ends that. Run this again after you customise something in Details! and want the theme back."] = true
+
+-- ============================================================================
+-- OPTIONS PANEL
+-- ============================================================================
+
+L["Inspect window"] = "살펴보기 창"
+L["Modern frame, portrait and tabs on the inspect window, with its Character tab laid out like the character window. Reload (/reload) to apply."] = "살펴보기 창에 현대적인 프레임과 초상화, 탭을 적용하고 캐릭터 탭을 캐릭터 창과 같은 배치로 만듭니다. 적용하려면 /reload 하십시오."
+
+-- ============================================================================
+-- TALENTS
+-- ============================================================================
+
+L["points spent"] = "포인트 사용"
+
+-- ============================================================================
+-- MISCELLANEOUS
+-- ============================================================================
+
+L["Arena"] = "투기장"
+L["Honor"] = "명예"
+L["Kills"] = "처치"
+L["No team"] = "팀 없음"
+L["Rating"] = "평점"
+L["Unranked"] = "등급 없음"
+L["View this player's talents."] = "이 플레이어의 특성을 봅니다."

@@ -110,6 +110,39 @@ port is built around — replaces an unknown skin name with the default and writ
 player's saved choice. The skin-key assertions are a version contract: copying more of the 1.15
 source back in fails here rather than silently doing nothing in game.
 
+Drive the inspect window reskin against a stubbed `Blizzard_InspectUI` (141 assertions) — the
+LoadOnDemand boot gate, the chrome sweep (the four UNNAMED wooden quadrants on each of the three tab
+subframes go — and the talents pane declares its four one LAYER UP, which is what a BACKGROUND-only
+walk used to miss; the talent tree's own art stays — the PvP pane's content does not, since we draw
+that tab), the streak band's host
+frame sitting above the nineslice that was covering it, the untinted stone body this window family
+shares, the duplicate close button that has to stay hidden across a re-show, the rehosted title, the
+tab strip's move to the frame's bottom-left, the ONE window size every tab keeps (the character panel's), the
+scale-and-anchor fit that puts each native pane's content rect on the interior AT LIFE SIZE (plus
+the mouse it has to give up, since a fitted pane hangs over the tabs), the slot anchors, the model
+height derived from the interior with its race backdrop scaled to match, DragonUI's floating item
+level being lifted off the weapon row it lands on, the hover-revealed model strip taking the native
+rotate buttons down with it, the race backdrop's Gnome→Dwarf / Troll→Orc fallbacks, the header
+lines — including the one that would error rather than misdraw, `string.format("%d", "??")` — the
+modern PVP pane (its honor table, rank, arena rows, the empty-bracket row, the priming pass the
+client needs before it answers, and the native frame it rides rather than hides), the Talents tab
+opening the talent window on the inspected unit without stealing the pane, and the panel-layout
+attributes that put the window beside the character panel instead of in its place:
+
+```bash
+luajit qa/offline/test_inspect.lua
+```
+
+The stubbed frame tree is transcribed from the real 3.3.5a `Blizzard_InspectUI` (Interface 30300),
+not from the 1.15 source the module was ported from — the two windows share barely a frame name.
+See `modules/inspect/PORT_NOTES.md` for that table.
+
+One stub detail is load-bearing: **anchored sizes are captured at anchor time and only refresh on an
+explicit `layoutPass()`**, because that is what a real frame does — its rect does not resolve until
+the next layout, so `GetHeight()` right after a parent resize hands back the old span. An honest
+stub passed a build whose model measured the interior at that exact moment and came out 88px too
+tall in game.
+
 ## What test_boot.lua stubs
 
 A minimal widget API (`CreateFrame`, textures, font strings, scripts, events) plus the 3.3.5a game

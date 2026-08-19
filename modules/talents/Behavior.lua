@@ -60,6 +60,21 @@ function T.SetPetView(on)
   if T._petView and T.GlyphsSetActive then T.GlyphsSetActive(false) end
 end
 
+-- ----------------------------------------------------------------------------
+-- INSPECT MODE. The window renders ANOTHER unit's trees, read-only.
+--
+-- Every talent getter on 3.3.5a takes an `isInspect` flag in the same argument slot this file was
+-- passing a hard `false` to (GetTalentInfo / GetNumTalentTabs / GetNumTalents / GetTalentTabInfo /
+-- GetTalentPrereqs / GetActiveTalentGroup), and the client fills that side from the last
+-- NotifyInspect. So inspect mode is one flag threaded through the reads plus `editable = false`:
+-- no preview, no Apply/Reset, no spec switching, no glyphs (there is no inspect glyph API here).
+--
+-- Set by T.ShowInspect(unit) and cleared when the window closes, so the next open is the player's.
+-- ----------------------------------------------------------------------------
+function T.InspectUnit() return T._inspectUnit end
+local function inspecting() return (T._inspectUnit and true) or false end
+T.IsInspecting = inspecting
+
 -- Edge tint: yellow (prereq satisfied + invested) vs dim gray (not yet active).
 local EDGE_ACTIVE   = { 1.0, 0.82, 0.0,  0.95 }
 local EDGE_INACTIVE = { 0.62, 0.58, 0.48, 0.85 }   -- muted tan, visible over the dark spec painting
@@ -85,7 +100,7 @@ end
 local function talentInfo(tab, i, group, isPet)
   if not GetTalentInfo then return nil end
   local name, icon, tier, column, rank, maxRank, isExceptional,
-        meetsPrereq, previewRank, meetsPreviewPrereq = GetTalentInfo(tab, i, false, isPet or false, group)
+        meetsPrereq, previewRank, meetsPreviewPrereq = GetTalentInfo(tab, i, inspecting(), isPet or false, group)
   if not name then return nil end
   return {
     name               = name,
@@ -110,6 +125,7 @@ local function previewOn()
 end
 
 local function unspentPoints(group, isPet)
+  if inspecting() then return 0 end
   if GetUnspentTalentPoints then
     local ok, v = pcall(GetUnspentTalentPoints, false, isPet or false, group)
     if ok and v then return v end
@@ -223,6 +239,9 @@ local function wireNode(n)
   n:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   n:SetScript("OnClick", function(self, btn)
     if InCombatLockdown and InCombatLockdown() then return end
+    -- Read-only while inspecting: the preview API has no inspect side, so a click here would spend
+    -- YOUR points on whatever node happens to sit under the cursor.
+    if T.IsInspecting and T.IsInspecting() then return end
     if not self._isPet and (T._viewGroup or 1) ~= (T._activeGroup or 1) then return end
     if btn == "LeftButton" then nodeLeftClick(self)
     elseif btn == "RightButton" then nodeRightClick(self) end
@@ -757,19 +776,25 @@ function T.Populate()
   local isPet   = T._petView and true or false
   local perTier = isPet and PET_PER_TIER or PER_TIER
 
-  local active = (GetActiveTalentGroup and GetActiveTalentGroup()) or 1
+  local inspect = inspecting()
+  -- Deliberately still ARGLESS on the player path: GetActiveTalentGroup(false, isPet) is not quite
+  -- the same call this made before (a pet has its own group), and the inspect work has no business
+  -- changing what the pet view reads.
+  local active = (GetActiveTalentGroup
+                  and (inspect and GetActiveTalentGroup(true, isPet) or GetActiveTalentGroup())) or 1
   if T._viewGroup == nil or T._lastActive ~= active then T._viewGroup = active end
   T._activeGroup, T._lastActive = active, active
   local numGroups = (GetNumTalentGroups and (GetNumTalentGroups() or 1)) or 1
   if numGroups < 2 then T._viewGroup = active end
   
-  local group    = isPet and active or T._viewGroup
-  local editable = isPet or (group == active)
+  local group    = (isPet or inspect) and active or T._viewGroup
+  -- Never editable while inspecting: the preview API writes to YOUR talents whatever is on screen.
+  local editable = (not inspect) and (isPet or (group == active))
   local viewChanged = (T._lastViewGroup ~= group) or (T._lastPetView ~= isPet)
   T._lastViewGroup, T._lastPetView = group, isPet
   T._group = group
   local preview = previewOn() and editable
-  local numTabs = (GetNumTalentTabs and GetNumTalentTabs(false, isPet)) or 0
+  local numTabs = (GetNumTalentTabs and GetNumTalentTabs(inspect, isPet)) or 0
 
   for i = 1, 3 do
     local tf = f.trees[i]
@@ -817,7 +842,7 @@ function T.Populate()
     local used = {}
 
     if tabIdx <= numTabs then
-      local name, icon, spent, _bg, prevSpent = GetTalentTabInfo(tabIdx, false, isPet, group)
+      local name, icon, spent, _bg, prevSpent = GetTalentTabInfo(tabIdx, inspect, isPet, group)
       if isPet and _bg then petBgName = _bg end
       local tabPointsSpent = (spent or 0) + (preview and (prevSpent or 0) or 0)
       tf.headerName:SetText(string.upper(name or ("Tree " .. tabIdx)))
@@ -831,7 +856,7 @@ function T.Populate()
 
       if (spent or 0) > domSpent then domSpent = (spent or 0); domIcon = icon; domTab = tabIdx end
 
-      local numTalents = (GetNumTalents and GetNumTalents(tabIdx, false, isPet)) or 0
+      local numTalents = (GetNumTalents and GetNumTalents(tabIdx, inspect, isPet)) or 0
       local byCell, infos, prereqs = {}, {}, {}
 
       -- Prereqs are read here (not in the edge pass below) so the API is queried once per talent.
@@ -842,7 +867,7 @@ function T.Populate()
           infos[i] = info
           occupied[#occupied + 1] = { tier = info.tier, column = info.column }
           if GetTalentPrereqs then
-            prereqs[i] = { GetTalentPrereqs(tabIdx, i, false, isPet, group) }
+            prereqs[i] = { GetTalentPrereqs(tabIdx, i, inspect, isPet, group) }
           end
         end
       end
@@ -870,8 +895,13 @@ function T.Populate()
           end
           node._shownRank = displayRank
           
-          node:SetAlpha(editable and 1 or 0.66)
-          if not editable and node.icon and node.icon.SetDesaturated then node.icon:SetDesaturated(true) end
+          -- Dimmed only for the OTHER-SPEC view, where the contrast against the active spec is the
+          -- point. An inspected unit's tree is the only thing on screen, so it renders at full
+          -- strength — read-only is not the same as secondary.
+          local dimmed = (not editable) and (not inspect)
+          node:SetAlpha(dimmed and 0.66 or 1)
+          if dimmed and node.icon and node.icon.SetDesaturated then node.icon:SetDesaturated(true) end
+          if not dimmed and node.icon and node.icon.SetDesaturated then node.icon:SetDesaturated(false) end
           local x, y = T.nodeCenter(info.tier, info.column)
           node:ClearAllPoints(); node:SetPoint("CENTER", tf, "TOPLEFT", x, y); node:Show()
           addNodeRect(tf, info.tier, info.column, x, y, node._visualSize)
@@ -887,7 +917,9 @@ function T.Populate()
         end
       end
 
-      if editable then
+      -- Edges for the editable view AND the inspected one; only the dimmed other-spec view skips
+      -- them (there they would read as clutter behind the spec you are actually in).
+      if editable or inspect then
         tf._gapY = buildGapY()   -- after SetRowLayout/_nodeYShift, so the corridors match the rows
         for i = 1, numTalents do
           local info = infos[i]
@@ -920,7 +952,9 @@ function T.Populate()
     if isPet then
       ensurePetPortrait(f)
     else
-      local _, classFile = UnitClass("player")
+      -- WHOSE class: the inspected unit's when there is one. Hard-coding "player" here is what left
+      -- an inspected Death Knight's talents wearing the viewer's own class icon.
+      local _, classFile = UnitClass((inspect and T._inspectUnit) or "player")
       local c = classFile and CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[classFile]
       if c then
         f.portrait:SetTexture("Interface\\TargetingFrame\\UI-Classes-Circles")
@@ -940,7 +974,22 @@ function T.Populate()
   end
 
   if f.pointsText then
-    f.pointsText:SetText(("|cffffffff%d|r points available"):format(math.max(0, available)))
+    if inspect then
+      -- "points available" is meaningless for someone else's talents; name whose these are and
+      -- what they add up to instead.
+      local unit  = T._inspectUnit
+      local who   = (unit and GetUnitName and GetUnitName(unit, true)) or (unit and UnitName(unit)) or ""
+      local total = 0
+      for tabIdx = 1, numTabs do
+        local _, _, spent = GetTalentTabInfo(tabIdx, true, isPet, group)
+        total = total + (spent or 0)
+      end
+      local _, classFile = UnitClass(unit or "player")
+      f.pointsText:SetText(NE.color.WrapClass(classFile, who)
+        .. ("  |cffffffff%d|r "):format(total) .. L["points spent"])
+    else
+      f.pointsText:SetText(("|cffffffff%d|r points available"):format(math.max(0, available)))
+    end
   end
   local hasStaged = previewSpentAll > 0
   if f.apply and GlowEmitterFactory and GlowEmitterMixin then
@@ -952,7 +1001,12 @@ function T.Populate()
   end
 
   -- Bottom bar: editable (active) spec shows Apply/Reset; a viewed INACTIVE spec shows Activate.
-  if editable then
+  if inspect then
+    -- Nothing to commit, nothing to switch to: an inspected unit's window is a view, not an editor.
+    if f.apply then f.apply:Hide() end
+    if f.reset then f.reset:Hide() end
+    if f.activate then f.activate:Hide() end
+  elseif editable then
     if f.activate then f.activate:Hide() end
     if f.apply then f.apply:Show() end
     if f.reset then f.reset:Show() end
@@ -1010,7 +1064,7 @@ function T.Populate()
     end
   end
 
-  if f._loBtn then if isPet then f._loBtn:Hide() else f._loBtn:Show() end end
+  if f._loBtn then if (isPet or inspect) then f._loBtn:Hide() else f._loBtn:Show() end end
 
   if T.RefreshSpecTabs then T.RefreshSpecTabs() end
   if T.GlyphsEnsureUI then pcall(T.GlyphsEnsureUI) end

@@ -616,4 +616,21 @@ T = {
 
     # ── Shared UI ───────────────────────────────────────────────────────────────────────────────
     "Select All": "Alles auswählen",
+
+    # ── Inspect ──────────────────────────────────────────────────────────────────
+    #
+    # Honor / Arena / Rating / Kills are FALLBACKS: modules/inspect/PvPPane.lua prefers the
+    # client's own HONOR / ARENA / RATING / HONORABLE_KILLS globals and only reaches for these
+    # if one of them is missing.
+    "Arena": "Arena",
+    "Honor": "Ehre",
+    "Inspect window": "Untersuchen-Fenster",
+    "Kills": "Siege",
+    "Modern frame, portrait and tabs on the inspect window, with its Character tab laid out like the character window. Reload (/reload) to apply.":
+        "Modernes Fenster, Porträt und Tabs für das Untersuchen-Fenster; der Charakter-Tab ist wie das Charakterfenster aufgebaut. Zum Übernehmen /reload ausführen.",
+    "No team": "Kein Team",
+    "Rating": "Wertung",
+    "Unranked": "Kein Rang",
+    "View this player's talents.": "Die Talente dieses Spielers ansehen.",
+    "points spent": "Punkte vergeben",
 }
