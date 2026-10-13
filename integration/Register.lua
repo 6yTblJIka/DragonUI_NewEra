@@ -458,12 +458,6 @@ function NE.RegisterPanel(spec)
             NE.modules.Register{
                 name    = id,
                 default = true,
-                onBoot  = function()
-                    -- Only open/show when the panel is enabled in config.
-                    if isEnabled() and spec.openFn then
-                        spec.openFn()
-                    end
-                end,
             }
         end)
         if not ok then
@@ -478,18 +472,14 @@ function NE.RegisterPanel(spec)
     -- Enable refresh hook so DragonUI's enable/disable plumbing can drive us.
     local moduleTable = {
         ne_id = id,
-        Enable = function()
-            if spec.openFn then spec.openFn() end
-        end,
+        -- Enabling or refreshing a module must never OPEN its window: DragonUI re-runs Refresh on
+        -- every registered module ~2s after load, which popped the window up on each /reload.
+        Enable = function() end,
         Disable = function()
             if spec.closeFn then spec.closeFn() end
         end,
         Refresh = function()
-            if isEnabled() then
-                if spec.openFn then spec.openFn() end
-            else
-                if spec.closeFn then spec.closeFn() end
-            end
+            if not isEnabled() and spec.closeFn then spec.closeFn() end
         end,
     }
     local dragon = NE.dragon

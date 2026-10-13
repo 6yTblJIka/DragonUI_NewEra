@@ -166,6 +166,10 @@ function M.Layout()
     if e.on then
       any = true
       if b:GetParent() ~= menu then b:SetParent(menu) end   -- adopt the menu (and its scale)
+      -- Same strata and level as DragonUI's own buttons: any lower and a neighbour's plate is drawn
+      -- over the 6px of our icon it overlaps.
+      b:SetFrameStrata(mainMenu:GetFrameStrata())
+      b:SetFrameLevel(mainMenu:GetFrameLevel())
       if bw and bh and bw > 0 and bh > 0 then
         b:SetSize(bw, bh)
         b.nePlate[1]:SetSize(bw, bh + 1); b.nePlate[2]:SetSize(bw, bh + 1)
