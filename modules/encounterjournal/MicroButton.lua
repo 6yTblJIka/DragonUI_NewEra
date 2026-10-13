@@ -23,10 +23,10 @@ NE.tex.RegisterAtlases({
 
 local function isModuleEnabled()
   local dragon = NE.dragon
-  if not (dragon and dragon.db and dragon.db.profile and dragon.db.profile.modules) then return true end
+  if not (dragon and dragon.db and dragon.db.profile and dragon.db.profile.modules) then return false end
+  -- Off by default: only an explicit "on" from the options toggle enables it.
   local m = dragon.db.profile.modules["ne_" .. MODULE]
-  if type(m) == "table" and m.enabled == false then return false end
-  return true
+  return type(m) == "table" and m.enabled == true
 end
 
 NE.micro.Add({

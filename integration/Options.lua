@@ -116,7 +116,7 @@ local function builder(scroll)
         getFunc = function()
             local modules = dragon.db.profile.modules
             local m = modules and modules["ne_EncounterJournal"]
-            return not (type(m) == "table" and m.enabled == false)
+            return type(m) == "table" and m.enabled == true   -- off by default
         end,
         setFunc = function(v)
             if not dragon.db.profile.modules then dragon.db.profile.modules = {} end

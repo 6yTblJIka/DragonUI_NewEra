@@ -26,8 +26,10 @@ local FIELDS = { NineSlice = true, Bg = true, PortraitTex = true, RecipeList = t
                  TitleContainer = true, Title = true, LinkButton = true, CloseButton = true,
                  SearchBox = true, Content = true, ScrollFrame = true }
 -- CamelCase fields the code probes for before creating
+ALL_FRAMES = {}
 local function new(name, parent)
   local o = { _name = name, _parent = parent, _shown = true, _points = {}, _attrs = {}, _hooks = {} }
+  ALL_FRAMES[#ALL_FRAMES + 1] = o
   return setmetatable(o, { __index = function(_, k)
     if Stub[k] then return Stub[k] end
     if type(k) == "string" and k:match("^%u") and not FIELDS[k] then return function() end end
@@ -60,6 +62,11 @@ function Stub:Run(ev, ...) if self._scripts and self._scripts[ev] then self._scr
 function Stub:GetScale() return self._scale or 1 end
 function Stub:SetScale(v) self._scale = v end
 function Stub:GetFrameStrata() return "HIGH" end
+function Stub:GetChildren()
+  local t = {}
+  for _, f in ipairs(ALL_FRAMES) do if f._parent == self then t[#t + 1] = f end end
+  return unpack(t)
+end
 function Stub:GetLeft() return self._left end
 function Stub:GetRight() return self._right end
 function Stub:GetWidth() return self._w or 32 end
@@ -230,6 +237,7 @@ NE.profcraft.IsModuleEnabled = nil
 -- DragonUI's own professions button (issue #95): chained with the strip, and ours yields to it.
 NE.dragon.db.profile.modules.ne_EncounterJournal.enabled = true
 local theirs = CreateFrame("Button", "ProfessionMicroButton", DragonUI_MicroButtonBar)
+theirs._left = 39   -- DragonUI lays it out between Character (26) and Spellbook (52)
 NE.micro.Layout()
 check("DragonUI's Professions sits between Spellbook and Character",
   anchoredTo("ProfessionMicroButton") == "SpellbookMicroButton"

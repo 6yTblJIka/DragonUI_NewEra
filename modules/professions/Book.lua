@@ -811,6 +811,7 @@ BINDING_NAME_NEWERA_TOGGLEPROFESSIONS = L["Toggle Professions Book"]
 M.microButton = NE.micro.Add({
   name    = "NE_ProfessionsMicroButton",
   art     = "professions",
+  before  = "CharacterMicroButton",
   tooltip = function() return MicroButtonTooltipText(TRADE_SKILLS, "NEWERA_TOGGLEPROFESSIONS") end,
   onClick = M.Toggle,
   -- DragonUI ships its own professions micro button now; two in the strip is one too many.

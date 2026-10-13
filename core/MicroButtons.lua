@@ -13,7 +13,7 @@
 -- pUiMicroMenu is pinned flush to UIParent's BOTTOMRIGHT with ZERO slack for an extra button --
 -- shifting MainMenu/Help rightward pushed them past the edge of the screen. So MainMenu/Help stay
 -- exactly where DragonUI put them, and everything from PVP back to Character is re-chained leftward
--- from MainMenu with our buttons slotted in where retail has them (ORDER below). Open screen space
+-- from MainMenu with our buttons slotted in where retail has them (see the chain rule below). Open screen space
 -- is on the left.
 --
 -- Shifting a DragonUI-owned button requires momentarily restoring its real SetPoint (DragonUI
@@ -47,22 +47,11 @@ M.ART_FDID = ART_FDID
 NE.tex.RegisterAtlas("ui-hud-micromenu-plate-2x",        { file = ART_FDID, left = 0.065430, right = 0.127930, top = 0.330078, bottom = 0.490234 })
 NE.tex.RegisterAtlas("ui-hud-micromenu-plate-pushed-2x", { file = ART_FDID, left = 0.065430, right = 0.127930, top = 0.494141, bottom = 0.654297 })
 
--- Right-to-left order of the strip left of MainMenu: DragonUI's MICRO_BUTTONS (micromenu.lua, the
--- non-Ascension branch -- this server has no PathToAscensionMicroButton) with our extras slotted in
--- where retail puts them (Professions right of Character; Adventure Guide right before the menu).
--- CollectionsMicroButton is not a stock 3.3.5a button -- DragonUI's Pets & Mounts module creates it.
--- Likewise ProfessionMicroButton, DragonUI's own professions button (same slot as ours, which
--- yields to it -- see modules/professions/Book.lua). Left out of ORDER it stayed put while the
--- rest of the strip shifted left for the Adventure Guide, and Spellbook landed on top of it.
--- Anything DragonUI later inserts into MICRO_BUTTONS has to be added here too.
-local ORDER = {
-  "NE_EJMicroButton",
-  "PVPMicroButton", "CollectionsMicroButton", "LFDMicroButton", "SocialsMicroButton",
-  "QuestLogMicroButton", "AchievementMicroButton", "TalentMicroButton", "SpellbookMicroButton",
-  "NE_ProfessionsMicroButton", "ProfessionMicroButton",
-  "CharacterMicroButton",
-}
-
+-- The strip left of MainMenu is read off the bar itself (DragonUI's shown buttons, right to left by
+-- position) rather than from a list of names kept here: a hardcoded list missed DragonUI's own
+-- Professions button the day it shipped, and Spellbook was chained on top of it. Our extras slot in
+-- by rule (spec.before): Professions right of Character, as retail has it; one with no `before`
+-- (Adventure Guide) goes right next to the menu.
 local extras = {}   -- [global name] = { button, enabled = fn }
 
 -- DragonUI's micro-button strip. Its clean-room micromenu rewrite (2026-09) renamed the frame from
@@ -86,7 +75,8 @@ function M.SetPushed(b, open)
   syncPlate(b)
 end
 
--- spec = { name, art (atlas stem, e.g. "professions"), tooltip (string or fn), onClick, enabled (fn) }
+-- spec = { name, art (atlas stem, e.g. "professions"), tooltip (string or fn), onClick, enabled (fn),
+--          before (optional: global name of the DragonUI button this one sits immediately right of) }
 -- Atlases ui-hud-micromenu-<art>-{up,down,mouseover,disabled}-2x must be registered by the caller.
 function M.Add(spec)
   local b = CreateFrame("Button", spec.name, microMenu() or UIParent)
@@ -131,7 +121,7 @@ function M.Add(spec)
   end)
   b:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-  extras[spec.name] = { button = b, enabled = spec.enabled }
+  extras[spec.name] = { button = b, enabled = spec.enabled, before = spec.before }
   if M.Layout then M.Layout() end
   return b
 end
@@ -162,7 +152,7 @@ function M.Layout()
   -- button, ours included, is an unscaled child of pUiMicroMenu, so GetLeft/GetRight already report
   -- in the units SetPoint offsets use.
   local helpLeft, mainRight = help:GetLeft(), mainMenu:GetRight()
-  if not (helpLeft and mainRight) then hideAll(); return end
+  if not (helpLeft and mainRight and mainMenu:GetLeft()) then hideAll(); return end
   local pad = helpLeft - mainRight
   -- DragonUI's skin not applied yet (stock positions, spread across a wide bar): wait for the next
   -- retry / refresh rather than chaining off it.
@@ -188,22 +178,48 @@ function M.Layout()
   -- Nothing of ours to place: leave DragonUI's strip exactly as it laid it out.
   if not any then return end
 
-  -- dragonUISuppressed marks a button whose owning module was switched off; DragonUI drops it from
-  -- the strip and closes the gap, so chain past those too.
-  local prev = mainMenu
-  for _, name in ipairs(ORDER) do
-    local e = extras[name]
-    local b = _G[name]
-    if e then
-      if e.on then
-        b:ClearAllPoints()
-        b:SetPoint("BOTTOMRIGHT", prev, "BOTTOMLEFT", -pad, 0)
-        prev = b
-      end
-    elseif b and not b.dragonUISuppressed then
-      setPointThroughNoop(b, "BOTTOMRIGHT", prev, "BOTTOMLEFT", -pad, 0)
-      prev = b
+  -- DragonUI's own buttons left of MainMenu, right to left. Only their ORDER is read, so it does not
+  -- matter whether DragonUI or an earlier pass of ours last placed them. dragonUISuppressed marks a
+  -- button whose owning module was switched off; DragonUI hides it and closes the gap, so skip it.
+  local mainLeft = mainMenu:GetLeft()
+  local natives = {}
+  for _, b in ipairs({ menu:GetChildren() }) do
+    local name, left = b:GetName(), b:GetLeft()
+    if name and name:find("MicroButton$") and not extras[name] and not b.dragonUISuppressed
+       and b:IsShown() and left and left < mainLeft then
+      natives[#natives + 1] = b
     end
+  end
+  table.sort(natives, function(x, y) return x:GetLeft() > y:GetLeft() end)
+
+  local chain, placed = {}, {}
+  local function addExtras(before)
+    for _, e in pairs(extras) do
+      if e.on and not placed[e] and e.before == before then
+        placed[e] = true
+        chain[#chain + 1] = e.button
+      end
+    end
+  end
+  addExtras(nil)
+  for _, b in ipairs(natives) do
+    addExtras(b:GetName())
+    chain[#chain + 1] = b
+  end
+  -- An extra whose `before` button is absent goes on the left end rather than vanishing.
+  for _, e in pairs(extras) do
+    if e.on and not placed[e] then chain[#chain + 1] = e.button end
+  end
+
+  local prev = mainMenu
+  for _, b in ipairs(chain) do
+    if extras[b:GetName()] then
+      b:ClearAllPoints()
+      b:SetPoint("BOTTOMRIGHT", prev, "BOTTOMLEFT", -pad, 0)
+    else
+      setPointThroughNoop(b, "BOTTOMRIGHT", prev, "BOTTOMLEFT", -pad, 0)
+    end
+    prev = b
   end
 end
 
