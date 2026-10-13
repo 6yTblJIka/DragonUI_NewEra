@@ -813,5 +813,10 @@ M.microButton = NE.micro.Add({
   art     = "professions",
   tooltip = function() return MicroButtonTooltipText(TRADE_SKILLS, "NEWERA_TOGGLEPROFESSIONS") end,
   onClick = M.Toggle,
-  enabled = function() return not NE.profcraft.IsModuleEnabled or NE.profcraft.IsModuleEnabled() end,
+  -- DragonUI ships its own professions micro button now; two in the strip is one too many.
+  enabled = function()
+    local theirs = _G.ProfessionMicroButton
+    if theirs and not theirs.dragonUISuppressed then return false end
+    return not NE.profcraft.IsModuleEnabled or NE.profcraft.IsModuleEnabled()
+  end,
 })

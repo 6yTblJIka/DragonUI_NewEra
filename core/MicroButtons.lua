@@ -51,12 +51,15 @@ NE.tex.RegisterAtlas("ui-hud-micromenu-plate-pushed-2x", { file = ART_FDID, left
 -- non-Ascension branch -- this server has no PathToAscensionMicroButton) with our extras slotted in
 -- where retail puts them (Professions right of Character; Adventure Guide right before the menu).
 -- CollectionsMicroButton is not a stock 3.3.5a button -- DragonUI's Pets & Mounts module creates it.
+-- Likewise ProfessionMicroButton, DragonUI's own professions button (same slot as ours, which
+-- yields to it -- see modules/professions/Book.lua). Left out of ORDER it stayed put while the
+-- rest of the strip shifted left for the Adventure Guide, and Spellbook landed on top of it.
 -- Anything DragonUI later inserts into MICRO_BUTTONS has to be added here too.
 local ORDER = {
   "NE_EJMicroButton",
   "PVPMicroButton", "CollectionsMicroButton", "LFDMicroButton", "SocialsMicroButton",
   "QuestLogMicroButton", "AchievementMicroButton", "TalentMicroButton", "SpellbookMicroButton",
-  "NE_ProfessionsMicroButton",
+  "NE_ProfessionsMicroButton", "ProfessionMicroButton",
   "CharacterMicroButton",
 }
 

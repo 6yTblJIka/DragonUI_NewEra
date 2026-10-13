@@ -7,23 +7,23 @@
        NEWERA_-namespaced rather than reusing a Blizzard binding name: 3.3.5a has no native
        "toggle guild window" binding to piggyback on. NE_GuildFrame is an INSECURE frame with no
        protected children, so this binding body is combat-safe. -->
-  <Binding name="NEWERA_TOGGLEGUILD" category="BINDING_HEADER_DRAGONUI_NEWERA">
+  <Binding name="NEWERA_TOGGLEGUILD" header="DRAGONUI_NEWERA">
     if DragonUI_NewEra and DragonUI_NewEra.guild and DragonUI_NewEra.guild.Toggle then
       DragonUI_NewEra.guild.Toggle()
     end
   </Binding>
-  <Binding name="NEWERA_TOGGLESOCIAL" category="BINDING_HEADER_DRAGONUI_NEWERA">
+  <Binding name="NEWERA_TOGGLESOCIAL">
     if DragonUI_NewEra and DragonUI_NewEra.social and DragonUI_NewEra.social.Toggle then
       DragonUI_NewEra.social.Toggle()
     end
   </Binding>
-  <Binding name="NEWERA_TOGGLEEJ" category="BINDING_HEADER_DRAGONUI_NEWERA">
+  <Binding name="NEWERA_TOGGLEEJ">
     if DragonUI_NewEra and DragonUI_NewEra.ej and DragonUI_NewEra.ej.Toggle then
       DragonUI_NewEra.ej.Toggle()
     end
   </Binding>
   <!-- The Professions Book parents secure spell buttons, so it is protected: Toggle refuses in combat. -->
-  <Binding name="NEWERA_TOGGLEPROFESSIONS" category="BINDING_HEADER_DRAGONUI_NEWERA">
+  <Binding name="NEWERA_TOGGLEPROFESSIONS">
     if DragonUI_NewEra and DragonUI_NewEra.professionsbook and DragonUI_NewEra.professionsbook.Toggle then
       DragonUI_NewEra.professionsbook.Toggle()
     end

@@ -227,6 +227,19 @@ NE.micro.Layout()
 check("Professions hidden with the Professions module off", not NE_ProfessionsMicroButton:IsShown())
 NE.profcraft.IsModuleEnabled = nil
 
+-- DragonUI's own professions button (issue #95): chained with the strip, and ours yields to it.
+NE.dragon.db.profile.modules.ne_EncounterJournal.enabled = true
+local theirs = CreateFrame("Button", "ProfessionMicroButton", DragonUI_MicroButtonBar)
+NE.micro.Layout()
+check("DragonUI's Professions sits between Spellbook and Character",
+  anchoredTo("ProfessionMicroButton") == "SpellbookMicroButton"
+  and anchoredTo("CharacterMicroButton") == "ProfessionMicroButton")
+check("ours yields to DragonUI's Professions button", not NE_ProfessionsMicroButton:IsShown())
+theirs.dragonUISuppressed = true
+NE.micro.Layout()
+check("ours returns when DragonUI's is suppressed",
+  NE_ProfessionsMicroButton:IsShown() and anchoredTo("CharacterMicroButton") == "NE_ProfessionsMicroButton")
+
 -- ── the book ───────────────────────────────────────────────────────────────────────────────────
 local M = NE.professionsbook
 M.Toggle()
